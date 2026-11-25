@@ -375,12 +375,16 @@ static void CustomTrack_VerifySource(struct CustomTrackSource *source, const cha
                         (unsigned)total, actualHex);
 }
 
-// The armed race is the bundled Cortex Vortex pair: the seed's digests are its
-// pins. A Saphi download of Cortex Vortex is a different pair and never matches.
+// The armed race is a bundled Cortex Vortex pair: the seed's digests are its
+// pins, the main pair's or, in a Relic Race, the relic pair's (CV1). A Saphi
+// download of Cortex Vortex is a different package and never matches.
 static int CustomTrack_DescriptorIsCortex(void)
 {
-	return s_haveDescriptor && NativeSha256_HexEquals(CORTEX_LEV_SHA256, s_descriptor.levSha256) &&
-	       NativeSha256_HexEquals(CORTEX_VRM_SHA256, s_descriptor.vrmSha256);
+	return s_haveDescriptor &&
+	       ((NativeSha256_HexEquals(CORTEX_LEV_SHA256, s_descriptor.levSha256) &&
+	         NativeSha256_HexEquals(CORTEX_VRM_SHA256, s_descriptor.vrmSha256)) ||
+	        (NativeSha256_HexEquals(CTR_CFG_CORTEX_RELIC_LEV_SHA256, s_descriptor.levSha256) &&
+	         NativeSha256_HexEquals(CTR_CFG_CORTEX_RELIC_VRM_SHA256, s_descriptor.vrmSha256)));
 }
 
 static unsigned char *CustomTrack_ReadMusicFile(const char *path, unsigned long expectedBytes,
@@ -577,9 +581,9 @@ int CustomTrack_ApplyOxideFinalDescriptor(const struct OxideFinalTrackDescriptor
 	s_haveOxideFinalDescriptor = 1;
 	if (assetDir == NULL || d->hostLevelID != 13 ||
 	    snprintf(s_oxideFinalLev.path, sizeof s_oxideFinalLev.path,
-	             "%s/tracks/cortex-vortex/CVortex Arcade All.lev", assetDir) >= (int)sizeof s_oxideFinalLev.path ||
+	             "%s/tracks/cortex-vortex/" CTR_CFG_CORTEX_LEV_FILE, assetDir) >= (int)sizeof s_oxideFinalLev.path ||
 	    snprintf(s_oxideFinalVrm.path, sizeof s_oxideFinalVrm.path,
-	             "%s/tracks/cortex-vortex/CVortex Arcade All.vrm", assetDir) >= (int)sizeof s_oxideFinalVrm.path)
+	             "%s/tracks/cortex-vortex/" CTR_CFG_CORTEX_VRM_FILE, assetDir) >= (int)sizeof s_oxideFinalVrm.path)
 	{
 		CustomTrack_Log("[CortexVortex] REFUSED: bundled asset path or host LevelID is invalid\n");
 		return 0;
@@ -1281,7 +1285,11 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 
 	s_customTrackConfig.contentVerified = 1;
 	s_customTrackServeFault[0] = '\0';
-	if (CustomTrack_DescriptorIsCortex())
+	// A package route hands its music pin over right before arming; the
+	// bundled Cortex Vortex route never does. So a pending pin means a
+	// downloaded package, even one whose bytes equal a bundled pair (CV1:
+	// Saphi 1.1.5 and 1.1.6 are both bundled now).
+	if (s_pendingMusic.path[0] == '\0' && CustomTrack_DescriptorIsCortex())
 		CustomTrack_LoadCortexMusic(s_customTrackLev.path);
 	else
 		CustomTrack_LoadPackageMusic();

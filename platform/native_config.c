@@ -40,6 +40,7 @@ NativeConfig g_config = {
 	false, // skipPodium (default off: ceremonies play unless the player opts out)
 	false, // skipCutscenes (default off: boss and Oxide scenes play unless the player opts out)
 	true,  // mapFlash (default on: vanilla-style Raceable flicker)
+	false, // trackerPartialColour
 	true,  // itemBoxColours (default on: follow the seed's item box colours)
 	true,  // itemBoxNumbers (default on: show the authored location number)
 	false, // sanityNumbers (default off: ordinary check object ordinals)
@@ -176,6 +177,7 @@ const ConfigEntry g_configEntries[] = {
 	// Shown on the Gameplay page.
 	{"Archipelago", "look_joe",                 "Joe Look",                     CFG_ENUM, &g_config.lookJoe},
 	{"Archipelago", "map_flash",                "Map Flash",                    CFG_BOOL, &g_config.mapFlash},
+	{"Archipelago", "tracker_partial_colour",   "Tracker Partial Colour",       CFG_BOOL, &g_config.trackerPartialColour},
 	// Item Box Colours: this player's opt-out of the seed's AP item box colours
 	// (color_boxes_by_item). Off = pink boxes for this player only. The menu
 	// shows "OFF (SEED)" and ignores input while a loaded seed has colours off.

@@ -17,6 +17,7 @@
 #include "ap_arena_content.h"
 #include "ap_wumpa_shop.h"
 #include "../include/platform/native_tizi_madness.h"
+#include "../include/platform/native_cortex_asset_pins.h"
 #include <array>
 #include <cstring>
 #include <map>
@@ -46,6 +47,7 @@ struct State {
     ctr_content_capability capability{};
     std::map<int64_t, int> boosts, starts;
     std::set<int64_t> checks;
+    std::map<int, std::vector<int64_t>> tracker_locations;
     std::map<std::string, ctr_content_sanity> sanity;
     std::map<int, std::array<std::set<int64_t>, 3>> sanity_pads;
     std::array<std::string, 6> sanity_boss_tracks;
@@ -1586,6 +1588,7 @@ static void validate(const J &p, State &out) {
         return lap_code(-1, 0, track.contains("named_block") ? number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1) : -1,
                         number(track["custom_slot"], 1, AP_CONTENT_MAX_PACKAGES));
     };
+    std::map<std::string, int> tracker_nodes;
     for (int pi = 0; pi < 32; ++pi) {
         const bool garage = pi >= 27;
         const int physical = garage ? pi - 27 : registry["pads"][pi]["physical"].get<int>();
@@ -1595,6 +1598,7 @@ static void validate(const J &p, State &out) {
         const bool garage_used = garage && out.bosses.present && (physical < 4 || out.bosses.oxide_goal != 3);
         const int keys = garage ? (garage_used ? (physical < 4 ? physical : 4) : 0) : registry["pads"][pi]["keys"].get<int>();
         const auto id = std::string(garage ? "garage:" : "pad:") + std::to_string(physical);
+        tracker_nodes.emplace(id, garage ? AP_CONTENT_GARAGE_CUP_PAD + physical : physical);
         need(pads.count(id), "missing canonical physical pad: " + id);
         const J &pad = *pads.at(id);
         fields(pad, {"id", "hub_id", "kind", "entry_id", "entrance_req", "mode_gates", "racer_lock"});
@@ -2787,7 +2791,31 @@ static void validate(const J &p, State &out) {
             bare.erase("stats");
         }
         need(out.checks.insert(id).second && expected_checks.count(id) && bare == expected_checks.at(id), "check identity or route ownership mismatch");
+        std::set<int> nodes;
+        for (const auto &route : bare.at("routes"))
+            nodes.insert(tracker_nodes.at(route.at("own_pad_id").get<std::string>()));
+        for (int node : nodes)
+            out.tracker_locations[node].push_back(id);
     }
+    // Cup pages also show the boxes their legs can award. The plan keeps the
+    // box's logic on its standalone pad because the leg uses the same check.
+    auto tracker_cup_boxes = [&](const ctr_content_pad &cup) {
+        if (!cup.cup) return;
+        auto &node = out.tracker_locations[cup.physical];
+        for (const auto &leg : cup.legs) {
+            if (leg.track_pad < 0) continue;
+            const auto track = std::find_if(out.pads.begin(), out.pads.end(), [&](const ctr_content_pad &pad) {
+                return pad.physical == leg.track_pad;
+            });
+            if (track == out.pads.end()) continue;
+            for (int i = 0; i < track->box_count; ++i)
+                if (track->box_locations[i] > 0) node.push_back(track->box_locations[i]);
+        }
+        std::sort(node.begin(), node.end());
+        node.erase(std::unique(node.begin(), node.end()), node.end());
+    };
+    for (const auto &cup : out.pads) tracker_cup_boxes(cup);
+    for (const auto &cup : out.garage_cups) tracker_cup_boxes(cup);
     // Hand-placed box spots (A3-14): every set names a pad track, every spot
     // box carried its spot, and the pads take the positions.
     for (const auto &pair : out.spot_sets) need(pair.second.used, "a box spot set names no pad track");
@@ -3537,6 +3565,14 @@ extern "C" const ctr_content_pad *ap_content_plan_pad(int physical) {
     return nullptr;
 }
 extern "C" int ap_content_plan_cortex(void) { return ap_content_plan_active() && content_plan::state.cortex; }
+extern "C" const int64_t *ap_content_plan_tracker_locations(int node, int *count) {
+    *count = 0;
+    if (!ap_content_plan_active()) return nullptr;
+    const auto it = content_plan::state.tracker_locations.find(node);
+    if (it == content_plan::state.tracker_locations.end()) return nullptr;
+    *count = (int)it->second.size();
+    return it->second.data();
+}
 extern "C" const ctr_content_sanity *ap_content_plan_sanity(const char *track_id) {
     if (!ap_content_plan_active() || !track_id) return nullptr;
     const auto it = content_plan::state.sanity.find(track_id);
@@ -3577,6 +3613,9 @@ extern "C" int ap_content_plan_check_boost(int64_t location) {
     if (!ap_content_plan_active()) return 0;
     const auto it = content_plan::state.boosts.find(location);
     return it == content_plan::state.boosts.end() ? 0 : it->second;
+}
+extern "C" int ap_content_plan_check_requires_stats(int64_t location) {
+    return ap_content_plan_active() && content_plan::state.stat_checks.count(location) != 0;
 }
 extern "C" const ctr_content_item_boxes *ap_content_plan_item_boxes(void) {
     static const ctr_content_item_boxes none{};

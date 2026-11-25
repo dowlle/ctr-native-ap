@@ -2555,6 +2555,11 @@ from worlds.ctr.test.test_vortex_sanity import vortex_options
 native_cortex_pin = re.search(r'#define CTR_CFG_CORTEX_LEV_SHA256 "([0-9a-f]{64})"',
                              (root / "include/platform/native_cortex_asset_pins.h").read_text())[1]
 assert native_cortex_pin == cp.sanity.CORTEX_LEV_SHA256, "Vortex sanity catalog must describe bundled bytes"
+_pins_header = (root / "include/platform/native_cortex_asset_pins.h").read_text()
+for _macro, _pin in (("VRM", cp.cortex_vortex.CORTEX_VRM_SHA256), ("RELIC_LEV", cp.cortex_vortex.CORTEX_RELIC_LEV_SHA256),
+                     ("RELIC_VRM", cp.cortex_vortex.CORTEX_RELIC_VRM_SHA256),
+                     ("LEGACY_LEV", cp.cortex_vortex.CORTEX_LEGACY_LEV_SHA256)):
+    assert f'#define CTR_CFG_CORTEX_{_macro}_SHA256 "{_pin}"' in _pins_header, f"Cortex {_macro} pin differs (CV1)"
 for boost in ("off", "shared_global", "per_character"):
     wire = make_world(vortex_options(progressive_boost=boost), seed=3, stop_before="pre_fill").fill_slot_data()
     assert cp.validate(wire["content_plan"])
@@ -2563,6 +2568,16 @@ for boost in ("off", "shared_global", "per_character"):
         bad = copy.deepcopy(wire)
         next(r for r in bad["content_plan"]["sanity"]["tracks"] if r["track_id"] == "cortex_vortex")["lev_sha256"] = digest
         cases.append((f"vortex-new-refuse-digest-{boost}-{digest[:8]}", bad, False))
+    # CV1: a room generated before the merged build names the all-in-one LEV.
+    older = copy.deepcopy(wire)
+    next(r for r in older["content_plan"]["sanity"]["tracks"]
+         if r["track_id"] == "cortex_vortex")["lev_sha256"] = cp.cortex_vortex.CORTEX_LEGACY_LEV_SHA256
+    assert cp.validate(older["content_plan"])
+    cases.append((f"vortex-before-cv1-{boost}", older, True))
+    relic = copy.deepcopy(wire)
+    next(r for r in relic["content_plan"]["sanity"]["tracks"]
+         if r["track_id"] == "cortex_vortex")["lev_sha256"] = cp.cortex_vortex.CORTEX_RELIC_LEV_SHA256
+    cases.append((f"vortex-refuse-relic-pin-{boost}", relic, False))
     for version in (None, 1):
         legacy = copy.deepcopy(wire)
         p = legacy["content_plan"]

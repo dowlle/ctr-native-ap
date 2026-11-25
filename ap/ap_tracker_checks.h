@@ -15,6 +15,24 @@ typedef struct {
     int (*logic)(int64_t); /* 0 out, 1 in, 2 unknown */
 } AP_TrackerCheckSource;
 
+enum {
+    AP_TRACKER_NODE_EMPTY, AP_TRACKER_NODE_DONE, AP_TRACKER_NODE_OUT,
+    AP_TRACKER_NODE_IN, AP_TRACKER_NODE_PARTIAL, AP_TRACKER_NODE_UNKNOWN
+};
+
+static inline int AP_TrackerCheckNodeState(AP_TrackerCheckCount checks, int partial)
+{
+    if (!checks.total) return AP_TRACKER_NODE_EMPTY;
+    if (checks.done == checks.total) return AP_TRACKER_NODE_DONE;
+    if (checks.in_logic) {
+        if (!partial || checks.done + checks.in_logic == checks.total)
+            return AP_TRACKER_NODE_IN;
+        if (checks.out_logic) return AP_TRACKER_NODE_PARTIAL;
+        return AP_TRACKER_NODE_UNKNOWN;
+    }
+    return checks.unknown ? AP_TRACKER_NODE_UNKNOWN : AP_TRACKER_NODE_OUT;
+}
+
 static inline void AP_TrackerCheckAdd(AP_TrackerCheckCount *row, int64_t code,
                                     AP_TrackerCheckSource source)
 {

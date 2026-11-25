@@ -76,6 +76,10 @@ static void ExpectFeedConfig(void)
 	EXPECT_TRUE("Item Feed is a three-way enum", entry >= 0 &&
 	            g_configEntries[entry].type == CFG_ENUM);
 	EXPECT_TRUE("Item Feed defaults to ALL", g_config.itemFeed == AP_ITEM_FEED_ALL);
+	const int partial = CTR_MenuFindEntry(g_configEntries, g_numConfigEntries, "tracker_partial_colour");
+	EXPECT_TRUE("Tracker Partial Colour is a boolean", partial >= 0 &&
+	            g_configEntries[partial].type == CFG_BOOL);
+	EXPECT_TRUE("Tracker Partial Colour defaults to OFF", !g_config.trackerPartialColour);
 	if (!mkdtemp(dir) || chdir(dir) != 0)
 	{
 		EXPECT_TRUE("isolated config directory", 0);
@@ -96,10 +100,13 @@ static void ExpectFeedConfig(void)
 		EXPECT_TRUE(oldValues[i], g_config.itemFeed == (i % 2 ? AP_ITEM_FEED_OFF : AP_ITEM_FEED_ALL));
 	}
 	g_config.itemFeed = AP_ITEM_FEED_IMPORTANT;
+	g_config.trackerPartialColour = true;
 	NativeConfig_Save();
 	g_config.itemFeed = AP_ITEM_FEED_OFF;
+	g_config.trackerPartialColour = false;
 	NativeConfig_Load();
 	EXPECT_TRUE("IMPORTANT survives a config round trip", g_config.itemFeed == AP_ITEM_FEED_IMPORTANT);
+	EXPECT_TRUE("Tracker Partial Colour survives a config round trip", g_config.trackerPartialColour);
 	unlink("config.ini");
 	if (chdir("/") == 0)
 		rmdir(dir);
@@ -165,7 +172,7 @@ int main(void)
 		static const char *const video[] = {
 			"fullscreen", "aspect_ratio", "render_scale", "vsync", "smooth_scaling",
 			"texture_filtering", "dithering", "increase_draw_distance",
-			"disable_split_screen_lod", NULL};
+			"disable_split_screen_lod", "tracker_partial_colour", NULL};
 		static const char *const gameplay[] = {
 			"skip_intro", "skip_hints", "race_type_selector", "skip_podium", "skip_cutscenes",
 			"boss_music", "look_joe", "ai_difficulty", "mute_when_unfocused", "device_aware_labels", "update_check", NULL};
