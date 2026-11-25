@@ -232,7 +232,7 @@ static void partial_and_pickup_tests(void) {
     strcpy(pads[1].legs[2].track_id, "retail:7");
     char route[128] = "";
     AP_TrackerCupRoute(&pads[0], route, sizeof route);
-    assert(!strcmp(route, "VIA YELLOW GEM CUP, RACE 3"));
+    assert(!strcmp(route, "SOME SHARED CHECKS VIA YELLOW GEM CUP, RACE 3"));
     pads[1].trophy_location = 114;
     AP_TrackerCupRoute(&pads[0], route, sizeof route);
     assert(!strcmp(route, "SHARED CHECKS IN LOGIC VIA ANOTHER RACE"));

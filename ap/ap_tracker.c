@@ -994,7 +994,7 @@ static void AP_TrackerCupRoute(const ctr_content_pad *track, char *route, size_t
 				if (ap_content_plan_check_boost(shared[i]) > cup->trophy_boost) continue;
 				for (int j = 0; j < count; ++j) {
 					if (codes[j] != shared[i]) continue;
-					snprintf(route, size, "VIA %s, RACE %d",
+					snprintf(route, size, "SOME SHARED CHECKS VIA %s, RACE %d",
 					         cup->room_title[0] ? cup->room_title : cup->display_name, leg + 1);
 					return;
 				}

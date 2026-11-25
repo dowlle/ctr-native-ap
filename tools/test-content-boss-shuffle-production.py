@@ -230,7 +230,7 @@ assert 'ap_content_plan' not in extract(gates, 'int AP_BossKitAdvert(int bossIdx
 assert re.search(r'AP_BossRivalAdvert\(advertBoss, rivalLine.*\n.*\n\s*if \(AP_BossKitAdvert\(advertBoss, kitLine', garage)
 tracker = text('ap/ap_tracker.c')
 assert 'AP_BossRivalAdvert(ap_tracker.hub - 1, n->rival' in tracker and 'AP_BossFinalGarageOpponent()' in tracker
-assert 'AP_TrackerText(n->rival,' in tracker
+assert 'AP_TrackerText(n->rival,' in extract(tracker, 'static void AP_TrackerDrawNode(int index)\n{')
 # Hit Character: the hit credits the engine id seated in the victim's slot.
 bots = text('ap/ap_hit_bots.c')
 assert 'victimEngine = (int)data.characterIDs[victim->driverID];' in bots

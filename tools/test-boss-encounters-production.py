@@ -247,8 +247,9 @@ require('game/BOTS.c', 'AP_BossLossEasingNow() ? sdata->advProgress.timesLostBos
         'BOTS_Adv_NumTimesLostEvent(bossLosses) - 0xe1', 'BOTS_Adv_NumTimesLostEvent(bossLosses) - 0x141')
 # The driving table stays the physical garage's boss-grade row.
 require('game/BOTS.c', 'data.BossDifficulty[gGT->bossID].params1')
-require('ap/ap_tracker.c', 'AP_BossRivalAdvert(ap_tracker.hub - 1, n->rival',
-        'AP_TrackerText(n->rival,')
+tracker = text('ap/ap_tracker.c')
+assert 'AP_BossRivalAdvert(ap_tracker.hub - 1, n->rival' in tracker
+assert 'AP_TrackerText(n->rival,' in extract(tracker, 'static void AP_TrackerDrawNode(int index)\n{')
 # A drawn racer's icon may be missing from the garage boss's pack: the one
 # icon draw without a NULL guard has one now.
 icon = text('game/UI/UI_Icon.c')
