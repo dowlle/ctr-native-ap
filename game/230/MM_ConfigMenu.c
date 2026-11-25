@@ -866,8 +866,10 @@ static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint
 	{
 		const int on = *(bool *)e->valuePtr;
 		const char *value = on ? "ON" : "OFF";
+#ifdef CTR_AP
 		if (e->valuePtr == &g_config.deviceAwareLabels)
 			value = on ? "MATCH PAD" : "PLAYSTATION";
+#endif
 		DecalFont_DrawLineOT((char *)value, valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 	}
 	else if (e->type == CFG_ENUM)
