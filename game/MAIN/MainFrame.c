@@ -1,4 +1,5 @@
 #include <common.h>
+#include "MainFrame_RaceClock.h"
 
 #if defined(CTR_NATIVE)
 static void MainFrame_RegisterGpuLinkRanges(struct GameTracker *gGT)
@@ -213,48 +214,7 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 		NativeReplayScheduler_ConsumeFrameElapsedTimeMS(&gGT->elapsedTimeMS);
 #endif
 		gGT->msInThisLEV += gGT->elapsedTimeMS;
-		if (gGT->trafficLightsTimer < 1)
-		{
-			if ((gGT->gameMode1 & DEBUG_MENU) == 0)
-			{
-				if (gGT->frozenTimeRemaining < 1)
-				{
-					if ((gGT->gameMode1 & END_OF_RACE) == 0)
-					{
-						gGT->elapsedEventTime += gGT->elapsedTimeMS;
-					}
-				}
-				else
-				{
-					iVar4 = gGT->frozenTimeRemaining - gGT->elapsedTimeMS;
-					gGT->frozenTimeRemaining = iVar4;
-					if (iVar4 < 0)
-					{
-						gGT->frozenTimeRemaining = 0;
-					}
-					else
-					{
-						uVar3 = gGT->timer;
-						// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80034f84-0x80034fec for frozen-time tick SFX.
-						if (uVar3 == (uVar3 / 6) * 6)
-						{
-							if (uVar3 == (uVar3 / 0xc) * 0xc)
-							{
-								OtherFX_Play_LowLevel(0x40, '\0', 0x8c9080);
-							}
-							else
-							{
-								OtherFX_Play_LowLevel(0x40, '\0', 0x8c8880);
-							}
-						}
-					}
-				}
-			}
-		}
-		else
-		{
-			gGT->elapsedEventTime = 0;
-		}
+		MainFrame_AdvanceRaceClock(gGT);
 
 		CTR_CycleTex_AllModels(-1, (struct Model **)sdata->PLYROBJECTLIST, gGT->timer);
 		CTR_CycleTex_AllModels(gGT->level1->numModels, gGT->level1->ptrModelsPtrArray, gGT->timer);

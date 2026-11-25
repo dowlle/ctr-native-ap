@@ -9,12 +9,13 @@
 #include "../ap/ap_tizi.h"
 #include "../game/231/RB_Crate.c"
 #include "../ap/ap_track_fill.c"
+#include "../game/MAIN/MainFrame_RaceClock.h"
 
 struct sData sdata_static;
 struct Data data;
 static struct GameTracker tracker;
 static struct Driver driver;
-static struct Instance instances[3], kart;
+static struct Instance instances[AP_CONTENT_MAX_FILL_CRATES], kart;
 static struct Thread threads[3], kart_thread;
 static struct Crate crate_objects[3];
 static struct Model models[3];
@@ -37,6 +38,11 @@ void AP_LogLine(const char *line) { fputs(line, stdout); }
 void ConvertRotToMatrix(MATRIX *m, const SVec3 *r) { (void)m; (void)r; }
 void MatrixRotate(MATRIX *d, MATRIX *s, MATRIX *r) { (void)d; (void)s; (void)r; }
 void PlaySound3D(u32 id, struct Instance *i) { assert(id == 0x3c); (void)i; }
+int OtherFX_Play_LowLevel(u32 id, u8 anti_spam, u32 flags)
+{
+	assert(id == 0x40 && !anti_spam && (flags == 0x8c9080 || flags == 0x8c8880));
+	return 0;
+}
 void Voiceline_RequestPlay(u32 id, u32 who, u32 arg) { assert(id == 0x13); (void)who; (void)arg; }
 void RB_Fruit_GetScreenCoords(struct PushBuffer *pb, struct Instance *i, s16 *xy)
 {
@@ -64,7 +70,7 @@ struct Thread *PROC_BirthWithObject(int flags, void *tick, const char *name, str
 }
 struct Instance *INSTANCE_Birth3D(struct Model *model, const char *name, struct Thread *t)
 {
-	assert(born < 3 && strcmp(name, "ap-fill-crate") == 0 && t == NULL);
+	assert(born < AP_CONTENT_MAX_FILL_CRATES && strcmp(name, "ap-fill-crate") == 0 && t == NULL);
 	struct Instance *inst = &instances[born++];
 	memset(inst, 0, sizeof *inst);
 	inst->model = model;
@@ -176,6 +182,51 @@ int main(void)
 	driver.posPrev.x = driver.posCurr.x = 3000 * 256;
 	AP_TrackFillOnFrame(&tracker);
 	assert(driver.numTimeCrates == 2 && tracker.frozenTimeRemaining == 960 * 4);
+	tracker.elapsedEventTime = 320;
+	tracker.elapsedTimeMS = 32;
+	for (int frame = 0; frame < 120; ++frame) {
+		tracker.timer++;
+		MainFrame_AdvanceRaceClock(&tracker);
+		assert(tracker.elapsedEventTime == 320);
+	}
+	assert(tracker.frozenTimeRemaining == 0);
+	MainFrame_AdvanceRaceClock(&tracker);
+	assert(tracker.elapsedEventTime == 352);
+	puts("PASS: elapsed race time stops during freeze credit and resumes afterward");
 	puts("PASS: three spawned; retail timer freeze and broken state follow the instance pool");
+
+	born = 0;
+	tracker.timeCratesInLEV = 0;
+	tracker.JitPools.instance.free.count = 2;
+	tracker.JitPools.instance.taken.first = NULL;
+	AP_TrackFillSpawn(&tracker);
+	assert(AP_TrackFillFailed(&tracker) && born == 0);
+
+	const char *positions = getenv("CTR_TEST_FILL_POSITIONS");
+	if (positions) {
+		ctr_content_fill_crate parsed[AP_CONTENT_MAX_FILL_CRATES];
+		int count;
+		FILE *input = fopen(positions, "r");
+		assert(input && fscanf(input, "%d", &count) == 1 && count > 0 && count <= AP_CONTENT_MAX_FILL_CRATES);
+		for (int i = 0; i < count; ++i) {
+			unsigned type;
+			assert(fscanf(input, "%hd %hd %hd %u", &parsed[i].pos[0], &parsed[i].pos[1],
+			              &parsed[i].pos[2], &type) == 4 && type >= 1 && type <= 3);
+			parsed[i].type = (uint8_t)type;
+		}
+		fclose(input);
+		package.fill_crates = parsed;
+		package.fill_crate_count = count;
+		tracker.timeCratesInLEV = 0;
+		tracker.JitPools.instance.free.count = count;
+		AP_TrackFillSpawn(&tracker);
+		assert(tracker.timeCratesInLEV == count && born == count);
+		for (int i = 0; i < count; ++i) {
+			assert(instances[i].model == apFillCrateModels[parsed[i].type - 1]);
+			for (int axis = 0; axis < 3; ++axis)
+				assert(instances[i].matrix.t[axis] == parsed[i].pos[axis]);
+		}
+		printf("PASS: %d apworld crates parsed and spawned at the pinned coordinates\n", count);
+	}
 	return 0;
 }

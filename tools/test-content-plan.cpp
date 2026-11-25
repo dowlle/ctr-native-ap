@@ -92,6 +92,19 @@ static void mutations(const J &base, const J &node, const J::json_pointer &path)
 }
 int main(int argc, char **argv) {
     int vanilla[20]{}; ctr_cfg_set_vanilla_cup_legs(vanilla);
+    if (argc == 3 && std::string(argv[1]) == "--dump-fill") {
+        const J slot = J::parse(std::cin);
+        if (!parse(slot) || !bind_room(slot)) return 1;
+        std::ofstream out(argv[2]);
+        const auto *package = ap_content_plan_package(0);
+        if (!out || !package || package->fill_crate_count == 0) return 1;
+        out << package->fill_crate_count << '\n';
+        for (int i = 0; i < package->fill_crate_count; ++i) {
+            const auto &crate = package->fill_crates[i];
+            out << crate.pos[0] << ' ' << crate.pos[1] << ' ' << crate.pos[2] << ' ' << (int)crate.type << '\n';
+        }
+        return !out;
+    }
     if (argc > 1 && std::string(argv[1]) == "--probe") {
         std::string line;
         while (std::getline(std::cin, line)) {
