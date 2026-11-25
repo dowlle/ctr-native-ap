@@ -8,6 +8,7 @@
 #include <platform/native_config.h>
 #include <platform/native_sha256.h>
 #include "ap_look_logic.h"
+#include "ap_komodo_moe_embedded.h"
 #include "ap_looks.h"
 #include "ap_hooks.h" // AP_LogLine
 
@@ -19,9 +20,10 @@
 // the look's item index, or 0 for ORIGINAL, and is read through the owned bits,
 // so a look this seed never delivered drives as the original model.
 //
-// A look's file is read once, on first use, into host memory (not MEMPACK),
-// checked against its pin and AP_LookValidateModel, and relocated. Nothing in
-// the loaded driver packs is changed: VehBirth_GetModelByName returns a small
+// A look is loaded on first use into host memory (not MEMPACK). Try the disk
+// file first, then the embedded fallback if available. Both sources are
+// checked against the same pin and AP_LookValidateModel before relocation.
+// The loaded driver packs stay intact: VehBirth_GetModelByName returns a small
 // look Model (the found model's name and id, the look's one header), so
 // switching back to ORIGINAL needs no undo and a racer born before the change
 // keeps a valid model.
@@ -110,17 +112,64 @@ void AP_LooksReceiveNew(long long itemIndex)
 	AP_LogLine(msg);
 }
 
+static int AP_LooksReadFile(const AP_LookDef *def, unsigned char *buf, const char **why)
+{
+	FILE *fp = NativeAssets_OpenHost(def->assetRel, "rb");
+	if (fp == NULL)
+	{
+		*why = "could not open";
+		return 0;
+	}
+	size_t received = fread(buf, 1, def->size, fp);
+	int extra = fgetc(fp);
+	int readError = ferror(fp);
+	fclose(fp);
+	if (readError || received != def->size || extra != EOF)
+	{
+		*why = readError ? "could not read" : "wrong size";
+		return 0;
+	}
+	return 1;
+}
+
+static int AP_LooksValidate(const AP_LookDef *def, const unsigned char *bytes, size_t size,
+                            AP_LookModelInfo *info, const char **why)
+{
+	char hex[NATIVE_SHA256_HEX_BYTES];
+	unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
+	struct NativeSha256Ctx sha;
+	if (size != def->size)
+	{
+		*why = "wrong size";
+		return 0;
+	}
+	NativeSha256_Init(&sha);
+	NativeSha256_Update(&sha, bytes, size);
+	NativeSha256_Final(&sha, digest);
+	NativeSha256_ToHex(digest, hex);
+	if (!NativeSha256_HexEquals(def->sha256, hex))
+	{
+		*why = "SHA-256 does not match the pin";
+		return 0;
+	}
+	if (!AP_LookValidateModel(bytes, size, info, why))
+		return 0;
+	if (info->triangles != def->triangles)
+	{
+		*why = "unexpected triangle count";
+		return 0;
+	}
+	return 1;
+}
+
 static int AP_LooksLoadFile(int look)
 {
 	const AP_LookDef *def = &AP_LOOKS[look];
-	char msg[256], hex[NATIVE_SHA256_HEX_BYTES];
-	unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
-	struct NativeSha256Ctx sha;
+	char msg[256];
 	AP_LookModelInfo info;
-	const char *why = "could not open";
+	const char *why;
+	const char *source = "disk";
 	unsigned char *buf = NULL;
-	FILE *fp;
-	long size = -1;
 
 	if (ap_look_files[look].state != AP_LOOK_FILE_UNTRIED)
 		return ap_look_files[look].state == AP_LOOK_FILE_READY;
@@ -130,37 +179,19 @@ static int AP_LooksLoadFile(int look)
 		why = "this build's pointers are not 32-bit";
 		goto fail;
 	}
-	fp = NativeAssets_OpenHost(def->assetRel, "rb");
-	if (fp != NULL)
-	{
-		if (fseek(fp, 0, SEEK_END) == 0)
-			size = ftell(fp);
-		if (size == (long)def->size && fseek(fp, 0, SEEK_SET) == 0 && (buf = (unsigned char *)malloc((size_t)size)) != NULL &&
-		    fread(buf, 1, (size_t)size, fp) != (size_t)size)
-		{
-			free(buf);
-			buf = NULL;
-		}
-		fclose(fp);
-		why = size != (long)def->size ? "wrong size" : "could not read";
-	}
+	buf = malloc(def->size);
 	if (buf == NULL)
-		goto fail;
-	NativeSha256_Init(&sha);
-	NativeSha256_Update(&sha, buf, def->size);
-	NativeSha256_Final(&sha, digest);
-	NativeSha256_ToHex(digest, hex);
-	if (!NativeSha256_HexEquals(def->sha256, hex))
 	{
-		why = "SHA-256 does not match the pin";
+		why = "could not allocate model buffer";
 		goto fail;
 	}
-	if (!AP_LookValidateModel(buf, def->size, &info, &why))
-		goto fail;
-	if (info.triangles != def->triangles)
+	if (!AP_LooksReadFile(def, buf, &why) || !AP_LooksValidate(def, buf, def->size, &info, &why))
 	{
-		why = "unexpected triangle count";
-		goto fail;
+		if (def->itemIndex != AP_LOOK_KOMODO_MOE_ITEM_INDEX ||
+		    !AP_LooksValidate(def, ap_komodo_moe_embedded, sizeof ap_komodo_moe_embedded, &info, &why))
+			goto fail;
+		memcpy(buf, ap_komodo_moe_embedded, sizeof ap_komodo_moe_embedded);
+		source = "embedded fallback";
 	}
 	{
 		// Relocate exactly like LOAD_RunPtrMap: every listed slot becomes an
@@ -178,8 +209,8 @@ static int AP_LooksLoadFile(int look)
 		ap_look_files[look].header = (struct ModelHeader *)(void *)(data + info.headerOff);
 	}
 	ap_look_files[look].state = AP_LOOK_FILE_READY;
-	snprintf(msg, sizeof msg, "[AP LOOK] loaded %s (%u bytes, %d triangles, pin ok)\n", def->assetRel, def->size,
-	         info.triangles);
+	snprintf(msg, sizeof msg, "[AP LOOK] loaded %s from %s (%u bytes, %d triangles, pin ok)\n",
+	         def->assetRel, source, def->size, info.triangles);
 	AP_LogLine(msg);
 	return 1;
 

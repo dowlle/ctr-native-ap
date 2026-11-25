@@ -11,7 +11,6 @@ the effect marker, VehBirth, the menu and packaging.
 Run from the repository root.
 """
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 
@@ -118,7 +117,8 @@ int main(int argc, char **argv) {
   strcpy(joe.name, "joe"); joe.id = 77; joe.numHeaders = 1; joe.headers = &joeHeader;
   strcpy(crash.name, "crash"); crash.id = 3;
 
-  if (strcmp(argv[2], "good") == 0) {
+  struct Model *m;
+  if (strcmp(argv[2], "disk") == 0) {
     /* Nothing owned: Joe keeps his model, the row reads ORIGINAL and cannot move. */
     assert(AP_LooksModelFor("joe", &joe) == &joe);
     assert(strcmp(AP_LooksRowLabel(&g_config.lookJoe), "ORIGINAL") == 0);
@@ -134,7 +134,7 @@ int main(int argc, char **argv) {
     assert(g_config.lookJoe == 215 && saves == 1);
     AP_LooksReceiveNew(215);
     assert(saves == 1);
-    struct Model *m = AP_LooksModelFor("joe", &joe);
+    m = AP_LooksModelFor("joe", &joe);
     assert(m != &joe && m != NULL);
     assert(strcmp(m->name, "joe") == 0 && m->id == 77 && m->numHeaders == 1);
     struct ModelHeader *h = m->headers;
@@ -220,14 +220,15 @@ int main(int argc, char **argv) {
     assert(g_config.lookJoe == 0);
     puts("PASS: production loader, relocation, newest wins, replay and OPTIONS row");
   } else {
-    /* Missing or altered file: logged once, Joe keeps his model. */
+    /* Missing, altered or short file: use the embedded model. */
     AP_LooksReceiveNew(215);
     assert(g_config.lookJoe == 215);
-    assert(AP_LooksModelFor("joe", &joe) == &joe);
-    assert(strstr(last_log, "the original model") != NULL);
+    m = AP_LooksModelFor("joe", &joe);
+    assert(m != &joe && m != NULL && m->headers != joe.headers);
+    assert(strcmp(m->headers->name, "fake_hi") == 0);
+    assert(((short *)m->headers->ptrFrameData)[0] == -123);
     int before = logs;
-    assert(AP_LooksModelFor("joe", &joe) == &joe && logs == before);
-    printf("PASS: %s file falls back to the original model\n", argv[2]);
+    assert(AP_LooksModelFor("joe", &joe) == m && logs == before);
   }
   return 0;
 }
@@ -261,25 +262,37 @@ int main(int argc, char **argv) {
 
 with tempfile.TemporaryDirectory(prefix="ctr-character-looks-") as tmp:
     tmp = Path(tmp)
+    bundled = root / "assets" / "looks" / "komodo-moe" / "komodo_moe_hi.bin"
+    header = tmp / "ap_komodo_moe_embedded.h"
+    subprocess.run(["cmake", f"-DINPUT={bundled}", f"-DOUTPUT={header}", "-P",
+                    str(root / "cmake/EmbedKomodoMoe.cmake")], check=True)
+    initializer = header.read_text().split("{", 1)[1].split("}", 1)[0]
+    assert bytes(int(token, 16) for token in initializer.rstrip().rstrip(",").split(",")) == bundled.read_bytes()
     src, exe = tmp / "looks.c", tmp / "looks"
     src.write_text(fixture)
     subprocess.run(["cc", "-m32", "-std=c11", "-DCTR_AP", "-Wall", "-Wextra", "-Wno-unused-function",
-                    "-I", str(root / "ap"), "-I", str(root / "include"), str(src), "-o", str(exe)], check=True)
-    subprocess.run([str(exe), str(root / "assets"), "good"], check=True)
-    missing = tmp / "missing-assets"
-    missing.mkdir()
-    subprocess.run([str(exe), str(missing), "missing"], check=True)
-    altered = tmp / "altered-assets"
-    (altered / "looks" / "komodo-moe").mkdir(parents=True)
-    bundled = root / "assets" / "looks" / "komodo-moe" / "komodo_moe_hi.bin"
+                    "-I", str(tmp), "-I", str(root / "ap"), "-I", str(root / "include"),
+                    str(src), "-o", str(exe)], check=True)
+
+    def check_source(asset_dir, expected, case):
+        result = subprocess.run([str(exe), str(asset_dir), expected], check=True, text=True, capture_output=True)
+        loads = [line for line in result.stdout.splitlines() if line.startswith("[AP LOOK] loaded ")]
+        assert len(loads) == 1 and f"from {expected} (15724 bytes, 717 triangles, pin ok)" in loads[0], result.stdout
+        print(f"PASS: {case}: {loads[0]}")
+
+    check_source(root / "assets", "disk", "valid file")
+    asset_dir = tmp / "assets"
+    candidate = asset_dir / bundled.relative_to(root / "assets")
+    candidate.parent.mkdir(parents=True)
+    check_source(asset_dir, "embedded fallback", "missing file")
     data = bytearray(bundled.read_bytes())
     data[200] ^= 1
-    (altered / "looks" / "komodo-moe" / "komodo_moe_hi.bin").write_bytes(bytes(data))
-    subprocess.run([str(exe), str(altered), "altered"], check=True)
-    short = tmp / "short-assets"
-    (short / "looks" / "komodo-moe").mkdir(parents=True)
-    (short / "looks" / "komodo-moe" / "komodo_moe_hi.bin").write_bytes(bundled.read_bytes()[:-4])
-    subprocess.run([str(exe), str(short), "short"], check=True)
+    candidate.write_bytes(data)
+    check_source(asset_dir, "embedded fallback", "altered file")
+    candidate.write_bytes(bundled.read_bytes()[:-4])
+    check_source(asset_dir, "embedded fallback", "short file")
+    candidate.write_bytes(bundled.read_bytes() + b"\x00")
+    check_source(asset_dir, "embedded fallback", "oversized file")
 
     src = tmp / "parser.cpp"
     src.write_text(parser)

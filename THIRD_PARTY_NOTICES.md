@@ -302,6 +302,9 @@ patch writes, and is redistributed unchanged with his permission (2026-11-23:
 "everything I've made is open to the community"). In CTR AP it is the "Joe
 Mama" character look for Komodo Joe. It is not relicensed by this project.
 
+AP executables also embed these same bytes as a fallback. The model source is
+the file at the path above.
+
 License: author permission for redistribution inside CTR AP as a character
 look. No broader license is claimed.
 
