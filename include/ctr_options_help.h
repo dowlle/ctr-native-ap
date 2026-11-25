@@ -66,7 +66,7 @@ static const CtrOptionsHelp s_ctrOptionsHelp[] = {
 	{"slot", "Your name from the YAML.", "Case matters. Underlines mark A-Z"},
 	{"password", "Leave empty if the room has none.", ""},
 	{"connect", "Joins the room with these.", ""},
-	{"connect_missing_settings", "Enter a server and slot first.", ""},
+	{"connect_missing_settings", "Enter a saved server and slot.", ""},
 	{"play_solo", "Make and play a seed on your own.", ""},
 	{"connection_hub", "Return to the main menu", "to change the connection."},
 	{"deathlink_page", "SEED follows the room.", "A change here affects only you."},

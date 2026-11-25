@@ -1336,16 +1336,6 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, Config_FromHub() ? GRAY : ORANGE, ot);
 		const int isSlot = e->valuePtr == g_config.slot;
 		const char *source = (const char *)e->valuePtr;
-		char liveValue[160] = "";
-		if (!editing && !source[0] && ap_net_is_connected())
-		{
-			if (isSlot)
-				ap_net_slot_name(liveValue, sizeof liveValue);
-			else if (e->valuePtr == g_config.uri)
-				ap_net_room_endpoint(liveValue, sizeof liveValue);
-			if (liveValue[0])
-				source = liveValue;
-		}
 		Conn_FormatValue(source, masked, editing, buf, sizeof buf);
 		const int width = CONN_ROW_X + CONN_ROW_W - valueX - 8;
 		const int selected = j == menu->rowSelected;
@@ -1416,6 +1406,34 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 				versionDivider, ot);
 		else
 			DecalFont_DrawLineOT((char *)status, valueX, y, FONT_SMALL, WHITE, ot);
+	}
+
+	// A room launched from a link or ap-config.txt can be connected without
+	// saved settings. Keep the editable fields honest and show the live room
+	// separately. The two lines are above the edit hints and version notice.
+	if (!s_connEditing && (!g_config.uri[0] || !g_config.slot[0]) &&
+	    ap_net_is_connected() && (int)strlen(status) <= CONN_STATUS_INLINE_MAX)
+	{
+		const int liveValueX = 0xD8;
+		const int liveWidth = CONN_ROW_X + CONN_ROW_W - liveValueX - 8;
+		int y = startY + (numStrings + 3) * rowSpacing;
+		if (ap_net_room_endpoint(buf, sizeof buf))
+		{
+			DecalFont_DrawLineOT("Live Server", labelX, y, FONT_SMALL, ORANGE, ot);
+			DecalFont_DrawLineBox(buf, liveValueX, y, liveWidth, FONT_SMALL, WHITE,
+			                     TEXT_ELLIPSIS, TEXT_SLOT_CONNECTION, ot);
+		}
+		y += rowSpacing;
+		if (ap_net_slot_name(buf, sizeof buf))
+		{
+			DecalFont_DrawLineOT("Live Slot", labelX, y, FONT_SMALL, ORANGE, ot);
+			DecalFont_DrawLineBox(buf, liveValueX, y, liveWidth, FONT_SMALL, WHITE,
+			                     TEXT_ELLIPSIS, TEXT_SLOT_CONNECTION, ot);
+			const int visible = DecalFont_GetLineWidth(buf, FONT_SMALL) <= liveWidth ? liveWidth
+			                    : DecalFont_GetLineWidthStrlen(buf,
+			                        DecalFont_LineBoxPrefixLen(buf, liveWidth, FONT_SMALL), FONT_SMALL);
+			Conn_DrawSlotCaseMarks(buf, liveValueX, y, 0, visible, ot);
+		}
 	}
 
 	// Pair-version update notice (issue #150) -- the persistent surface, below the
