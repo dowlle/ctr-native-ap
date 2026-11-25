@@ -473,7 +473,10 @@ static void MM_Solo_PageHome(uint32_t *ot, struct GamepadBuffer *pad)
 		MM_Solo_FitLeft("Inbox: ", AP_Solo_InboxPath(), fit, sizeof fit, SOLO_TEXT_W);
 		DecalFont_DrawLineOT(fit, 0x100, SOLO_HELP_Y + SOLO_ROW_H, FONT_SMALL, JUSTIFY_CENTER | GRAY, ot);
 	}
-	MM_Solo_Footer(NativeMenu_Labels(s_soloSel < 2 ? "*: OPEN   ^: BACK" : "*: PLAY   [: DETAILS   ^: BACK"), ot);
+	const char *footer = s_soloSel < stopRow ? "*: STOP   ^: BACK"
+	                   : s_soloSel - stopRow < rooms ? "*: PLAY   [: DETAILS   ^: BACK"
+	                                                : "*: OPEN   ^: BACK";
+	MM_Solo_Footer(NativeMenu_Labels(footer), ot);
 }
 
 static void MM_Solo_EditPassword(int y)
