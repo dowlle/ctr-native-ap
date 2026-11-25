@@ -60,6 +60,7 @@ struct APSoloStartInfo
 	char error[AP_SOLO_TEXT];   /* non-empty: refused, shown greyed */
 	int isPreset;
 	char presetId[32];
+	char summary[AP_SOLO_TEXT]; /* presets.json, through the list response */
 	char name[AP_SOLO_TEXT];    /* imported YAML's own player name */
 };
 

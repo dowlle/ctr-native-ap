@@ -622,7 +622,7 @@ const char *NativeLinkReg_StatusText(NativeLinkRegStatus status)
 	case NATIVE_LINK_REG_THIS_CLIENT:
 		return "this client";
 	case NATIVE_LINK_REG_OTHER_CLIENT:
-		return "another CTR-AP client";
+		return "other CTR-AP";
 	case NATIVE_LINK_REG_OTHER_PROGRAM:
 		return "another program";
 	case NATIVE_LINK_REG_UNKNOWN:

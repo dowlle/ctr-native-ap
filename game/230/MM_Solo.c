@@ -473,7 +473,10 @@ static void MM_Solo_PageHome(uint32_t *ot, struct GamepadBuffer *pad)
 		MM_Solo_FitLeft("Inbox: ", AP_Solo_InboxPath(), fit, sizeof fit, SOLO_TEXT_W);
 		DecalFont_DrawLineOT(fit, 0x100, SOLO_HELP_Y + SOLO_ROW_H, FONT_SMALL, JUSTIFY_CENTER | GRAY, ot);
 	}
-	MM_Solo_Footer(NativeMenu_Labels("*: PLAY   [: DETAILS   ^: BACK"), ot);
+	const char *footer = s_soloSel < stopRow ? "*: STOP   ^: BACK"
+	                   : s_soloSel - stopRow < rooms ? "*: PLAY   [: DETAILS   ^: BACK"
+	                                                : "*: OPEN   ^: BACK";
+	MM_Solo_Footer(NativeMenu_Labels(footer), ot);
 }
 
 static void MM_Solo_EditPassword(int y)
@@ -585,6 +588,9 @@ static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
 			MM_Solo_Highlight(y, ot);
 	}
 	MM_Solo_ScrollBarAt(SOLO_LIST_Y, SOLO_ROWS, count, SOLO_ROWS, s_soloTop, ot);
+	struct APSoloStartInfo focused;
+	if (AP_Solo_StartGet(s_soloSel, &focused) && focused.summary[0])
+		MM_Solo_Help(focused.summary, WHITE, ot);
 	MM_Solo_Footer(NativeMenu_Labels("*: CHOOSE   ^: BACK"), ot);
 }
 
@@ -1085,7 +1091,7 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 				DecalFont_DrawLineOT(line, SOLO_TRACK_PICK_X, y, FONT_SMALL, RED, ot);
 			}
 			else if (!info.modes[0])
-				DecalFont_DrawLineOT(info.timeTrial ? "Time Trial only" : "No pad races", 0x158, y, FONT_SMALL, GRAY, ot);
+				DecalFont_DrawLineOT(info.timeTrial ? "TT ONLY" : "No pad races", 0x158, y, FONT_SMALL, GRAY, ot);
 			else
 				DecalFont_DrawLineOT((char *)picks[info.pick >= 0 && info.pick <= 2 ? info.pick : 0],
 				                     SOLO_TRACK_PICK_X, y, FONT_SMALL, info.pick ? WHITE : GRAY, ot);
@@ -1254,11 +1260,11 @@ static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 		snprintf(line, sizeof line, "%s",
 		         s_soloFromOptions ? "Options: as set on the previous page" : "Options: as in the YAML");
 	MM_Solo_DrawWrapped(line, SOLO_ROW_X, 0x50, SOLO_ROW_W, 2, WHITE, ot);
-	DecalFont_DrawLineOT("Slot name", SOLO_ROW_X, SOLO_REVIEW_NAME_Y, FONT_SMALL, ORANGE, ot);
+	DecalFont_DrawLineOT("Slot name:", SOLO_ROW_X, SOLO_REVIEW_NAME_Y, FONT_SMALL, ORANGE, ot);
 	MM_Solo_Fit(s_soloName, line, sizeof line,
-	            SOLO_ROW_R - 0xB0 - (s_soloEditing == 1 ? DecalFont_GetLineWidth("_", FONT_SMALL) : 0));
+	            SOLO_ROW_R - 0xC0 - (s_soloEditing == 1 ? DecalFont_GetLineWidth("_", FONT_SMALL) : 0));
 	snprintf(fit, sizeof fit, "%s%s", line, s_soloEditing == 1 ? "_" : "");
-	DecalFont_DrawLineOT(fit, 0xB0, SOLO_REVIEW_NAME_Y, FONT_SMALL, WHITE, ot);
+	DecalFont_DrawLineOT(fit, 0xC0, SOLO_REVIEW_NAME_Y, FONT_SMALL, WHITE, ot);
 	snprintf(line, sizeof line, "Password: %s", s_soloEditing == 2 ? s_soloPassword :
 	         AP_Solo_Password()[0] ? AP_Solo_Password() : "None");
 	MM_Solo_Fit(line, fit, sizeof fit, SOLO_ROW_W);

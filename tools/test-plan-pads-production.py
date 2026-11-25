@@ -97,7 +97,8 @@ assert "pad->relic_locations[k]" in winset and "ap_content_mode_paired_trophy(pa
 assert "AP_ContentWinFacts" not in race and "AP_WinContentCapMet" not in winlogic
 row = body((root / "ap/ap_deathlink.c").read_text(encoding="utf-8"), "int AP_DeathLinkRowValue(int row)")
 assert "ap_content_plan_active()" in row and "AP_DeathLinkRowShown(row, ctr_cfg.death_link, AP_DeathLinkStateNow().recv)" in row
-assert "s_dlinkNames[Dlink_Index(AP_DeathLinkRowValue(*(int *)e->valuePtr))]" in menu
+assert 'AP_DeathLinkRowValue(-1) != -1' in menu
+assert 'snprintf(buf, bufSize, "SEED: %s", Config_SeedValue(e))' in menu
 
 # Item 1, the tracker reads the pad on a plan and nothing changes without one.
 nodes = body(tracker, "static void AP_TrackerBuildNodes(void)")

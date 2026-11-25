@@ -63,6 +63,7 @@ static void test_override(void)
 	expect(AP_BoxColour_Pick(AP_BoxColour_Enabled(1, 1), 0, AP_ITEM_FLAG_TRAP), AP_BOX_COLOUR_PINK,
 	       "both on, not scouted yet: pink");
 	// the Options row
+	expect(AP_BoxColour_RowStateWithItem(1, 0, 0, 0), AP_BOX_COLOUR_ROW_NO_BOXES, "no boxes is distinct from disabling colours");
 	expect(AP_BoxColour_RowState(1, 0), AP_BOX_COLOUR_ROW_SEED_OFF, "loaded seed with colours off locks the row");
 	expect(AP_BoxColour_RowState(1, 1), AP_BOX_COLOUR_ROW_PLAYER, "loaded seed with colours on: player's row");
 	expect(AP_BoxColour_RowState(0, 0), AP_BOX_COLOUR_ROW_PLAYER, "no seed loaded: player's row");

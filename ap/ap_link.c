@@ -508,8 +508,8 @@ const char *AP_LinkRegActionHint(void)
 {
 	if (ap_link_reg_message != NULL)
 		return ap_link_reg_message;
-	return (ap_link_reg_status == NATIVE_LINK_REG_THIS_CLIENT) ? NativeMenu_Labels("*: STOP USING THIS CLIENT FOR LINKS")
-	                                                           : NativeMenu_Labels("*: USE THIS CLIENT FOR ROOM LINKS");
+	return (ap_link_reg_status == NATIVE_LINK_REG_THIS_CLIENT) ? NativeMenu_Labels("*: STOP OPENING ROOM LINKS")
+	                                                           : NativeMenu_Labels("*: OPEN LINKS WITH THIS CLIENT");
 }
 
 int AP_LinkRegNotice(const char **first, const char **second)

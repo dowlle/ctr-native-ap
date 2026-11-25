@@ -438,6 +438,7 @@ void MainFreeze_ConfigSetupEntry(void);
 void MainFreeze_SafeAdvDestroy(void);
 void MainFreeze_MenuPtrOptions(struct RectMenu *menu);
 void MM_ConfigOpen(struct RectMenu *parent);
+int MM_ConfigIsChild(const struct RectMenu *child);
 int MM_ConfigReturnFromChild(struct RectMenu *child);
 int MM_ConfigOwnsPauseInput(void);
 void MainFreeze_MenuPtrQuit(struct RectMenu *menu);

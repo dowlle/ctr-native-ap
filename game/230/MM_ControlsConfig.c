@@ -95,6 +95,7 @@ static bool s_shortcutScreen;
 
 // Footer line under the rows, used for the replace warning during a rebind.
 #define CONTROLS_FOOTER_Y 0xC6
+#define CONTROLS_BINDING_ROW_SPACING 13
 
 static char s_conflictBuffer[NATIVE_CONTROLS_NAME_LENGTH];
 
@@ -618,6 +619,11 @@ static void Controls_DrawSafeText(const char *text, int x, int y, int flags, uin
 	DecalFont_DrawLineOT(s_safeBuffer, x, y, FONT_SMALL, flags, ot);
 }
 
+static const char *Controls_NoDeviceLabel(int player)
+{
+	return NativeControls_GetPlayerPref(player) == NATIVE_CONTROLS_PREF_DISABLED ? "Disabled" : "No Pad";
+}
+
 static void Controls_DrawValue(int device, const struct ControlsRow *row, int y, uint32_t *ot)
 {
 	if (row->kind == CONTROLS_ROW_RESTORE)
@@ -647,7 +653,7 @@ static void Controls_DrawValue(int device, const struct ControlsRow *row, int y,
 
 	if (device == NATIVE_CONTROLS_NO_DEVICE)
 	{
-		text = (row->kind == CONTROLS_ROW_DEVICE) ? "Disabled" : "-";
+		text = (row->kind == CONTROLS_ROW_DEVICE) ? Controls_NoDeviceLabel(s_player) : "-";
 		colour = GRAY;
 	}
 	else if (row->kind == CONTROLS_ROW_DEVICE)
@@ -679,7 +685,7 @@ static void Controls_DrawRows(struct RectMenu *menu, uint32_t *ot, int device)
 	for (int i = s_scroll; i < visibleEnd; i++)
 	{
 		const struct ControlsRow *row = &s_rows[i];
-		const int y = CONFIG_ROW_START_Y + (i - s_scroll) * CONFIG_ROW_SPACING;
+		const int y = CONFIG_ROW_START_Y + (i - s_scroll) * CONTROLS_BINDING_ROW_SPACING;
 
 		const char *label = "";
 		switch (row->kind)
@@ -757,7 +763,7 @@ static void Controls_DrawRows(struct RectMenu *menu, uint32_t *ot, int device)
 		int shown = s_rowCount - s_scroll;
 		if (shown > CONFIG_MAX_VISIBLE_ROWS)
 			shown = CONFIG_MAX_VISIBLE_ROWS;
-		CTR_MenuDrawScrollBar(0x1E4, CONFIG_ROW_START_Y - 2, CONFIG_MAX_VISIBLE_ROWS * CONFIG_ROW_SPACING,
+		CTR_MenuDrawScrollBar(0x1E4, CONFIG_ROW_START_Y - 2, CONFIG_MAX_VISIBLE_ROWS * CONTROLS_BINDING_ROW_SPACING,
 		                      s_rowCount, shown, s_scroll, ot);
 	}
 }
@@ -913,14 +919,16 @@ static void Controls_DrawTitle(uint32_t *ot)
 	DecalFont_DrawLineOT(s_titleBuffer, 0x100, CONFIG_TITLE_Y, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
 }
 
-static void MM_MenuProc_Controls(struct RectMenu *menu, uint32_t *ot)
+static void MM_MenuProc_Controls(struct RectMenu *menu, uint32_t *ot, int entering)
 {
 	Controls_BuildRows();
 	Controls_ClampSelection(menu);
 
 	// Read before the input handling, which can move the selection to another player.
 	const int device = NativeControls_GetPlayerDevice(s_player);
-	Controls_HandleInput(menu, MM_Controls_MenuTapped(), MM_Controls_MenuHeld(), device);
+	// The confirm that opened this page must not also start a rebind.
+	if (!entering)
+		Controls_HandleInput(menu, MM_Controls_MenuTapped(), MM_Controls_MenuHeld(), device);
 	Controls_PollCapture();
 
 	// This OT draws back to front: a primitive added later sits behind the ones already in
@@ -941,6 +949,26 @@ static void MM_MenuProc_Controls(struct RectMenu *menu, uint32_t *ot)
 		Controls_DrawHint("R1", CONFIG_VALUE_X, true, ot);
 	}
 	Controls_DrawRows(menu, ot, NativeControls_GetPlayerDevice(s_player));
+	if (!NativeControls_IsCapturing() && !s_pickerOpen && s_rowCount > 0)
+	{
+		const struct ControlsRow *row = &s_rows[menu->rowSelected];
+		const char *key = "control_binding";
+		switch (row->kind)
+		{
+			case CONTROLS_ROW_DEVICE: key = "control_device"; break;
+			case CONTROLS_ROW_DEADZONE: key = "control_deadzone"; break;
+			case CONTROLS_ROW_RESTORE: key = s_shortcutScreen ? "shortcut_defaults" : "control_restore"; break;
+			case CONTROLS_ROW_SHORTCUT:
+				if (row->binding == NATIVE_SHORTCUT_CHARACTER_PICKER)
+					key = "shortcut_picker";
+				break;
+			default: break;
+		}
+		const CtrOptionsHelp *help = CTR_OptionsHelpFor(key);
+		DecalFont_DrawLineOT((char *)help->first, 0x100, CONTROLS_FOOTER_Y - 10, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+		if (help->second[0])
+			DecalFont_DrawLineOT((char *)help->second, 0x100, CONTROLS_FOOTER_Y, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	}
 }
 
 // ---- Player list (the Controls page itself) --------------------------------
@@ -959,7 +987,7 @@ static void Controls_DrawPlayerRow(int player, int y, uint32_t *ot)
 
 	if (device == NATIVE_CONTROLS_NO_DEVICE)
 	{
-		DecalFont_DrawLineOT((char *)"Disabled", CONFIG_VALUE_X, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+		DecalFont_DrawLineOT((char *)Controls_NoDeviceLabel(player), CONFIG_VALUE_X, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
 		return;
 	}
 
@@ -1007,7 +1035,7 @@ static void MM_ConfigProc_Controls(struct RectMenu *menu, uint32_t *ot)
 {
 	if (s_screenOpen)
 	{
-		MM_MenuProc_Controls(menu, ot);
+		MM_MenuProc_Controls(menu, ot, 0);
 		return;
 	}
 
@@ -1033,7 +1061,7 @@ static void MM_ConfigProc_Controls(struct RectMenu *menu, uint32_t *ot)
 	{
 		OtherFX_Play(1, 1);
 		Controls_OpenScreen(menu, menu->rowSelected);
-		MM_MenuProc_Controls(menu, ot);
+		MM_MenuProc_Controls(menu, ot, 1);
 		return;
 	}
 
@@ -1056,7 +1084,7 @@ static void MM_ConfigProc_Controls(struct RectMenu *menu, uint32_t *ot)
 		const int y = CONFIG_ROW_START_Y + PLATFORM_INPUT_PAD_COUNT * CONFIG_ROW_SPACING;
 
 		DecalFont_DrawLineOT((char *)"AP Shortcuts", CONFIG_LABEL_X, y, FONT_SMALL, ORANGE, ot);
-		DecalFont_DrawLineOT((char *)"Keyboard", CONFIG_VALUE_X, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
+		DecalFont_DrawLineOT((char *)"Keys", CONFIG_VALUE_X, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 
 		if (menu->rowSelected == PLATFORM_INPUT_PAD_COUNT)
 		{
@@ -1065,7 +1093,5 @@ static void MM_ConfigProc_Controls(struct RectMenu *menu, uint32_t *ot)
 	}
 #endif
 
-	// Each line fits the panel (33 characters at FONT_SMALL).
-	DecalFont_DrawLineOT((char *)"Pick a player to choose a device,", 0x100, 0xB8, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-	DecalFont_DrawLineOT((char *)"rebind buttons or set a deadzone.", 0x100, 0xC6, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	Config_DrawHelp(menu->rowSelected < PLATFORM_INPUT_PAD_COUNT ? "control_player" : "control_shortcuts", ot);
 }

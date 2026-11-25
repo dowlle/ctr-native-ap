@@ -600,6 +600,8 @@ void ParseList(const nlohmann::json &r)
 			if (!CopyText(s.path, sizeof s.path, AP_SoloJsonString(e, "path")))
 				CopyText(s.error, sizeof s.error, "The path of this file is too long.");
 			CopyText(s.presetId, sizeof s.presetId, AP_SoloJsonString(e, "id"));
+			if (preset)
+				CopyText(s.summary, sizeof s.summary, AP_SoloJsonString(e, "summary"));
 			CopyText(s.name, sizeof s.name, AP_SoloJsonString(e, "name"));
 			g_lists.starts.push_back(s);
 		}
@@ -2287,14 +2289,29 @@ extern "C" int AP_Solo_OptionGet(int index, struct APSoloOptionInfo *out)
 	const APSoloOption &o = g_options[index];
 	std::memset(out, 0, sizeof *out);
 	CopyText(out->name, sizeof out->name, o.name);
-	CopyText(out->label, sizeof out->label, o.label);
+	const char *label = o.label.c_str();
+	if (o.name == "race_type_selector")
+		label = "Race Type Menu";
+	else if (o.name == "ap_item_type_colors")
+		label = "Marker Colours";
+	CopyText(out->label, sizeof out->label, label);
 	CopyText(out->group, sizeof out->group, o.group);
 	/* A toggle is stored as the YAML "true" / "false" but shown as On / Off,
 	   the words the option descriptions and the checklist rows use (A4-31). */
+	const char *choice = o.value.c_str();
+	if (o.kind == "choice")
+	{
+		if (o.name == "warp_pad_item_display" && o.value == "one_pile")
+			choice = "One Pile";
+		else if (o.name == "warp_pad_item_display" && o.value == "by_reward_type")
+			choice = "By Reward Type";
+		else if (o.name == "race_type_selector" && o.value == "productive")
+			choice = "Only If Useful";
+	}
 	CopyText(out->value, sizeof out->value, o.kind == "set"      ? AP_SoloSetSummary(o)
 	                                        : o.kind == "weights" ? AP_SoloWeightsSummary(o)
 	                                        : o.kind == "toggle"  ? (o.value == "true" ? "On" : "Off")
-	                                                              : o.value);
+	                                                              : choice);
 	out->kind = o.kind == "toggle"   ? AP_SOLO_OPT_TOGGLE
 	            : o.kind == "choice" ? AP_SOLO_OPT_CHOICE
 	            : o.kind == "set"    ? AP_SOLO_OPT_SET

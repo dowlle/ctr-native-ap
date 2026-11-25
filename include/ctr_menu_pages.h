@@ -16,9 +16,23 @@
 // (game/230/MM_ControlsConfig.c) edits controls.ini, so it is a bespoke page
 // that is always shown even though no key lists it.
 
-// Rows that fit between the title rule and the bottom of the panel at the
-// menu's 0x0E spacing from 0x3C. A twelfth row is drawn past the panel edge.
-#define CTR_MENU_PAGE_VISIBLE_ROWS 11
+// Standard spacing keeps air above the help footer. Dense pages start a
+// little higher and use tighter spacing so all twelve rows fit.
+#define CTR_MENU_PAGE_STANDARD_ROWS 9
+#define CTR_MENU_PAGE_VISIBLE_ROWS 12
+#define CTR_MENU_OPTION_LABEL_X 0x2C
+#define CTR_MENU_OPTION_VALUE_X 0x1E8
+
+static inline int CTR_MenuOptionRowSpacing(int count)
+{
+	return count <= CTR_MENU_PAGE_STANDARD_ROWS ? 14 : 11;
+}
+
+static inline int CTR_MenuOptionRowY(int count, int row)
+{
+	return (count <= CTR_MENU_PAGE_STANDARD_ROWS ? 60 : 52) +
+	       row * CTR_MenuOptionRowSpacing(count);
+}
 // Storage bound per page, above the visible limit so an overfull page still
 // builds (the harness is what rejects it).
 #define CTR_MENU_PAGE_ROW_CAP 24
@@ -37,7 +51,7 @@ typedef struct
 static const char *const s_ctrMenuPageVideo[] = {
 	"fullscreen", "aspect_ratio", "render_scale", "vsync", "smooth_scaling",
 	"texture_filtering", "dithering", "increase_draw_distance",
-	"disable_split_screen_lod", "tracker_partial_colour", NULL,
+	"disable_split_screen_lod", NULL,
 };
 static const char *const s_ctrMenuPageGameplay[] = {
 	"skip_intro", "skip_hints", "race_type_selector", "skip_podium", "skip_cutscenes",
@@ -50,8 +64,11 @@ static const char *const s_ctrMenuPageConnection[] = {
 	"uri", "slot", "password", NULL,
 };
 static const char *const s_ctrMenuPageArchipelago[] = {
-	"map_flash", "item_feed", "item_box_colours", "item_box_numbers", "sanity_numbers", "death_link", "dl_send_fall", "dl_send_hit", "dl_send_loss", "trap_duration",
-	"discord_status", NULL,
+	"map_flash", "item_feed", "item_box_colours", "item_box_numbers", "sanity_numbers",
+	"tracker_partial_colour", "discord_status", NULL,
+};
+static const char *const s_ctrMenuPageDeathLink[] = {
+	"death_link", "dl_send_fall", "dl_send_hit", "dl_send_loss", "trap_duration", NULL,
 };
 static const char *const s_ctrMenuPageAuthoring[] = {
 	"box_author", "nav_record", "nav_use_recorded", "nav_repeat_laps", "nav_only_mine", "nav_driver_name", NULL,
@@ -66,6 +83,7 @@ static const CtrMenuPage s_ctrMenuPages[] = {
 	{CTR_MENU_PAGE_CONTROLS, s_ctrMenuPageControls, 1},
 	{"Connection", s_ctrMenuPageConnection, 0},
 	{"Archipelago", s_ctrMenuPageArchipelago, 0},
+	{"DeathLink and Traps", s_ctrMenuPageDeathLink, 0},
 	{"Authoring", s_ctrMenuPageAuthoring, 0},
 };
 #define CTR_MENU_PAGE_COUNT ((int)(sizeof(s_ctrMenuPages) / sizeof(s_ctrMenuPages[0])))
