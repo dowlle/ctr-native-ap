@@ -18,7 +18,7 @@ assert "if (!MM_ConfigReturnFromChild(menu))" in hints
 assert "if (!Config_FromHub() && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE))" in source
 assert "if (!Config_HubSectionLocked(menu->rowSelected) && (pad->buttonsTapped" in source
 assert "if (!Config_FromHub())\n\t\t\t\t\tAP_LinkRegAction();" in source
-assert "!Config_RowLockedBySeed(e) && !Config_RowLockedByHub(e)" in source
+assert "!Config_BoxColourUnavailable(e) && !Config_RowLockedByHub(e)" in source
 
 start = source.index("static struct RectMenu *s_configParent;")
 end = source.index("static void Config_UpdateSlider", start)
@@ -54,8 +54,11 @@ int main(void) {
     g_configMenu.rowSelected = 2;
     Config_OpenChild(&data.menuRacingWheelConfig);
     assert(sdata->ptrDesiredMenu == &data.menuRacingWheelConfig);
+    assert(MM_ConfigIsChild(&data.menuRacingWheelConfig));
+    assert(!MM_ConfigIsChild(&hintMenu));
     assert(!MM_ConfigReturnFromChild(&hintMenu));
     assert(MM_ConfigReturnFromChild(&data.menuRacingWheelConfig));
+    assert(!MM_ConfigIsChild(&data.menuRacingWheelConfig));
     assert(sdata->ptrDesiredMenu == &g_configMenu && g_configMenu.rowSelected == 2);
     assert(!MM_ConfigReturnFromChild(&data.menuRacingWheelConfig));
 

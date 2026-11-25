@@ -112,8 +112,11 @@ void AH_Pause_Destroy(void) {}
 void AH_Pause_Update(void) {}
 int ctr_cfg_active(void) { return live; }
 void MM_ConfigOpen(struct RectMenu *parent) { (void)parent; }
+int MM_ConfigIsChild(const struct RectMenu *child) {
+	return shared_sound && child == &data.menuRacingWheelConfig;
+}
 int MM_ConfigReturnFromChild(struct RectMenu *child) {
-	if (!shared_sound || child != &data.menuRacingWheelConfig) return 0;
+	if (!MM_ConfigIsChild(child)) return 0;
 	sdata->ptrDesiredMenu = &config_menu;
 	return 1;
 }
