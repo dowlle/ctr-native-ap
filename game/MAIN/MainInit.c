@@ -766,6 +766,12 @@ void MainInit_Drivers(struct GameTracker *gGT)
 
 		// then replace with intended P1 model
 		*humanPlyrDriverModel = data.driverModelExtras[0].model;
+#ifdef CTR_AP
+		// Character looks (JL2): the intended P1 model goes through the same
+		// look choice VehBirth_GetModelByName makes, keeping its timing source.
+		*humanPlyrDriverModel = AP_LooksModelFor(data.MetaDataCharacters[data.characterIDs[0]].name_Debug,
+		                                         *humanPlyrDriverModel);
+#endif
 #endif
 	}
 }

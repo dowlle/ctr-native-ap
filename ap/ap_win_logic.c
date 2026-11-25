@@ -30,6 +30,7 @@
 #endif
 
 static AP_ItemIdTally g_wl_tally;
+static AP_ItemIdTally g_location_tally;
 static AP_WinStakesLatch g_wl_latch;
 
 void AP_WinLogicTallyReset(void)
@@ -37,6 +38,7 @@ void AP_WinLogicTallyReset(void)
 	unsigned long long id = 0;
 	int known;
 	AP_ItemIdTallyReset(&g_wl_tally);
+	AP_ItemIdTallyReset(&g_location_tally);
 	// Review minor 1: a decision made under another seed or slot never applies
 	// to a loss after this connect. A same-seed, same-slot reconnect keeps it.
 	// The hash covers the full names; the 96-byte copies elsewhere truncate.
@@ -49,6 +51,7 @@ void AP_WinLogicTallyReset(void)
 void AP_WinLogicTallyItem(long long itemId, long long location, unsigned flags)
 {
 	AP_ItemIdTallyReceive(&g_wl_tally, itemId, location, flags);
+	AP_ItemIdTallyAdd(&g_location_tally, itemId);
 }
 
 // ── Leaf inputs ──
@@ -56,6 +59,12 @@ static int AP_WinEnvItemCount(void *user, long id)
 {
 	(void)user;
 	return AP_ItemIdTallyCount(&g_wl_tally, (long long)id);
+}
+
+static int AP_LocationItemCount(void *user, long id)
+{
+	(void)user;
+	return AP_ItemIdTallyCount(&g_location_tally, id);
 }
 
 static int AP_WinEnvBosses(void *user)
@@ -72,7 +81,7 @@ static int AP_WinEnvCollected(void *user, long code)
 
 static AP_WinLogicEnv AP_WinEnvNow(void)
 {
-	AP_WinLogicEnv env;
+	AP_WinLogicEnv env = {0};
 	env.user = 0;
 	env.item_count = AP_WinEnvItemCount;
 	env.bosses_won = AP_WinEnvBosses;
@@ -93,6 +102,9 @@ int AP_LocationInLogic(long long code)
 int AP_LocationLogicState(long long code)
 {
 	AP_WinLogicEnv env = AP_WinEnvNow();
+	env.item_count = AP_LocationItemCount;
+	env.item_count_includes_start = 1;
+	env.unreliable = g_location_tally.overflow;
 	return AP_PadLogicStateOf(&ctr_win_logic, &env, (long)code);
 }
 

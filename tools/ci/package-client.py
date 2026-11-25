@@ -208,6 +208,13 @@ def main():
                     raise ValueError(f'Bundled Cortex Vortex {file} hash mismatch')
             if digest(cortex / 'CVortex Arcade All.sca') != 'ddde81cf1be8042400c717edeeded0d8727e3bb8ba24f0100201708372ef8b1c':
                 raise ValueError('Bundled Cortex Vortex music hash mismatch')
+            # Character looks (JL2): Lockheart's Komodo Moe model, pinned like
+            # Cortex Vortex (ap/ap_look_logic.h AP_LOOK_KOMODO_MOE_SHA256).
+            looks = root / 'assets' / 'looks' / 'komodo-moe'
+            looks.mkdir(parents=True)
+            shutil.copy2(Path('assets/looks/komodo-moe/komodo_moe_hi.bin'), looks / 'komodo_moe_hi.bin')
+            if digest(looks / 'komodo_moe_hi.bin') != '45634686aaa0ede40a2fe7025911ba7cf89199212057d689bc2289795fb20724':
+                raise ValueError('Bundled Komodo Moe look hash mismatch')
         for file in (('support-bundle.bat', 'support-bundle.ps1') if platform == 'windows' else ('support-bundle.sh',)):
             shutil.copy2(file, root / file)
         (root / 'versions.txt').write_text(output('bash', 'tools/release-versions.sh'))

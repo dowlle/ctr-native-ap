@@ -139,6 +139,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// a one-shot effect, so the effect marker above does not apply to it.
 		AP_TurboGrantReset();
 		AP_ReserveTopUpReset();
+		AP_LooksConnectReset(); // JL2: owned looks come back with the replay
 		AP_SpoilerItemsReset(); // #459: both reveal receipts come back with the replay
 		AP_WumpaConnectReset();
 		AP_UsefulConnectReset();
@@ -280,10 +281,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 		AP_FeedOnItemReceived(items[i], ap_net_recv_batch_player(i),
 		                      ap_net_recv_batch_index(i), ap_net_recv_batch_flags(i));
 
-		// #449: received count by raw AP item id (progression-flagged copies
-		// only, start inventory at location -2 skipped: the win_logic block's
-		// `start` table counts it) for the race-loss stakes evaluator
-		// (ap_win_logic.h). Read nowhere else; the gate counters below are unchanged.
+		// Logic uses raw AP item IDs from this same replay. Location displays
+		// count all receipts, as the gate counters below do. Race stakes and
+		// approach hints use the progression-only win_logic tally.
 		AP_WinLogicTallyItem(items[i], ap_net_recv_batch_location(i),
 		                     ap_net_recv_batch_flags(i));
 
@@ -471,6 +471,15 @@ static void AP_NetTick(struct GameTracker *gGT)
 		{
 			AP_ReserveTopUpReceive();
 		}
+		// Character looks (JL2, "Joe Mama" idx 215). Two parts: the owned bit is
+		// rebuilt by every replay (the OPTIONS row and the model read it), and
+		// the newest-wins choice goes through the effect marker, so only a copy
+		// new to this room changes the saved look; a reconnect never does.
+		else if (AP_LookForItem(idx) >= 0)
+		{
+			AP_LooksReceiveOwned(idx);
+			AP_FxOffer(items[i], ap_net_recv_batch_index(i));
+		}
 		// Spoiler Items (#459, idx 204 and 205). Booleans rebuilt by the replay,
 		// so like Turbo Grant they are not filtered through the effect marker.
 		else if (idx == AP_WARP_PAD_PREVIEW_ITEM_INDEX || idx == AP_BOX_COLOURS_ITEM_INDEX)
@@ -633,6 +642,7 @@ void AP_Net_Reconnect(const char *uri, const char *slot, const char *password)
 	AP_AppendLog(msg);
 
 	AP_Solo_BeforeReconnect(); // #89: any other connection ends a solo session
+	AP_LooksConnectReset(); // JL2: no look of the old room while the new one dials
 	ap_net_shutdown();
 	if (ap_net_init("ctr-native", "Crash Team Racing", uri) == 0)
 		ap_net_connect_slot(slot, password);
@@ -645,6 +655,7 @@ void AP_Net_Reconnect(const char *uri, const char *slot, const char *password)
 // after it.
 void AP_Net_Shutdown(void)
 {
+	AP_LooksConnectReset(); // JL2: leaving a room (quit, Play Solo stop) drops its looks
 	ap_net_shutdown();
 }
 

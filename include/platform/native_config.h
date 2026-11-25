@@ -141,6 +141,12 @@ typedef struct
 	                            // preference, not slot_data. Consumed by
 	                            // Music_AsyncParseBanks (game/HOWL/HOWL_Music.c)
 	                            // through ap/ap_boss_music_logic.h.
+	int  lookJoe;               // Archipelago: Joe Look (character looks, JL2).
+	                            // 0 = ORIGINAL (default), else the native item
+	                            // index of the chosen look (215 = Komodo Moe).
+	                            // Drives only while this seed has delivered that
+	                            // look (ap/ap_look_logic.h). A newly arrived look
+	                            // item sets it. Local, not slot_data.
 	// Archipelago room, edited in the in-game connection manager (see
 	// game/230/MM_ConfigMenu.c) and persisted to config.ini [Connection]. uri is
 	// "ws://host:port". Slot names are at most 16 chars in AP but the buffers are

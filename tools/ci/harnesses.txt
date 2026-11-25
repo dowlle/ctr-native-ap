@@ -46,6 +46,8 @@ tools/test-text-box.c
 tools/test-text-box-production.py
 tools/test-ceremony-banner.c
 tools/test-clocked-out-production.py
+tools/test-character-looks.c
+tools/test-character-looks-production.py
 tools/test-character-persistence.cpp skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-checkdiag-once.c
 tools/test-cup-box-policy.c
@@ -204,6 +206,8 @@ tools/test-tracker-boss-node.c
 tools/test-tracker-markers.c
 tools/test-tracker-progress.c
 tools/test-tracker-checks.c
+cmd tracker-received-keys :: python3 tools/ci/tracker-received.py keys
+cmd tracker-received-second-stage :: python3 tools/ci/tracker-received.py second-stage
 tools/test-asio-ssl-includes.cpp
 tools/test-tracker-tabs.c
 tools/test-tracker-pad-launch.py

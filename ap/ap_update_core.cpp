@@ -501,6 +501,8 @@ static bool Inflate(const unsigned char *data, size_t size, int windowBits, size
 }
 
 static const char kCortexDir[] = "assets/tracks/cortex-vortex/";
+// Character looks (JL2): assets/looks/<look>/<file>, one folder per look.
+static const char kLooksDir[] = "assets/looks/";
 const char kRuntimeDir[] = "solo-runtime";
 const char kRuntimeIdRel[] = "solo-runtime/RUNTIME.txt";
 // The runtime as one journal and marker entry (a folder, not a file).
@@ -521,7 +523,16 @@ bool IsInstallPath(const std::string &rel, Platform platform)
 		return true;
 	// Files directly inside the shipped custom track folder, no deeper.
 	const size_t n = sizeof kCortexDir - 1;
-	return rel.size() > n && rel.compare(0, n, kCortexDir) == 0 && rel.find('/', n) == std::string::npos;
+	if (rel.size() > n && rel.compare(0, n, kCortexDir) == 0 && rel.find('/', n) == std::string::npos)
+		return true;
+	// Files directly inside one look folder, no deeper: the client checks
+	// their pins at load, so they move with the executable like Cortex Vortex.
+	const size_t l = sizeof kLooksDir - 1;
+	if (rel.size() <= l || rel.compare(0, l, kLooksDir) != 0)
+		return false;
+	const size_t slash = rel.find('/', l);
+	return slash != std::string::npos && slash > l && slash + 1 < rel.size() &&
+	       rel.find('/', slash + 1) == std::string::npos;
 }
 
 struct PendingMember
