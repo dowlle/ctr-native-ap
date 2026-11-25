@@ -141,7 +141,7 @@ static int run_fixture(const char *fixture, bool everyRow)
 				for (int k = 0; k < it.value().get<int>(); k++)
 					AP_ItemIdTallyReceive(&s.tally, std::stoll(it.key()), 1, 1u);
 			s.bosses = st["bosses"].get<int>();
-			AP_WinLogicEnv env;
+			AP_WinLogicEnv env{};
 			env.user = &s;
 			env.item_count = s_items;
 			env.bosses_won = s_bosses;

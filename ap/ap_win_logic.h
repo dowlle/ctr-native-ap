@@ -269,8 +269,8 @@ static inline int AP_ItemIdTallyCount(const AP_ItemIdTally *t, long long id)
 typedef struct
 {
 	void *user;
-	// Received count of one AP item id: progression-flagged copies, start
-	// inventory (location -2) excluded. The evaluator adds the block's `start`.
+	// Received count of one AP item id. By default the evaluator adds the
+	// block's `start`. The location display counts the full server replay.
 	int (*item_count)(void *user, long id);
 	// AP_ComposedBossesWon: boss races this player has personally won.
 	int (*bosses_won)(void *user);
@@ -283,6 +283,7 @@ typedef struct
 	// 1 when the inputs above cannot be trusted (tally overflow): stakes fall
 	// back to 0.2.3 behaviour rather than guess.
 	int unreliable;
+	int item_count_includes_start;
 } AP_WinLogicEnv;
 
 #define AP_WL_PROGRESSIVE_BOOST_ID 35010027L
@@ -304,7 +305,8 @@ static inline int AP_WinLogicStartCount(const AP_WinLogic *wl, long id)
 // "Received count of id X" (SCHEMA.md): every leaf counts through this.
 static inline long AP_WinLogicCount(const AP_WinLogic *wl, const AP_WinLogicEnv *env, long id)
 {
-	return (long)env->item_count(env->user, id) + (long)AP_WinLogicStartCount(wl, id);
+	long count = env->item_count(env->user, id);
+	return env->item_count_includes_start ? count : count + AP_WinLogicStartCount(wl, id);
 }
 
 // Engine id -> character unlock item and per-character Progressive Boost item

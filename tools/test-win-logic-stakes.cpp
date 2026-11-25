@@ -72,7 +72,7 @@ static int w_collected(void *u, long code) { return ((World *)u)->collected.coun
 
 static AP_WinLogicEnv env_for(World &w, int boostMode = 0, int start = 0, int unlocks = 1)
 {
-	AP_WinLogicEnv e;
+	AP_WinLogicEnv e{};
 	e.user = &w;
 	e.item_count = w_items;
 	e.bosses_won = w_bosses;
@@ -753,7 +753,7 @@ int main(void)
 			static int bosses(void *) { return 0; }
 			static int collected(void *, long) { return 0; }
 		};
-		AP_WinLogicEnv e;
+		AP_WinLogicEnv e{};
 		e.user = &t;
 		e.item_count = TallyWorld::count;
 		e.bosses_won = TallyWorld::bosses;

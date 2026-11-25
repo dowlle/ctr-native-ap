@@ -204,6 +204,8 @@ tools/test-tracker-boss-node.c
 tools/test-tracker-markers.c
 tools/test-tracker-progress.c
 tools/test-tracker-checks.c
+cmd tracker-received-keys :: python3 tools/ci/tracker-received.py keys
+cmd tracker-received-second-stage :: python3 tools/ci/tracker-received.py second-stage
 tools/test-asio-ssl-includes.cpp
 tools/test-tracker-tabs.c
 tools/test-tracker-pad-launch.py
