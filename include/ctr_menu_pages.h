@@ -20,6 +20,8 @@
 // little higher and use tighter spacing so all twelve rows fit.
 #define CTR_MENU_PAGE_STANDARD_ROWS 9
 #define CTR_MENU_PAGE_VISIBLE_ROWS 12
+#define CTR_MENU_OPTION_LABEL_X 0x2C
+#define CTR_MENU_OPTION_VALUE_X 0x1E8
 
 static inline int CTR_MenuOptionRowSpacing(int count)
 {

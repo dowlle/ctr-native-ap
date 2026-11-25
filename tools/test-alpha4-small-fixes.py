@@ -174,7 +174,7 @@ int main(void) {
         boxes=0;Config_DrawScrollBar(top,rows,NULL);assert(boxes==2);
         RECT t=boxRect[0],h=boxRect[1];
         assert(!boxSolid[0]&&boxSolid[1]);
-        assert(t.x==0x1E4&&t.y==CTR_MenuOptionRowY(rows,0)-2&&t.w==4&&t.h==CONFIG_PAGE_WINDOW*CTR_MenuOptionRowSpacing(rows)&&h.x==t.x&&h.w==t.w);
+        assert(t.x==0x1EA&&t.y==CTR_MenuOptionRowY(rows,0)-2&&t.w==4&&t.h==CONFIG_PAGE_WINDOW*CTR_MenuOptionRowSpacing(rows)&&h.x==t.x&&h.w==t.w);
         assert(h.y>=t.y&&h.y+h.h<=t.y+t.h&&h.h>=8);
         assert(h.h==(t.h*CONFIG_PAGE_WINDOW/rows>8?t.h*CONFIG_PAGE_WINDOW/rows:8));
         if(top==0) assert(h.y==t.y);

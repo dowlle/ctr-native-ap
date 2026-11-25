@@ -224,13 +224,19 @@ static void CTR_MenuDrawScrollBar(int x, int y, int h, int total, int visible, i
 // The Options page: beside the nine rows, right of the row highlight.
 static void Config_DrawScrollBar(int top, int pageRows, uint32_t *ot)
 {
-	CTR_MenuDrawScrollBar(0x1E4, CTR_MenuOptionRowY(pageRows, 0) - 2,
+	CTR_MenuDrawScrollBar(0x1EA, CTR_MenuOptionRowY(pageRows, 0) - 2,
 	                      CONFIG_PAGE_WINDOW * CTR_MenuOptionRowSpacing(pageRows), pageRows,
 	                      CONFIG_PAGE_WINDOW, top, ot);
 }
 
 // Frames a held Left/Right waits before it steps again (Config_UpdateSlider's cadence).
 #define CONFIG_STEP_REPEAT_FRAMES 3
+
+static void Config_DrawOptionHighlight(uint32_t *ot, int y)
+{
+	RECT sel = {0x24, y - 2, 0x1C8, 0x0C};
+	CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+}
 
 static void Config_DrawRowHighlight(uint32_t *ot, int y)
 {
@@ -1836,8 +1842,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		DecalFont_DrawLineOT((char *)s_sectionName[sec],
 			0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
 
-		int labelX = 0x38;
-		int valueX = 0x1DC;
+		const int labelX = CTR_MENU_OPTION_LABEL_X;
+		const int valueX = CTR_MENU_OPTION_VALUE_X;
 		const int startY = CTR_MenuOptionRowY(pageRows, 0);
 		const int rowSpacing = CTR_MenuOptionRowSpacing(pageRows);
 
@@ -1862,10 +1868,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			Config_DrawValue(e, valueX, y, ot, buf, sizeof buf, editing);
 
 			if (j == menu->rowSelected)
-			{
-				RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
-				CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
-			}
+				Config_DrawOptionHighlight(ot, y);
 		}
 #ifdef CTR_AP
 		if (hintsRow >= 0 && hintsRow < s_configTop + CONFIG_PAGE_WINDOW)
@@ -1873,17 +1876,14 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			int y = startY + (hintsRow - s_configTop) * rowSpacing;
 			DecalFont_DrawLineOT("Replay Aku Aku Hints", labelX, y, FONT_SMALL, ORANGE, ot);
 			if (menu->rowSelected == hintsRow)
-				Config_DrawRowHighlight(ot, y);
+				Config_DrawOptionHighlight(ot, y);
 		}
 		if (linkRow >= 0 && linkRow >= s_configTop && linkRow < s_configTop + CONFIG_PAGE_WINDOW)
 		{
 			int y = startY + (linkRow - s_configTop) * rowSpacing;
 			Config_DrawLinkRow(y, labelX, valueX, ot);
 			if (menu->rowSelected == linkRow)
-			{
-				RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
-				CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
-			}
+				Config_DrawOptionHighlight(ot, y);
 		}
 
 		if (authorRow >= 0 && authorRow >= s_configTop && authorRow < s_configTop + CONFIG_PAGE_WINDOW)
@@ -1891,10 +1891,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			int y = startY + (authorRow - s_configTop) * rowSpacing;
 			Config_DrawAuthorRow(y, labelX, valueX, ot);
 			if (menu->rowSelected == authorRow)
-			{
-				RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
-				CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
-			}
+				Config_DrawOptionHighlight(ot, y);
 		}
 
 		if (s_connEditing)

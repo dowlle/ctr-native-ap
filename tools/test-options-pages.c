@@ -152,6 +152,11 @@ int main(void)
 		EXPECT_TRUE(label, help->first[0] && strlen(help->first) <= CTR_OPTIONS_HELP_LIMIT
 		                   && strlen(help->second) <= CTR_OPTIONS_HELP_LIMIT);
 	}
+	// FONT_SMALL uses 13 px per character, including spaces, and 7 px for the colon.
+	const int racePairWidth = 13 * (strlen("Race Type Menu") + strlen("SEED: ONLY IF USEFUL")) - 6;
+	EXPECT_TRUE("connected Race Type Menu label and value clear each other",
+	            CTR_MENU_OPTION_VALUE_X - CTR_MENU_OPTION_LABEL_X >= racePairWidth + 8);
+
 	static const char *const actions[] = {
 		"replay_hints", "room_links", "box_author", "connect", "play_solo",
 		"control_player", "control_shortcuts", "control_device", "control_binding",

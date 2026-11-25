@@ -918,14 +918,16 @@ static void Controls_DrawTitle(uint32_t *ot)
 	DecalFont_DrawLineOT(s_titleBuffer, 0x100, CONFIG_TITLE_Y, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
 }
 
-static void MM_MenuProc_Controls(struct RectMenu *menu, uint32_t *ot)
+static void MM_MenuProc_Controls(struct RectMenu *menu, uint32_t *ot, int entering)
 {
 	Controls_BuildRows();
 	Controls_ClampSelection(menu);
 
 	// Read before the input handling, which can move the selection to another player.
 	const int device = NativeControls_GetPlayerDevice(s_player);
-	Controls_HandleInput(menu, MM_Controls_MenuTapped(), MM_Controls_MenuHeld(), device);
+	// The confirm that opened this page must not also start a rebind.
+	if (!entering)
+		Controls_HandleInput(menu, MM_Controls_MenuTapped(), MM_Controls_MenuHeld(), device);
 	Controls_PollCapture();
 
 	// This OT draws back to front: a primitive added later sits behind the ones already in
@@ -1029,7 +1031,7 @@ static void MM_ConfigProc_Controls(struct RectMenu *menu, uint32_t *ot)
 {
 	if (s_screenOpen)
 	{
-		MM_MenuProc_Controls(menu, ot);
+		MM_MenuProc_Controls(menu, ot, 0);
 		return;
 	}
 
@@ -1055,7 +1057,7 @@ static void MM_ConfigProc_Controls(struct RectMenu *menu, uint32_t *ot)
 	{
 		OtherFX_Play(1, 1);
 		Controls_OpenScreen(menu, menu->rowSelected);
-		MM_MenuProc_Controls(menu, ot);
+		MM_MenuProc_Controls(menu, ot, 1);
 		return;
 	}
 

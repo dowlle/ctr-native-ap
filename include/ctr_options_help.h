@@ -81,7 +81,7 @@ static const CtrOptionsHelp s_ctrOptionsHelp[] = {
 	{"sound_mode", "Choose stereo or mono sound.", ""},
 	{"sound_vibrate", "Turn controller vibration on/off.", ""},
 	{"sound_analog", "Set up this analog controller.", ""},
-	{"sound_exit", "Return to the options page list.", ""},
+	{"sound_exit", "Back to the options page list.", ""},
 	{"shortcut_picker", "Opens the racer picker in a hub.", "Default: Numpad 9."},
 	{"shortcut_defaults", "Restores the AP shortcut keys.", ""},
 };
