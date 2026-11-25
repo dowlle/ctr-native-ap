@@ -30,6 +30,8 @@
 #include "../ap/ap_tizi_madness.h" // always a Mask on Tizi Madness (A4-96)
 #include "../ap/ap_turbogrant.h" // in-race Turbo hand-out (#224)
 #include "../ap/ap_reserve_top_up.h"
+#include "../ap/ap_look_logic.h" // character looks table and rules (JL2)
+#include "../ap/ap_looks.h"      // character looks at runtime (JL2)
 #include "../ap/ap_spoiler_items.h" // reveal items for pad previews and box colours (#459)
 #include "../ap/ap_spoiler_items_logic.h"
 #include "../ap/ap_useful.h"     // queued one-shot useful grants
@@ -442,6 +444,7 @@
 #include "../ap/ap_tizi_madness.c"
 #include "../ap/ap_turbogrant.c"
 #include "../ap/ap_reserve_top_up.c"
+#include "../ap/ap_looks.c"
 #include "../ap/ap_spoiler_items.c"
 #include "../ap/ap_useful.c"
 #include "../ap/ap_statbar.c"

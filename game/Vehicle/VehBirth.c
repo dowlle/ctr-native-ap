@@ -611,10 +611,26 @@ internal b32 VehBirth_ModelNameEquals(const struct Model *model, const char *nam
 
 #ifdef CTR_AP
 struct Model *LOAD_ChaosSideModel(int i);
+struct Model *AP_LooksModelFor(const char *searchName, struct Model *found);
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80058948-0x80058a60.
+#ifdef CTR_AP
+static struct Model *VehBirth_FindModelByName(char *searchName);
+
+// Character looks (JL2): every driver birth (player, AI, hub, race, 2P to 4P,
+// ghosts) resolves its model here, so a racer's chosen look replaces the found
+// model in one place. Podium, cutscenes and character select load their own
+// files and keep the original model.
 struct Model *VehBirth_GetModelByName(char *searchName)
+{
+	return AP_LooksModelFor(searchName, VehBirth_FindModelByName(searchName));
+}
+
+static struct Model *VehBirth_FindModelByName(char *searchName)
+#else
+struct Model *VehBirth_GetModelByName(char *searchName)
+#endif
 {
 	struct Model *m;
 	struct Model **models;

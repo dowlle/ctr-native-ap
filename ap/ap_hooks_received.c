@@ -48,7 +48,9 @@ static int ap_recv_count_foreign[AP_ITEM_INDEX_COUNT] = {0};
 // bounds check at the receive site rather than counted, so an undersized array
 // silently loses foreign receipts from the verifier's view.
 // Includes the additive trial letters at indexes 194..199, not only traps.
-#define AP_VERIFY_ITEM_INDEX_COUNT (AP_TRAP_ITEM_INDEX_MAX + 1) // includes #248, index 207
+// Character looks (JL2) follow the traps: Joe Mama is index 215.
+#define AP_VERIFY_ITEM_INDEX_COUNT (AP_LOOK_KOMODO_MOE_ITEM_INDEX + 1) // includes #248 (207) and the looks
+CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT > AP_LOOK_KOMODO_MOE_ITEM_INDEX);
 CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT > AP_TRAP_ITEM_INDEX_MAX);
 CTR_STATIC_ASSERT(AP_VERIFY_ITEM_INDEX_COUNT > AP_TURBOGRANT_ITEM_INDEX);
 static int ap_verify_recv_foreign[AP_VERIFY_ITEM_INDEX_COUNT] = {0};
@@ -316,6 +318,8 @@ static void AP_FxApply(long long item)
 			AP_LogLine(msg);
 		}
 	}
+	else if (AP_LookForItem(idx) >= 0)
+		AP_LooksReceiveNew(idx); // JL2: the newest look wins
 	else if (idx == AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX)
 		AP_WumpaReceive(3);
 	else if (idx == AP_WUMPA_BIG_BUNDLE_ITEM_INDEX)

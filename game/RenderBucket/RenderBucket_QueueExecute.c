@@ -608,9 +608,24 @@ static struct RenderBucketExecuteScratch *RenderBucket_Scratch(void)
 	return CTR_SCRATCHPAD_PTR(struct RenderBucketExecuteScratch, 0);
 }
 
-static struct RenderBucketPackedVertex *RenderBucket_PackedVertexScratch(u16 stackIndex)
+static struct RenderBucketPackedVertex *RenderBucket_PackedVertexScratch(struct RenderBucketDrawContext *ctx, u16 stackIndex)
 {
-	return CTR_SCRATCHPAD_PTR(struct RenderBucketPackedVertex, RENDER_BUCKET_PAYLOAD_SCRATCH_OFFSET + (stackIndex * sizeof(struct RenderBucketPackedVertex)));
+	u32 offset = RENDER_BUCKET_PAYLOAD_SCRATCH_OFFSET + (stackIndex * sizeof(struct RenderBucketPackedVertex));
+
+#ifdef CTR_NATIVE
+	// NOTE: Retail keeps this vertex cache in the 1 KB scratchpad, which holds
+	// indices 0 to 87. Every write also goes to ctx->packedStack, so an index
+	// past the scratchpad (a model with more cached vertices than retail ones,
+	// such as a character look) uses that copy instead of running off the
+	// native scratchpad buffer. Indices that fit behave exactly as before.
+	if (offset + sizeof(struct RenderBucketPackedVertex) > CTR_SCRATCHPAD_SIZE)
+	{
+		return &ctx->packedStack[stackIndex];
+	}
+#else
+	(void)ctx;
+#endif
+	return CTR_SCRATCHPAD_PTR(struct RenderBucketPackedVertex, offset);
 }
 
 static u32 *RenderBucket_ColorCacheScratch(void)
@@ -2307,7 +2322,7 @@ static u32 RenderBucket_InterpolatedModelVertexZ(struct RenderBucketDrawContext 
 
 static struct RenderBucketPackedVertex RenderBucket_CachePackedVertex(struct RenderBucketDrawContext *ctx, u16 stackIndex)
 {
-	struct RenderBucketPackedVertex *scratchVertex = RenderBucket_PackedVertexScratch(stackIndex);
+	struct RenderBucketPackedVertex *scratchVertex = RenderBucket_PackedVertexScratch(ctx, stackIndex);
 	struct RenderBucketPackedVertex packed;
 
 	packed.xy = RenderBucket_PackModelVertexXY(ctx, &ctx->stack[stackIndex]);
@@ -2320,7 +2335,7 @@ static struct RenderBucketPackedVertex RenderBucket_CachePackedVertex(struct Ren
 static struct RenderBucketPackedVertex RenderBucket_CacheInterpolatedPackedVertex(struct RenderBucketDrawContext *ctx, u16 stackIndex,
                                                                                   const RenderBucketVertex *curr, const RenderBucketVertex *next)
 {
-	struct RenderBucketPackedVertex *scratchVertex = RenderBucket_PackedVertexScratch(stackIndex);
+	struct RenderBucketPackedVertex *scratchVertex = RenderBucket_PackedVertexScratch(ctx, stackIndex);
 	struct RenderBucketPackedVertex packed;
 
 	packed.xy = RenderBucket_PackInterpolatedModelVertexXY(ctx, curr, next);
@@ -2417,7 +2432,7 @@ struct RenderBucketUncompressResult RenderBucket_UncompressAnimationFrame(struct
 	// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8006a8e0-0x8006aaa8.
 	if ((flags & 4) != 0)
 	{
-		struct RenderBucketPackedVertex *scratchVertex = RenderBucket_PackedVertexScratch(stackIndex);
+		struct RenderBucketPackedVertex *scratchVertex = RenderBucket_PackedVertexScratch(ctx, stackIndex);
 
 		// Command bit 0x04000000 returns the cached packed vertex.
 		result.packed = *scratchVertex;
@@ -2476,7 +2491,7 @@ static struct RenderBucketUncompressResult RenderBucket_UncompressAnimationFrame
 
 	if ((flags & 4) != 0)
 	{
-		struct RenderBucketPackedVertex *scratchVertex = RenderBucket_PackedVertexScratch(stackIndex);
+		struct RenderBucketPackedVertex *scratchVertex = RenderBucket_PackedVertexScratch(ctx, stackIndex);
 
 		// NOTE(aalhendi): Retail next-frame entry shares the cached-vertex
 		// command bit path with 0x8006a8e0 before returning color.
@@ -2533,7 +2548,7 @@ static struct RenderBucketUncompressResult RenderBucket_TransformSplitDecodedVer
                                                                                     struct RenderBucketUncompressResult result)
 {
 	u8 flags = (command >> 24) & 0xff;
-	struct RenderBucketPackedVertex *scratchVertex = RenderBucket_PackedVertexScratch(stackIndex);
+	struct RenderBucketPackedVertex *scratchVertex = RenderBucket_PackedVertexScratch(ctx, stackIndex);
 
 	if ((flags & 4) != 0)
 	{
