@@ -61,12 +61,12 @@ static void boxes(void){
   assert(got==(unlocked?before:AP_BOX_COLOUR_PINK));
  }
  // Options row: seed off always wins; locked only while a loaded seed permits colours.
- assert(AP_BoxColour_RowStateWithItem(1,0,0)==AP_BOX_COLOUR_ROW_SEED_OFF);
- assert(AP_BoxColour_RowStateWithItem(1,0,1)==AP_BOX_COLOUR_ROW_SEED_OFF);
- assert(AP_BoxColour_RowStateWithItem(1,1,0)==AP_BOX_COLOUR_ROW_ITEM_LOCKED);
- assert(AP_BoxColour_RowStateWithItem(1,1,1)==AP_BOX_COLOUR_ROW_PLAYER);
- assert(AP_BoxColour_RowStateWithItem(0,0,0)==AP_BOX_COLOUR_ROW_PLAYER);
- assert(AP_BoxColour_RowStateWithItem(0,1,1)==AP_BOX_COLOUR_ROW_PLAYER);
+ assert(AP_BoxColour_RowStateWithItem(1,1,0,0)==AP_BOX_COLOUR_ROW_SEED_OFF);
+ assert(AP_BoxColour_RowStateWithItem(1,1,0,1)==AP_BOX_COLOUR_ROW_SEED_OFF);
+ assert(AP_BoxColour_RowStateWithItem(1,1,1,0)==AP_BOX_COLOUR_ROW_ITEM_LOCKED);
+ assert(AP_BoxColour_RowStateWithItem(1,1,1,1)==AP_BOX_COLOUR_ROW_PLAYER);
+ assert(AP_BoxColour_RowStateWithItem(0,1,0,0)==AP_BOX_COLOUR_ROW_PLAYER);
+ assert(AP_BoxColour_RowStateWithItem(0,1,1,1)==AP_BOX_COLOUR_ROW_PLAYER);
  // 2026-10-28 ruling: OFF set while locked stays off after AP Box Colours arrives;
  // ON set while locked shows colours after it. Locked boxes are pink either way.
  for(int f=0;f<4;f++){
@@ -222,16 +222,16 @@ neutral = display[display.index("int AP_WarpPadShowNeutralMarker("):]
 neutral = neutral[:neutral.index("\n}\n")]
 assert "prize->colorRGBA = AP_TINT_UNIFORM;" in neutral and "modelPtr[STATIC_AP]" in neutral
 assert "AP_WarpPadNeutralMarkerReady()" in neutral and "AP_WarpPadRewardTint" not in neutral
-# 2026-10-28 ruling: the item lock reads ON (LOCKED) or OFF and takes input; only
+# 2026-10-28 ruling: the item lock reads ON UNTIL ITEM or OFF and takes input; only
 # the seed lock blocks the toggle and the left/right step.
 menu = (root / "game/230/MM_ConfigMenu.c").read_text()
-assert "AP_BOX_COLOUR_ROW_ITEM_LOCKED" in menu and '"ON (LOCKED)"' in menu and '"LOCKED (ITEM)"' not in menu
-seed_lock = menu[menu.index("static int Config_RowLockedBySeed("):]
+assert "AP_BOX_COLOUR_ROW_ITEM_LOCKED" in menu and '"ON UNTIL ITEM"' in menu and '"LOCKED (ITEM)"' not in menu
+seed_lock = menu[menu.index("static int Config_BoxColourUnavailable("):]
 seed_lock = seed_lock[:seed_lock.index("\n}\n")]
 assert "AP_BOX_COLOUR_ROW_SEED_OFF" in seed_lock and "ITEM_LOCKED" not in seed_lock
 assert "Config_RowLockedByItem(e)" not in menu[menu.index("static void MM_MenuProc_Config(struct RectMenu *menu)\n{"):]
 for line in ("Pink until AP Box Colours.", "Set OFF to keep them pink."):
-    assert len(line) <= 33 and line in menu
+    assert len(line) <= 33 and line in (root / "include/ctr_options_help.h").read_text()
 
 # The neutral marker helper itself, executed on the host from its production
 # text: it turns any stale slot (ghost, specular, tinted relic, fruit) into the
@@ -288,8 +288,8 @@ int main(void){
 assert "instArr[WPIS_OPEN_PRIZE1 + i]->flags &= ~(0x80);" in warp
 # Both input paths stop only on the seed lock, so the item-locked row toggles.
 proc = menu[menu.index("static void MM_MenuProc_Config(struct RectMenu *menu)\n{"):]
-assert "else if (Config_RowLockedBySeed(e) || Config_RowLockedByHub(e))" in proc
-assert "if (e != NULL && e->type == CFG_BOOL && !Config_RowLockedBySeed(e) && !Config_RowLockedByHub(e))" in proc
+assert "else if (Config_BoxColourUnavailable(e) || Config_RowLockedByHub(e))" in proc
+assert "if (e != NULL && e->type == CFG_BOOL && !Config_BoxColourUnavailable(e) && !Config_RowLockedByHub(e))" in proc
 
 with tempfile.TemporaryDirectory(prefix="ctr-spoiler-items-") as tmp:
     src, exe = Path(tmp)/"test.c", Path(tmp)/"test"

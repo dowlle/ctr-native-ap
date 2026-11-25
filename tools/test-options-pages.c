@@ -27,6 +27,7 @@
 
 #include "platform/native_config.c"
 #include "ctr_menu_pages.h"
+#include "ctr_options_help.h"
 
 static int g_failures = 0;
 
@@ -138,15 +139,44 @@ int main(void)
 			snprintf(label, sizeof label, "%s/%s is on exactly one page (got %d)",
 				g_configEntries[i].section, g_configEntries[i].key, seen);
 			EXPECT_TRUE(label, seen == 1);
+			snprintf(label, sizeof label, "%s has help", g_configEntries[i].key);
+			EXPECT_TRUE(label, CTR_OptionsHelpFor(g_configEntries[i].key) != NULL);
 		}
 	}
+
+	for (unsigned i = 0; i < sizeof s_ctrOptionsHelp / sizeof s_ctrOptionsHelp[0]; ++i)
+	{
+		const CtrOptionsHelp *help = &s_ctrOptionsHelp[i];
+		char label[128];
+		snprintf(label, sizeof label, "%s has help within the 33-character limit", help->key);
+		EXPECT_TRUE(label, help->first[0] && strlen(help->first) <= CTR_OPTIONS_HELP_LIMIT
+		                   && strlen(help->second) <= CTR_OPTIONS_HELP_LIMIT);
+	}
+	static const char *const actions[] = {
+		"replay_hints", "room_links", "box_author", "connect", "play_solo",
+		"control_player", "control_shortcuts", "control_device", "control_binding",
+		"control_deadzone", "control_restore", "shortcut_picker", "shortcut_defaults",
+		"sound_fx", "sound_music", "sound_voice", "sound_mode", "sound_vibrate",
+		"sound_analog", "sound_exit", NULL
+	};
+	for (int i = 0; actions[i]; ++i)
+		EXPECT_TRUE(actions[i], CTR_OptionsHelpFor(actions[i]) != NULL);
 
 	for (int p = 0; p < numPages; p++)
 	{
 		char label[128];
 		snprintf(label, sizeof label, "%s fits the panel (%d rows, limit %d)",
 			s_names[p], s_counts[p], CTR_MENU_PAGE_VISIBLE_ROWS);
-		EXPECT_TRUE(label, s_counts[p] <= CTR_MENU_PAGE_VISIBLE_ROWS);
+		int extra = 0;
+		if (strcmp(s_names[p], "Gameplay") == 0)
+			extra = 2; // hub hint replay and Joe Look
+		else if (strcmp(s_names[p], "Archipelago") == 0)
+			extra = 1; // Windows room links
+		else if (strcmp(s_names[p], "Authoring") == 0)
+			extra = 1; // session Box Author Mode
+		const int total = s_counts[p] + extra;
+		EXPECT_TRUE(label, total <= CTR_MENU_PAGE_VISIBLE_ROWS);
+		EXPECT_TRUE("last row clears help footer", !total || CTR_MenuOptionRowY(total, total - 1) + 10 <= 0xB8);
 		if (strcmp(s_names[p], "Connection") == 0)
 			for (int r = 0; r < s_counts[p]; r++)
 			{
@@ -166,21 +196,23 @@ int main(void)
 			EXPECT_TRUE(label, CTR_MenuFindEntry(g_configEntries, g_numConfigEntries, *k) >= 0);
 		}
 
-	EXPECT_TRUE("seven pages in the AP build", numPages == 7);
-	if (numPages == 7)
+	EXPECT_TRUE("eight pages in the AP build", numPages == 8);
+	if (numPages == 8)
 	{
 		static const char *const video[] = {
 			"fullscreen", "aspect_ratio", "render_scale", "vsync", "smooth_scaling",
 			"texture_filtering", "dithering", "increase_draw_distance",
-			"disable_split_screen_lod", "tracker_partial_colour", NULL};
+			"disable_split_screen_lod", NULL};
 		static const char *const gameplay[] = {
 			"skip_intro", "skip_hints", "race_type_selector", "skip_podium", "skip_cutscenes",
 			"boss_music", "ai_difficulty", "mute_when_unfocused", "device_aware_labels", "update_check", NULL};
 		static const char *const controls[] = {NULL};
 		static const char *const connection[] = {"uri", "slot", "password", NULL};
 		static const char *const archipelago[] = {
-			"map_flash", "item_feed", "item_box_colours", "item_box_numbers", "sanity_numbers", "death_link", "dl_send_fall", "dl_send_hit", "dl_send_loss", "trap_duration",
-			"discord_status", NULL};
+			"map_flash", "item_feed", "item_box_colours", "item_box_numbers", "sanity_numbers",
+			"tracker_partial_colour", "discord_status", NULL};
+		static const char *const deathlink[] = {
+			"death_link", "dl_send_fall", "dl_send_hit", "dl_send_loss", "trap_duration", NULL};
 		static const char *const authoring[] = {
 			"nav_record", "nav_use_recorded", "nav_repeat_laps", "nav_only_mine", "nav_driver_name", NULL};
 
@@ -190,7 +222,8 @@ int main(void)
 		ExpectPage(3, "Controls", controls);
 		ExpectPage(4, "Connection", connection);
 		ExpectPage(5, "Archipelago", archipelago);
-		ExpectPage(6, "Authoring", authoring);
+		ExpectPage(6, "DeathLink and Traps", deathlink);
+		ExpectPage(7, "Authoring", authoring);
 	}
 
 	ExpectSection("skip_intro", "Video & QoL");

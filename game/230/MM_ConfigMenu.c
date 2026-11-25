@@ -4,12 +4,15 @@
 #include <ctr_menu_ux.h>
 #include <platform/native_menu.h>
 #include <ctr_menu_pages.h>
+#include <ctr_options_help.h>
 #include <platform/native_renderer.h> // NativeRenderer_CaptureWindowGeometry, ahead of the NativeConfig_Save calls below
 #include <platform/native_controls.h> // the Controls page (MM_ControlsConfig.c)
 #ifdef CTR_AP
 // Platform_InputRawGamepadButtons: physical-pad-only button mask, used by the
 // connection manager's controller commit / cancel (not in common.h's platform set).
 #include <platform/native_input.h>
+#include "../../ap/ap_race_attempt_logic.h"
+#include "../../ap/ap_net.h"
 #include "../../ap/ap_boxes.h"             // AP_Boxes_ColourRowState: the Item Box Colours row
 #include "../../ap/ap_box_colour_logic.h"  // AP_BOX_COLOUR_ROW_SEED_OFF
 #ifdef CTR_CUSTOM_TRACKS
@@ -176,11 +179,8 @@ static const ConfigEntry *Section_Entry(int sec, int row)
 
 static int s_currentSection = -1; // -1 = section selector, 0+ = submenu
 
-// A page with more rows than fit above the two help lines (0xB8) scrolls: nine
-// rows from CONFIG_ROW_START_Y show at a time. The Archipelago page has eleven
-// config rows since Item Feed (2026-11-03), twelve with Room links. A page that
-// scrolls shows a slim scroll bar on its right edge (CTR_MenuDrawScrollBar).
-#define CONFIG_PAGE_WINDOW 9
+// Compact spacing keeps all current options visible above the help footer.
+#define CONFIG_PAGE_WINDOW CTR_MENU_PAGE_VISIBLE_ROWS
 static int s_configTop;
 static void Config_KeepInView(int selected, int pageRows)
 {
@@ -202,8 +202,7 @@ static void Config_KeepInView(int selected, int pageRows)
 #define CONFIG_ROW_SPACING 0x0E
 #define CONFIG_LABEL_X     0x38
 #define CONFIG_VALUE_X     0x1DC
-// Visible rows on a scrolling Controls screen. One fewer than
-// CTR_MENU_PAGE_VISIBLE_ROWS, as in Expanded, so the last row clears the panel edge.
+// Visible rows on a scrolling Controls screen, using its own spacing.
 #define CONFIG_MAX_VISIBLE_ROWS 10
 // The slim scroll bar every scrolling menu list draws on its right edge (A4-36).
 // The track is the row highlight's blue, the thumb the white of the volume
@@ -225,7 +224,8 @@ static void CTR_MenuDrawScrollBar(int x, int y, int h, int total, int visible, i
 // The Options page: beside the nine rows, right of the row highlight.
 static void Config_DrawScrollBar(int top, int pageRows, uint32_t *ot)
 {
-	CTR_MenuDrawScrollBar(0x1E4, CONFIG_ROW_START_Y - 2, CONFIG_PAGE_WINDOW * CONFIG_ROW_SPACING, pageRows,
+	CTR_MenuDrawScrollBar(0x1E4, CTR_MenuOptionRowY(pageRows, 0) - 2,
+	                      CONFIG_PAGE_WINDOW * CTR_MenuOptionRowSpacing(pageRows), pageRows,
 	                      CONFIG_PAGE_WINDOW, top, ot);
 }
 
@@ -280,6 +280,20 @@ static int Config_IsControlsSection(int sec)
 	return sec >= 0 && sec < s_numSections && strcmp(s_sectionName[sec], CTR_MENU_PAGE_CONTROLS) == 0;
 }
 
+static void Config_DrawHelpLines(const char *first, const char *second, uint32_t *ot)
+{
+	DecalFont_DrawLineOT((char *)first, 0x100, 0xB8, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	if (second && second[0])
+		DecalFont_DrawLineOT((char *)second, 0x100, 0xC6, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+}
+
+static void Config_DrawHelp(const char *key, uint32_t *ot)
+{
+	const CtrOptionsHelp *help = CTR_OptionsHelpFor(key);
+	if (help)
+		Config_DrawHelpLines(help->first, help->second, ot);
+}
+
 #include "MM_ControlsConfig.c"
 
 struct RectMenu g_configMenu = {
@@ -326,6 +340,11 @@ static void Config_OpenChild(struct RectMenu *child)
 {
 	s_configChild = child;
 	sdata->ptrDesiredMenu = child;
+}
+
+int MM_ConfigIsChild(const struct RectMenu *child)
+{
+	return s_configChild != NULL && s_configChild == child;
 }
 
 int MM_ConfigReturnFromChild(struct RectMenu *child)
@@ -432,14 +451,10 @@ static int Aspect_Index(int value)
 }
 
 #ifdef CTR_AP
-// DeathLink ladder (CFG_ENUM): follow the seed option / force off / force a
-// tier. 1/2/3/4 are the CTR_DL_MASK_RESET / CTR_DL_ANY_HIT / CTR_DL_RACE_LOSS /
-// CTR_DL_WEAPON_HIT tier values themselves (ap_deathlink.h), so every in-game
-// layer is directly selectable. Edits apply live: ap_deathlink.c re-reads the preference every
-// frame and syncs the connection tag itself, so this row needs no menu-exit hook.
-static const int   s_dlinkValues[] = {-1, 0, 1, 2, 3, 4};
-static const char *s_dlinkNames[]  = {"SEED", "OFF", "MASK RESET", "ANY HIT", "RACE LOSS",
-	"WEAPON HIT"};
+// Leave a saved legacy ANY HIT value intact until the player edits it,
+// because it still selects the legacy fall-and-hit send mask.
+static const int s_dlinkValues[] = {-1, CTR_DL_OFF, CTR_DL_MASK_RESET, CTR_DL_RACE_LOSS, CTR_DL_WEAPON_HIT};
+static const char *const s_dlinkNames[] = {"SEED", "OFF", "MASK RESET", "RACE LOSS", "WEAPON HIT"};
 #define DLINK_COUNT ((int)(sizeof(s_dlinkValues) / sizeof(s_dlinkValues[0])))
 
 // DeathLink send trigger rows (CFG_ENUM): follow the seed / force off / force on.
@@ -451,7 +466,7 @@ static const char *s_dlSendNames[]  = {"SEED", "OFF", "ON"};
 // 1 and 0 are the AP_RS_SELECTOR_ALWAYS / AP_RS_SELECTOR_PRODUCTIVE values;
 // AP_RaceTypeSelectorSetting reads the row at every plan pad entry.
 static const int   s_raceMenuValues[] = {-1, 1, 0};
-static const char *s_raceMenuNames[]  = {"SEED", "ALWAYS", "PRODUCTIVE"};
+static const char *s_raceMenuNames[]  = {"SEED", "ALWAYS", "ONLY IF USEFUL"};
 #define RACEMENU_COUNT ((int)(sizeof(s_raceMenuValues) / sizeof(s_raceMenuValues[0])))
 
 // Boss Music (A4-61): the boss banks / the venue's own music in boss races and
@@ -487,6 +502,8 @@ static const char *s_trapDurationNames[]  = {"10 SEC", "15 SEC", "20 SEC", "25 S
 
 static int Dlink_Index(int value)
 {
+	if (value == CTR_DL_ANY_HIT)
+		value = CTR_DL_MASK_RESET;
 	for (int i = 0; i < DLINK_COUNT; i++)
 		if (s_dlinkValues[i] == value)
 			return i;
@@ -531,7 +548,33 @@ static int ItemFeed_Index(int value)
 }
 #endif
 
-static const char *Enum_Label(const ConfigEntry *e)
+#ifdef CTR_AP
+static int Config_IsSeedRow(const ConfigEntry *e)
+{
+	return e->valuePtr == &g_config.deathLink || e->valuePtr == &g_config.raceTypeSelector
+	       || IsDlSendField(e->valuePtr);
+}
+
+static APDeathLinkState Config_SeedDeathLink(void)
+{
+	return AP_DeathLinkResolve(ctr_cfg.death_link, ctr_cfg.death_link_send, -1, -1, -1, -1);
+}
+
+static const char *Config_SeedValue(const ConfigEntry *e)
+{
+	if (e->valuePtr == &g_config.raceTypeSelector)
+		return s_raceMenuNames[RaceMenu_Index(AP_RaceTypeSelectorSetting())];
+
+	const APDeathLinkState seed = Config_SeedDeathLink();
+	if (e->valuePtr == &g_config.deathLink)
+		return s_dlinkNames[Dlink_Index(seed.recv)];
+	const int trigger = e->valuePtr == &g_config.dlSendFall ? AP_DL_TRIG_FALL
+	                  : e->valuePtr == &g_config.dlSendHit ? AP_DL_TRIG_HIT : AP_DL_TRIG_LOSS;
+	return (seed.send & trigger) ? "ON" : "OFF";
+}
+#endif
+
+static const char *Enum_Label(const ConfigEntry *e, char *buf, size_t bufSize)
 {
 	if (e->valuePtr == &g_config.aspectRatio)
 		return s_aspectNames[Aspect_Index(*(int *)e->valuePtr)];
@@ -542,8 +585,20 @@ static const char *Enum_Label(const ConfigEntry *e)
 #ifdef CTR_AP
 	if (e->valuePtr == &g_config.itemFeed)
 		return s_itemFeedNames[ItemFeed_Index(*(int *)e->valuePtr)];
+	if (Config_IsSeedRow(e) && *(const int *)e->valuePtr == -1 && ctr_cfg_active())
+	{
+		if (e->valuePtr == &g_config.deathLink && Config_SeedDeathLink().recv == CTR_DL_OFF)
+		{
+			// A local send override can force receiving even in a room with DeathLink off.
+			const int effective = AP_DeathLinkRowValue(-1);
+			if (effective != -1)
+				return s_dlinkNames[Dlink_Index(effective)];
+		}
+		snprintf(buf, bufSize, "SEED: %s", Config_SeedValue(e));
+		return buf;
+	}
 	if (e->valuePtr == &g_config.deathLink)
-		return s_dlinkNames[Dlink_Index(AP_DeathLinkRowValue(*(int *)e->valuePtr))];
+		return s_dlinkNames[Dlink_Index(*(int *)e->valuePtr)];
 	if (IsDlSendField((const int *)e->valuePtr))
 		return s_dlSendNames[DlSend_Index(*(int *)e->valuePtr)];
 	if (e->valuePtr == &g_config.trapDuration)
@@ -553,7 +608,10 @@ static const char *Enum_Label(const ConfigEntry *e)
 	if (e->valuePtr == &g_config.bossMusic)
 		return s_bossMusicNames[BossMusic_Index(*(int *)e->valuePtr)];
 #endif
-	return AiDiff_Label(*(int *)e->valuePtr);
+	(void)buf;
+	(void)bufSize;
+	const char *difficulty = AiDiff_Label(*(int *)e->valuePtr);
+	return strcmp(difficulty, "VANILLA") == 0 ? "ORIGINAL" : difficulty;
 }
 
 static void Enum_Step(const ConfigEntry *e, int dir)
@@ -680,18 +738,18 @@ static void Enum_Advance(const ConfigEntry *e)
 #define CFG_STRING_INLINE_MAX 20
 
 #ifdef CTR_AP
-// The Item Box Colours row is the player's opt-out of the seed's item box
-// colours. While a loaded seed has them off, it reads "OFF (SEED)" in grey and
-// takes no input: a player can turn colours off, never on. While Spoiler Items
-// (#459) still holds the colours behind AP Box Colours, the row stays editable
-// (#459 ruling, 2026-10-28): it reads "ON (LOCKED)" or "OFF", and an OFF set early
-// keeps the boxes pink after the item arrives.
-static int Config_RowLockedBySeed(const ConfigEntry *e)
+static int Config_BoxColourState(const ConfigEntry *e)
 {
-	return e->valuePtr == &g_config.itemBoxColours && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_SEED_OFF;
+	return e->valuePtr == &g_config.itemBoxColours ? AP_Boxes_ColourRowState() : AP_BOX_COLOUR_ROW_PLAYER;
 }
 
-// A Play Solo session has no other players: the DeathLink rows read "OFF (SOLO)" in
+static int Config_BoxColourUnavailable(const ConfigEntry *e)
+{
+	const int state = Config_BoxColourState(e);
+	return state == AP_BOX_COLOUR_ROW_SEED_OFF || state == AP_BOX_COLOUR_ROW_NO_BOXES;
+}
+
+// A Play Solo session has no other players: the DeathLink rows read "OFF IN SOLO" in
 // grey and take no input. Their saved values stay for multiworld rooms.
 static int Config_RowLockedBySolo(const ConfigEntry *e)
 {
@@ -703,83 +761,48 @@ static int Config_RowLockedByHub(const ConfigEntry *e)
 	return Config_FromHub() && e->valuePtr == &g_config.boxAuthor;
 }
 
-static int Config_RowLockedByItem(const ConfigEntry *e)
-{
-	return e->valuePtr == &g_config.itemBoxColours && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_ITEM_LOCKED;
-}
+#endif
 
-static void Config_DrawHelpLines(const char *first, const char *second, uint32_t *ot)
-{
-	DecalFont_DrawLineOT((char *)first, 0x100, 0xB8, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-	DecalFont_DrawLineOT((char *)second, 0x100, 0xC6, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-}
-
-// Two help lines under the page for the selected row, in the footer style the
-// Connection page uses. Only rows that need explaining have one. Each line fits
-// the panel (33 characters at FONT_SMALL).
 static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 {
-	const char *first = 0;
-	const char *second = 0;
-
-	if (e->valuePtr == &g_config.itemBoxColours)
+	const char *key = e->key;
+	const char *status = NULL;
+#ifdef CTR_AP
+	switch (Config_BoxColourState(e))
 	{
-		if (Config_RowLockedByItem(e))
-		{
-			first = "Pink until AP Box Colours.";
-			second = "Set OFF to keep them pink.";
-		}
-		else if (Config_RowLockedBySeed(e))
-		{
-			first = "This seed turned box colours off.";
-			second = "All AP item boxes stay pink.";
-		}
-		else
-		{
-			first = "Purple progression, blue useful,";
-			second = "cyan filler, salmon trap.";
-		}
-	}
-	if (Config_RowLockedBySolo(e))
-	{
-		first = "No other players in solo.";
-		second = "DeathLink stays off.";
-	}
-	if (e->valuePtr == &g_config.raceTypeSelector)
-	{
-		first = "When race pads ask which race.";
-		second = "SEED uses the seed's setting.";
-	}
-	if (e->valuePtr == &g_config.bossMusic)
-	{
-		first = "Music in boss races and cups:";
-		second = "the theme or the track's own.";
-	}
-	if (Config_FromHub() && e->valuePtr == &g_config.aiDifficulty)
-	{
-		first = "Applies from the next race.";
-		second = "Saved with your settings.";
+		case AP_BOX_COLOUR_ROW_SEED_OFF: key = "box_seed_off"; break;
+		case AP_BOX_COLOUR_ROW_NO_BOXES: key = "box_no_boxes"; break;
+		case AP_BOX_COLOUR_ROW_ITEM_LOCKED: key = "box_item_locked"; break;
 	}
 	if (Config_RowLockedByHub(e))
+		key = "box_author_hub";
+	if (e->valuePtr == &g_config.itemFeed && g_config.itemFeed == AP_ITEM_FEED_OFF)
+		key = "feed_off";
+	if (Config_RowLockedBySolo(e))
+		key = "dl_solo";
+	else if (Config_IsSeedRow(e))
 	{
-		first = "Return to the main menu";
-		second = "to change Box Author Mode.";
+		const int followsSeed = *(const int *)e->valuePtr == -1;
+		if (followsSeed && !ctr_cfg_active())
+			key = "seed_prompt";
+		else if (followsSeed && e->valuePtr == &g_config.deathLink &&
+		         AP_DeathLinkRowValue(-1) != -1 && Config_SeedDeathLink().recv == CTR_DL_OFF)
+			status = "dl_forced_receive";
+		else if (IsDlSendField(e->valuePtr))
+		{
+			if (g_config.deathLink == CTR_DL_OFF)
+				status = "dl_send_master_off";
+			else if (followsSeed && g_config.deathLink > CTR_DL_OFF && g_config.deathLink <= CTR_DL_WEAPON_HIT)
+				status = "dl_send_local_mode";
+		}
 	}
-	if (e->valuePtr == &g_config.itemFeed)
-	{
-		first = "IMPORTANT hides filler items";
-		second = "and shop stock notices.";
-	}
-	if (e->valuePtr == &g_config.trackerPartialColour)
-	{
-		first = "Orange marks tracker nodes with";
-		second = "some checks in logic.";
-	}
-	if (first == 0)
-		return;
-	Config_DrawHelpLines(first, second, ot);
+#endif
+	const CtrOptionsHelp *help = CTR_OptionsHelpFor(key);
+	if (help)
+		Config_DrawHelpLines(help->first, status ? CTR_OptionsHelpFor(status)->first : help->second, ot);
 }
 
+#ifdef CTR_AP
 // Room links (issue #334): which program opens ctr-ap:// links from a room
 // page. An action row after the Archipelago page's config rows, where
 // registration exists (Windows only for 0.2.1; never in the box authoring
@@ -793,7 +816,7 @@ static int Config_LinkRow(int sec, int numRows)
 
 static void Config_DrawLinkRow(int y, int labelX, int valueX, uint32_t *ot)
 {
-	DecalFont_DrawLineOT("Room links", labelX, y, FONT_SMALL, Config_FromHub() ? GRAY : ORANGE, ot);
+	DecalFont_DrawLineOT("Open Room Links", labelX, y, FONT_SMALL, Config_FromHub() ? GRAY : ORANGE, ot);
 	DecalFont_DrawLineOT((char *)AP_LinkRegStatusText(), valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 }
 
@@ -818,33 +841,38 @@ static void Config_DrawAuthorRow(int y, int labelX, int valueX, uint32_t *ot)
 }
 #endif
 
-static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint32_t *ot, char *buf, int editing)
+static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint32_t *ot, char *buf, size_t bufSize, int editing)
 {
 #ifdef CTR_AP
-	if (Config_RowLockedBySeed(e))
+	const int boxState = Config_BoxColourState(e);
+	if (Config_BoxColourUnavailable(e))
 	{
-		DecalFont_DrawLineOT("OFF (SEED)", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+		DecalFont_DrawLineOT(boxState == AP_BOX_COLOUR_ROW_NO_BOXES ? "NO AP BOXES" : "OFF BY SEED",
+		                    valueX, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
 		return;
 	}
 	if (Config_RowLockedBySolo(e))
 	{
-		DecalFont_DrawLineOT("OFF (SOLO)", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+		DecalFont_DrawLineOT("OFF IN SOLO", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
 		return;
 	}
-	if (Config_RowLockedByItem(e))
+	if (boxState == AP_BOX_COLOUR_ROW_ITEM_LOCKED)
 	{
-		DecalFont_DrawLineOT(*(bool *)e->valuePtr ? "ON (LOCKED)" : "OFF", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
+		DecalFont_DrawLineOT(*(bool *)e->valuePtr ? "ON UNTIL ITEM" : "OFF", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 		return;
 	}
 #endif
 	if (e->type == CFG_BOOL)
 	{
-		DecalFont_DrawLineOT(*(bool *)e->valuePtr ? "ON" : "OFF",
-			valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
+		const int on = *(bool *)e->valuePtr;
+		const char *value = on ? "ON" : "OFF";
+		if (e->valuePtr == &g_config.deviceAwareLabels)
+			value = on ? "MATCH PAD" : "PLAYSTATION";
+		DecalFont_DrawLineOT((char *)value, valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 	}
 	else if (e->type == CFG_ENUM)
 	{
-		DecalFont_DrawLineOT((char *)Enum_Label(e),
+		DecalFont_DrawLineOT((char *)Enum_Label(e, buf, bufSize),
 			valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 	}
 	else if (e->type == CFG_STRING)
@@ -869,7 +897,10 @@ static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint
 		if (editing && (sdata->frameCounter & 0x10)) // ~2 Hz blink
 			buf[n++] = '_';
 		if (n == 0 && !editing)
-			buf[n++] = '-';
+		{
+			DecalFont_DrawLineOT("SLOT NAME", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
+			return;
+		}
 		buf[n] = '\0';
 
 		DecalFont_DrawLineOT(buf, valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
@@ -935,9 +966,8 @@ static int  s_connPadPrev = 0;   // previous frame's physical-pad mask, for edge
 
 // Render a CFG_STRING value into out: masked (one '*' per char) for the password,
 // plain otherwise, with a blinking trailing cursor while this row is being edited.
-static void Conn_FormatValue(const ConfigEntry *e, int masked, int editing, char *out, int outCap)
+static void Conn_FormatValue(const char *src, int masked, int editing, char *out, int outCap)
 {
-	const char *src = (const char *)e->valuePtr;
 	int n = 0;
 
 	if (src[0] == '\0' && !editing)
@@ -1211,6 +1241,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	const int sec = s_currentSection;
 	const int numStrings = s_sectionCount[sec]; // uri / slot / password
 	const int numRows = numStrings + 1 + CONN_SOLO_ROWS; // + Connect (+ Play Solo)
+	const char *helpKey = NULL;
 
 	int soloClosed = 0;
 #if !defined(CTR_AP_AUTHORING)
@@ -1293,7 +1324,19 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		int editing = (s_connEditing && s_connEditRow == j);
 
 		DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, Config_FromHub() ? GRAY : ORANGE, ot);
-		Conn_FormatValue(e, masked, editing, buf, sizeof buf);
+		const int isSlot = e->valuePtr == g_config.slot;
+		const char *source = (const char *)e->valuePtr;
+		char liveValue[160] = "";
+		if (!editing && !source[0] && ap_net_is_connected())
+		{
+			if (isSlot)
+				ap_net_slot_name(liveValue, sizeof liveValue);
+			else if (e->valuePtr == g_config.uri)
+				ap_net_room_endpoint(liveValue, sizeof liveValue);
+			if (liveValue[0])
+				source = liveValue;
+		}
+		Conn_FormatValue(source, masked, editing, buf, sizeof buf);
 		const int width = CONN_ROW_X + CONN_ROW_W - valueX - 8;
 		const int selected = j == menu->rowSelected;
 		int start = 0;
@@ -1303,18 +1346,19 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		void *valueBegin = sdata->gGT->backBuffer->primMem.cursor;
 		DecalFont_DrawLineBox(buf + start, valueX, y, width, FONT_SMALL, WHITE,
 		    selected && !editing ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_CONNECTION, ot);
-		if (strcmp(e->key, "slot") == 0 && sdata->gGT->backBuffer->primMem.cursor != valueBegin)
+		if (isSlot && sdata->gGT->backBuffer->primMem.cursor != valueBegin)
 		{
 			int shift = selected && !editing ? DecalFont_LineBoxOffset(buf, width, FONT_SMALL, TEXT_SLOT_CONNECTION) : 0;
 			int markWidth = width;
 			if (!selected && DecalFont_GetLineWidth(buf, FONT_SMALL) > width)
 				markWidth = DecalFont_GetLineWidthStrlen(buf,
 				    DecalFont_LineBoxPrefixLen(buf, width, FONT_SMALL), FONT_SMALL);
-			Conn_DrawSlotCaseMarks((const char *)e->valuePtr + start, valueX, y, shift, markWidth, ot);
+			Conn_DrawSlotCaseMarks(source + start, valueX, y, shift, markWidth, ot);
 		}
 
 		if (j == menu->rowSelected)
 		{
+			helpKey = e->key;
 			RECT sel = {CONN_ROW_X, y - 2, CONN_ROW_W, CONN_ROW_H};
 			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 		}
@@ -1326,6 +1370,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		DecalFont_DrawLineOT("Connect", labelX, y, FONT_SMALL, Config_FromHub() ? GRAY : ORANGE, ot);
 		if (menu->rowSelected == numStrings)
 		{
+			helpKey = "connect";
 			RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
 			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 		}
@@ -1335,10 +1380,11 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	// Play Solo row (#89), in the spare line between Connect and Status.
 	{
 		int y = startY + (numStrings + 1) * rowSpacing;
-		DecalFont_DrawLineOT(AP_Solo_SessionState() == AP_SOLO_SESSION_LIVE ? "Play Solo (connected)" : "Play Solo",
+		DecalFont_DrawLineOT(AP_Solo_SessionState() == AP_SOLO_SESSION_LIVE ? "Play Solo - Connected" : "Play Solo",
 			labelX, y, FONT_SMALL, Config_FromHub() ? GRAY : ORANGE, ot);
 		if (menu->rowSelected == numStrings + 1)
 		{
+			helpKey = "play_solo";
 			RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
 			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 		}
@@ -1368,13 +1414,11 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	// 0xC8, still inside the panel. Self-gates: nothing is drawn and no space is
 	// taken unless the connected seed was built by a newer pair.
 	if (Config_FromHub())
-		Config_DrawHelpLines("Return to the main menu", "to change the connection.", ot);
+		Config_DrawHelp("connection_hub", ot);
 	else if (!editWithRoomVersions)
 		AP_DrawConnUpdateNotice(ot, 0x100, startY + (numStrings + 5) * rowSpacing, rowSpacing);
 
-	// Use the same bottom footer position as the Options version to explain the
-	// case markers at their point of use. A newer-version notice owns this area
-	// when armed and takes priority over the static hint.
+	// Notices take priority over help when they share the page footer.
 	if (!Config_FromHub() && !AP_ConnUpdateNoticeActive() && !editWithRoomVersions)
 	{
 		const char *noticeFirst;
@@ -1391,9 +1435,8 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 			DecalFont_DrawLineOT((char *)noticeSecond, 0x100, startY + (numStrings + 6) * rowSpacing,
 				FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
 		}
-		else
-			DecalFont_DrawLineOT((char *)CTR_MenuSlotCaseHint(),
-				0x100, 0xC0, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+		else if (!s_connEditing && helpKey)
+			Config_DrawHelp(helpKey, ot);
 	}
 
 	// Drawn as a footer rather than on the row itself: the text value is
@@ -1717,8 +1760,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 				if (!Config_FromHub())
 					AP_LinkRegAction();
 			}
-			else if (Config_RowLockedBySeed(e) || Config_RowLockedByHub(e))
-				; // the seed has item box colours off: nothing to toggle
+			else if (Config_BoxColourUnavailable(e) || Config_RowLockedByHub(e))
+				; // this room cannot use the row
 			else if (Config_RowLockedBySolo(e))
 				; // no DeathLink in a solo session: nothing to toggle
 			else
@@ -1730,7 +1773,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #ifdef CTR_AP
 			else if (e->type == CFG_STRING)
 				TextEdit_Begin(e, menu->rowSelected,
-					CONN_ROW_START_Y + (menu->rowSelected - s_configTop) * CONN_ROW_SPACING - 2);
+					CTR_MenuOptionRowY(pageRows, menu->rowSelected - s_configTop) - 2);
 #endif
 		}
 
@@ -1739,7 +1782,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		{
 			const ConfigEntry *e = selEntry;
 #ifdef CTR_AP
-			if (e != NULL && e->type == CFG_BOOL && !Config_RowLockedBySeed(e) && !Config_RowLockedByHub(e))
+			if (e != NULL && e->type == CFG_BOOL && !Config_BoxColourUnavailable(e) && !Config_RowLockedByHub(e))
 #else
 			if (e != NULL && e->type == CFG_BOOL)
 #endif
@@ -1793,8 +1836,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 
 		int labelX = 0x38;
 		int valueX = 0x1DC;
-		int startY = 0x3C;
-		int rowSpacing = 0x0E;
+		const int startY = CTR_MenuOptionRowY(pageRows, 0);
+		const int rowSpacing = CTR_MenuOptionRowSpacing(pageRows);
 
 		Config_DrawScrollBar(s_configTop, pageRows, ot);
 
@@ -1809,12 +1852,12 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #endif
 
 #ifdef CTR_AP
-			const int locked = Config_RowLockedBySolo(e) || Config_RowLockedByHub(e);
+			const int locked = Config_RowLockedBySolo(e) || Config_RowLockedByHub(e) || Config_BoxColourUnavailable(e);
 			DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, locked ? GRAY : ORANGE, ot);
 #else
 			DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, ORANGE, ot);
 #endif
-			Config_DrawValue(e, valueX, y, ot, buf, editing);
+			Config_DrawValue(e, valueX, y, ot, buf, sizeof buf, editing);
 
 			if (j == menu->rowSelected)
 			{
@@ -1826,8 +1869,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		if (hintsRow >= 0 && hintsRow < s_configTop + CONFIG_PAGE_WINDOW)
 		{
 			int y = startY + (hintsRow - s_configTop) * rowSpacing;
-			int label = VehPickupItem_MaskBoolGoodGuy(gGT->drivers[0]) ? LNG_AKU_AKU_HINTS : LNG_UKA_UKA_HINTS;
-			DecalFont_DrawLineOT(sdata->lngStrings[label], labelX, y, FONT_SMALL, ORANGE, ot);
+			DecalFont_DrawLineOT("Replay Aku Aku Hints", labelX, y, FONT_SMALL, ORANGE, ot);
 			if (menu->rowSelected == hintsRow)
 				Config_DrawRowHighlight(ot, y);
 		}
@@ -1859,7 +1901,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		else if (menu->rowSelected == authorRow)
 		{
 			if (Config_FromHub())
-				Config_DrawHelpLines("Return to the main menu", "to change Box Author Mode.", ot);
+				Config_DrawHelp("box_author_hub", ot);
 			else
 			{
 				const char *first, *second;
@@ -1871,12 +1913,23 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		else if (menu->rowSelected == linkRow)
 		{
 			if (Config_FromHub())
-				Config_DrawHelpLines("Return to the main menu", "to change room links.", ot);
+				Config_DrawHelp("room_links_hub", ot);
 			else
-				Config_DrawHelpLines("Which program opens room links.", AP_LinkRegActionHint(), ot);
+				Config_DrawHelpLines(CTR_OptionsHelpFor("room_links")->first, AP_LinkRegActionHint(), ot);
 		}
-		else if (numRows > 0 && menu->rowSelected < numRows)
+		else if (menu->rowSelected == hintsRow)
+			Config_DrawHelp("replay_hints", ot);
+		else
+#endif
+		if (numRows > 0 && menu->rowSelected < numRows)
 			Config_DrawRowHelp(Section_Entry(sec, menu->rowSelected), ot);
+#ifdef CTR_AP
+		if (strcmp(s_sectionName[sec], "DeathLink and Traps") == 0)
+		{
+			const CtrOptionsHelp *help = CTR_OptionsHelpFor("deathlink_page");
+			DecalFont_DrawLineOT((char *)help->first, 0x100, 0x92, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+			DecalFont_DrawLineOT((char *)help->second, 0x100, 0xA0, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+		}
 		} // end generic (non-Connection) section
 #elif defined(CTR_CUSTOM_PACKAGES)
 		} // end generic (non-Custom Content) section

@@ -29,9 +29,8 @@ fixture = r'''
 #define CTR_NATIVE
 #define CTR_CUSTOM_TRACKS
 #define CTR_CUSTOM_PACKAGES
-#define CONFIG_PAGE_WINDOW 9
-#define CONFIG_ROW_START_Y 0x3C
-#define CONFIG_ROW_SPACING 0x0E
+#include "include/ctr_menu_pages.h"
+#define CONFIG_PAGE_WINDOW CTR_MENU_PAGE_VISIBLE_ROWS
 #define CTR_SCROLLBAR_W 4
 #define CTR_SCROLLBAR_MIN_THUMB 8
 #define TRANS_50_DECAL 5
@@ -168,26 +167,26 @@ int main(void) {
     AP_FeedLinesEnqueue(&ap_feed,"NEW USEFUL",WHITE,0);
     assert(ap_feed.qcount == 2 && !strcmp(ap_feed.queue[ap_feed.qhead].text,"PROGRESSION"));
     feedMode = AP_ITEM_FEED_ALL;
-    // A4-36: a slim bar, no text, only when the page scrolls; track and thumb inside the nine-row window.
+    // A4-36: a slim bar, no text, only when the page scrolls; track and thumb inside the compact window.
     draws=0;
-    for(int count=0;count<=9;count++) { boxes=0;Config_DrawScrollBar(0,count,NULL);assert(!boxes); }
-    for(int rows=10;rows<=24;rows++)for(int top=0;top<=rows-9;top++) {
+    for(int count=0;count<=CONFIG_PAGE_WINDOW;count++) { boxes=0;Config_DrawScrollBar(0,count,NULL);assert(!boxes); }
+    for(int rows=CONFIG_PAGE_WINDOW+1;rows<=24;rows++)for(int top=0;top<=rows-CONFIG_PAGE_WINDOW;top++) {
         boxes=0;Config_DrawScrollBar(top,rows,NULL);assert(boxes==2);
         RECT t=boxRect[0],h=boxRect[1];
         assert(!boxSolid[0]&&boxSolid[1]);
-        assert(t.x==0x1E4&&t.y==0x3A&&t.w==4&&t.h==9*0x0E&&h.x==t.x&&h.w==t.w);
+        assert(t.x==0x1E4&&t.y==CTR_MenuOptionRowY(rows,0)-2&&t.w==4&&t.h==CONFIG_PAGE_WINDOW*CTR_MenuOptionRowSpacing(rows)&&h.x==t.x&&h.w==t.w);
         assert(h.y>=t.y&&h.y+h.h<=t.y+t.h&&h.h>=8);
-        assert(h.h==(t.h*9/rows>8?t.h*9/rows:8));
+        assert(h.h==(t.h*CONFIG_PAGE_WINDOW/rows>8?t.h*CONFIG_PAGE_WINDOW/rows:8));
         if(top==0) assert(h.y==t.y);
-        if(top==rows-9) assert(h.y+h.h==t.y+t.h);
+        if(top==rows-CONFIG_PAGE_WINDOW) assert(h.y+h.h==t.y+t.h);
         assert(boxColor[1].r==0xFF&&boxColor[1].g==0xFF&&boxColor[1].b==0xFF);
     }
     assert(!draws); // the bar adds no text
     {   // a selection moving down never moves the thumb up; bigger lists get thinner thumbs
         int lastY=-1;
-        for(int top=0;top<=3;top++) { boxes=0;Config_DrawScrollBar(top,12,NULL);assert(boxRect[1].y>lastY);lastY=boxRect[1].y; }
-        boxes=0;Config_DrawScrollBar(0,12,NULL);int h12=boxRect[1].h;
-        boxes=0;Config_DrawScrollBar(0,24,NULL);assert(boxRect[1].h<h12);
+        for(int top=0;top<=3;top++) { boxes=0;Config_DrawScrollBar(top,15,NULL);assert(boxRect[1].y>lastY);lastY=boxRect[1].y; }
+        boxes=0;Config_DrawScrollBar(0,15,NULL);int h15=boxRect[1].h;
+        boxes=0;Config_DrawScrollBar(0,24,NULL);assert(boxRect[1].h<h15);
     }
     for(game.levelID=0;game.levelID<32;game.levelID++)for(custom=0;custom<2;custom++)for(offline=0;offline<2;offline++) {
         sky();u32 want=game.levelID==20&&!custom&&!offline?0xff3b04:0x123456;
@@ -200,7 +199,7 @@ int main(void) {
 with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp)
     (path / "test.c").write_text(fixture)
-    subprocess.run(["cc", "-std=c99", "-fno-strict-aliasing", "-I", str(root), str(path / "test.c"), "-o", str(path / "test")], check=True)
+    subprocess.run(["cc", "-std=c99", "-fno-strict-aliasing", "-I", str(root), "-I", str(root / "include"), str(path / "test.c"), "-o", str(path / "test")], check=True)
     subprocess.run([str(path / "test")], check=True)
 
 # The title flag follows drawing, including hint/picker suppression, rather

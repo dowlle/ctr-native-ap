@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include <ctr_options_help.h>
+#endif
 
 #ifdef CTR_AP
 #include "../../ap/ap_pauserow.h"
@@ -711,7 +714,13 @@ force_inline void DISPLAYRECTMENU_MainFreeze_MenuPtrOptions(struct RectMenu *men
 		}
 	}
 
-	DecalFont_DrawLine(sdata->lngStrings[LNG_OPTIONS_TITLE], 256, 26 + (menuRowsNegativePadding / 2), FONT_BIG, (JUSTIFY_CENTER | ORANGE));
+	char *title = sdata->lngStrings[LNG_OPTIONS_TITLE];
+#ifdef CTR_AP
+	const int optionsSound = MM_ConfigIsChild(menu);
+	if (optionsSound)
+		title = "Sound";
+#endif
+	DecalFont_DrawLine(title, 256, 26 + (menuRowsNegativePadding / 2), FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
 	int volumeSliderWidth = 380 - (30 + volumeSliderTriangleLeftMargin);
 
@@ -835,6 +844,19 @@ force_inline void DISPLAYRECTMENU_MainFreeze_MenuPtrOptions(struct RectMenu *men
 
 	DecalFont_DrawLine(sdata->lngStrings[LNG_OPTIONS_EXIT], 76, 140 - (menuRowsNegativePadding / 2), FONT_SMALL, ORANGE);
 
+#ifdef CTR_AP
+	if (optionsSound)
+	{
+		static const char *const helpKeys[] = {"sound_fx", "sound_music", "sound_voice", "sound_mode"};
+		const int selected = menu->rowSelected;
+		const char *key = selected >= 0 && selected < 4 ? helpKeys[selected] : selected == 8 ? "sound_exit"
+		                : selected < 4 + gamepad->numGamepads ? "sound_vibrate" : "sound_analog";
+		const CtrOptionsHelp *help = CTR_OptionsHelpFor(key);
+		DecalFont_DrawLine((char *)help->first, 256, 155 - (menuRowsNegativePadding / 2), FONT_SMALL,
+		                   JUSTIFY_CENTER | WHITE);
+	}
+#endif
+
 	RECT cursor = {.x = 74,
 	               .y = data.Options_HighlightBar[menu->rowSelected].posY + (menuRowsNegativePadding / 2) + 20,
 	               .w = 364,
@@ -848,6 +870,10 @@ force_inline void DISPLAYRECTMENU_MainFreeze_MenuPtrOptions(struct RectMenu *men
 	RECTMENU_DrawOuterRect_Edge(&titleSeparatorLine, color, 0x20, ot);
 
 	RECT menuBG = {.x = 56, .y = (menuRowsNegativePadding / 2) + 20, .w = 400, .h = 135 - menuRowsNegativePadding};
+#ifdef CTR_AP
+	if (optionsSound)
+		menuBG.h += 16;
+#endif
 
 	RECTMENU_DrawInnerRect(&menuBG, 4, ot);
 }

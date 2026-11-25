@@ -618,6 +618,11 @@ static void Controls_DrawSafeText(const char *text, int x, int y, int flags, uin
 	DecalFont_DrawLineOT(s_safeBuffer, x, y, FONT_SMALL, flags, ot);
 }
 
+static const char *Controls_NoDeviceLabel(int player)
+{
+	return NativeControls_GetPlayerPref(player) == NATIVE_CONTROLS_PREF_DISABLED ? "Disabled" : "No Pad";
+}
+
 static void Controls_DrawValue(int device, const struct ControlsRow *row, int y, uint32_t *ot)
 {
 	if (row->kind == CONTROLS_ROW_RESTORE)
@@ -647,7 +652,7 @@ static void Controls_DrawValue(int device, const struct ControlsRow *row, int y,
 
 	if (device == NATIVE_CONTROLS_NO_DEVICE)
 	{
-		text = (row->kind == CONTROLS_ROW_DEVICE) ? "Disabled" : "-";
+		text = (row->kind == CONTROLS_ROW_DEVICE) ? Controls_NoDeviceLabel(s_player) : "-";
 		colour = GRAY;
 	}
 	else if (row->kind == CONTROLS_ROW_DEVICE)
@@ -941,6 +946,23 @@ static void MM_MenuProc_Controls(struct RectMenu *menu, uint32_t *ot)
 		Controls_DrawHint("R1", CONFIG_VALUE_X, true, ot);
 	}
 	Controls_DrawRows(menu, ot, NativeControls_GetPlayerDevice(s_player));
+	if (!NativeControls_IsCapturing() && !s_pickerOpen && s_rowCount > 0)
+	{
+		const struct ControlsRow *row = &s_rows[menu->rowSelected];
+		const char *key = "control_binding";
+		switch (row->kind)
+		{
+			case CONTROLS_ROW_DEVICE: key = "control_device"; break;
+			case CONTROLS_ROW_DEADZONE: key = "control_deadzone"; break;
+			case CONTROLS_ROW_RESTORE: key = s_shortcutScreen ? "shortcut_defaults" : "control_restore"; break;
+			case CONTROLS_ROW_SHORTCUT: key = "shortcut_picker"; break;
+			default: break;
+		}
+		const CtrOptionsHelp *help = CTR_OptionsHelpFor(key);
+		DecalFont_DrawLineOT((char *)help->first, 0x100, CONTROLS_FOOTER_Y - 10, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+		if (help->second[0])
+			DecalFont_DrawLineOT((char *)help->second, 0x100, CONTROLS_FOOTER_Y, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	}
 }
 
 // ---- Player list (the Controls page itself) --------------------------------
@@ -959,7 +981,7 @@ static void Controls_DrawPlayerRow(int player, int y, uint32_t *ot)
 
 	if (device == NATIVE_CONTROLS_NO_DEVICE)
 	{
-		DecalFont_DrawLineOT((char *)"Disabled", CONFIG_VALUE_X, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+		DecalFont_DrawLineOT((char *)Controls_NoDeviceLabel(player), CONFIG_VALUE_X, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
 		return;
 	}
 
@@ -1056,7 +1078,7 @@ static void MM_ConfigProc_Controls(struct RectMenu *menu, uint32_t *ot)
 		const int y = CONFIG_ROW_START_Y + PLATFORM_INPUT_PAD_COUNT * CONFIG_ROW_SPACING;
 
 		DecalFont_DrawLineOT((char *)"AP Shortcuts", CONFIG_LABEL_X, y, FONT_SMALL, ORANGE, ot);
-		DecalFont_DrawLineOT((char *)"Keyboard", CONFIG_VALUE_X, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
+		DecalFont_DrawLineOT((char *)"Keys", CONFIG_VALUE_X, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 
 		if (menu->rowSelected == PLATFORM_INPUT_PAD_COUNT)
 		{
@@ -1065,7 +1087,5 @@ static void MM_ConfigProc_Controls(struct RectMenu *menu, uint32_t *ot)
 	}
 #endif
 
-	// Each line fits the panel (33 characters at FONT_SMALL).
-	DecalFont_DrawLineOT((char *)"Pick a player to choose a device,", 0x100, 0xB8, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-	DecalFont_DrawLineOT((char *)"rebind buttons or set a deadzone.", 0x100, 0xC6, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	Config_DrawHelp(menu->rowSelected < PLATFORM_INPUT_PAD_COUNT ? "control_player" : "control_shortcuts", ot);
 }

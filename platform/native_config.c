@@ -83,11 +83,11 @@ NativeConfig g_config = {
 
 const ConfigEntry g_configEntries[] = {
 #ifdef CTR_AP
-	{"Video & QoL", "device_aware_labels", "Device-aware Button Labels", CFG_BOOL, &g_config.deviceAwareLabels},
+	{"Video & QoL", "device_aware_labels", "Button Prompts", CFG_BOOL, &g_config.deviceAwareLabels},
 #endif
 	{"Video & QoL", "skip_intro",               "Skip Intros",                  CFG_BOOL, &g_config.skipIntro},
 	{"Video & QoL", "increase_draw_distance",   "Increase Draw Distance",       CFG_BOOL, &g_config.increaseDrawDistance},
-	{"Video & QoL", "disable_split_screen_lod", "Hi-Res Models in Multiplayer", CFG_BOOL, &g_config.disableSplitScreenLod},
+	{"Video & QoL", "disable_split_screen_lod", "Split-Screen Detail", CFG_BOOL, &g_config.disableSplitScreenLod},
 	// The three graphics options ported from thecodingbob/ctr-native
 	// (widescreen-option / fullscreen-option / dithering-option branches). The
 	// aspect_ratio row is CFG_ENUM: 0 = 4:3 (vanilla default), 1 = 16:9,
@@ -117,7 +117,7 @@ const ConfigEntry g_configEntries[] = {
 	// by NativeAudio_UpdateFocusMuteState (platform/native_audio.c) from
 	// Platform_BeginScene, so it is picked up on the next frame and needs no
 	// menu-exit hook.
-	{"Video & QoL", "mute_when_unfocused",      "Mute When Unfocused",          CFG_BOOL, &g_config.muteWhenUnfocused},
+	{"Video & QoL", "mute_when_unfocused",      "Mute in Background",          CFG_BOOL, &g_config.muteWhenUnfocused},
 #ifdef CTR_AP
 	// Skip Podium Ceremonies (issue #285, CFG_BOOL): a LOCAL client option, off
 	// by default, that drops the hub podium for an ordinary Trophy, CTR
@@ -160,7 +160,7 @@ const ConfigEntry g_configEntries[] = {
 	{"Connection",  "uri",                      "Server",                       CFG_STRING, g_config.uri,      0, (int)sizeof(g_config.uri),      0},
 	{"Connection",  "slot",                     "Slot",                         CFG_STRING, g_config.slot,     0, (int)sizeof(g_config.slot),     0},
 	{"Connection",  "password",                 "Password",                     CFG_STRING, g_config.password, 0, (int)sizeof(g_config.password), 0},
-	{"Archipelago", "skip_hints",               "Skip Mask Hints",              CFG_BOOL, &g_config.skipHints},
+	{"Archipelago", "skip_hints",               "Skip Aku Aku Hints",              CFG_BOOL, &g_config.skipHints},
 	// Race type menu on plan pads (#208, CFG_ENUM SEED / ALWAYS / PRODUCTIVE).
 	// SEED follows the seed's race_type_selector. Shown on the Gameplay page.
 	{"Archipelago", "race_type_selector",       "Race Type Menu",               CFG_ENUM, &g_config.raceTypeSelector},
@@ -170,8 +170,8 @@ const ConfigEntry g_configEntries[] = {
 	// the boss theme. Not slot_data: a presentation preference each player
 	// picks for themselves. Shown on the Gameplay page.
 	{"Archipelago", "boss_music",               "Boss Music",                   CFG_ENUM, &g_config.bossMusic},
-	{"Archipelago", "map_flash",                "Map Flash",                    CFG_BOOL, &g_config.mapFlash},
-	{"Archipelago", "tracker_partial_colour",   "Tracker Partial Colour",       CFG_BOOL, &g_config.trackerPartialColour},
+	{"Archipelago", "map_flash",                "Hub Map Flashing",                    CFG_BOOL, &g_config.mapFlash},
+	{"Archipelago", "tracker_partial_colour",   "Tracker: Mark Partial Pads",       CFG_BOOL, &g_config.trackerPartialColour},
 	// Item Box Colours: this player's opt-out of the seed's AP item box colours
 	// (color_boxes_by_item). Off = pink boxes for this player only. The menu
 	// shows "OFF (SEED)" and ignores input while a loaded seed has colours off.
@@ -186,13 +186,13 @@ const ConfigEntry g_configEntries[] = {
 	// DeathLink send triggers, one row each (SEED / OFF / ON), independent of the
 	// receive row above. SEED follows slot_data death_link_send, or the legacy
 	// coupling from death_link when the seed has no such key.
-	{"Archipelago", "dl_send_fall",             "DL Send Fall",                 CFG_ENUM, &g_config.dlSendFall},
-	{"Archipelago", "dl_send_hit",              "DL Send Hit",                  CFG_ENUM, &g_config.dlSendHit},
-	{"Archipelago", "dl_send_loss",             "DL Send Loss",                 CFG_ENUM, &g_config.dlSendLoss},
+	{"Archipelago", "dl_send_fall",             "Send When I Fall",                 CFG_ENUM, &g_config.dlSendFall},
+	{"Archipelago", "dl_send_hit",              "Send When Hit",                  CFG_ENUM, &g_config.dlSendHit},
+	{"Archipelago", "dl_send_loss",             "Send When I Lose",                 CFG_ENUM, &g_config.dlSendLoss},
 	{"Archipelago", "trap_duration",            "Trap Duration",                CFG_ENUM, &g_config.trapDuration},
 	// Pair-version update notice (issue #150). A plain CFG_BOOL alongside
 	// skip_hints/map_flash, so it renders and toggles with no menu changes.
-	{"Archipelago", "update_check",             "Update Check",                 CFG_BOOL, &g_config.updateCheck},
+	{"Archipelago", "update_check",             "New Version Notice",                 CFG_BOOL, &g_config.updateCheck},
 	// Discord Status (issue #366, CFG_BOOL): a LOCAL option, off by default.
 	// On, the Discord client on this machine shows the track, mode and check
 	// count (ap/ap_discord.c). No room, slot or seed details are sent. Not

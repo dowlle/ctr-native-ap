@@ -467,8 +467,8 @@ static int AP_BoxesColourFor(long code)
 
 int AP_Boxes_ColourRowState(void)
 {
-	return AP_BoxColour_RowStateWithItem(ctr_cfg_active(), ctr_cfg.color_boxes_by_item,
-	                                     AP_SpoilerBoxColoursUnlocked());
+	return AP_BoxColour_RowStateWithItem(ctr_cfg_active(), ctr_cfg.seed_box_locations,
+	                                     ctr_cfg.color_boxes_by_item, AP_SpoilerBoxColoursUnlocked());
 }
 
 static void AP_BoxesApplyColour(struct GameTracker *gGT, int i)

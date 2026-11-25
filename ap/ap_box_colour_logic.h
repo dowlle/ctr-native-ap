@@ -107,8 +107,9 @@ static inline int AP_BoxColour_Effective(int spoilerUnlocked, int seedOn, int pl
 enum
 {
 	AP_BOX_COLOUR_ROW_PLAYER = 0, // the player's own ON/OFF, editable
-	AP_BOX_COLOUR_ROW_SEED_OFF,   // "OFF (SEED)", greyed, not editable
-	AP_BOX_COLOUR_ROW_ITEM_LOCKED // "ON (LOCKED)" / "OFF", editable (#459 ruling, 2026-10-28)
+	AP_BOX_COLOUR_ROW_SEED_OFF,   // "OFF BY SEED", greyed, not editable
+	AP_BOX_COLOUR_ROW_ITEM_LOCKED, // "ON UNTIL ITEM" / "OFF", editable (#459)
+	AP_BOX_COLOUR_ROW_NO_BOXES    // "NO AP BOXES", greyed, not editable
 };
 static inline int AP_BoxColour_RowState(int seedLoaded, int seedOn)
 {
@@ -118,9 +119,11 @@ static inline int AP_BoxColour_RowState(int seedLoaded, int seedOn)
 // holds them behind AP Box Colours is ITEM_LOCKED until the item arrives. The
 // player may still switch the row (#459 ruling, 2026-10-28); an OFF set early keeps
 // boxes pink after receipt, because AP_BoxColour_Effective still asks the
-// player. A seed with colours off keeps "OFF (SEED)"; the item cannot change it.
-static inline int AP_BoxColour_RowStateWithItem(int seedLoaded, int seedOn, int itemUnlocked)
+// player. A seed with colours off keeps "OFF BY SEED"; the item cannot change it.
+static inline int AP_BoxColour_RowStateWithItem(int seedLoaded, int hasBoxes, int seedOn, int itemUnlocked)
 {
+	if (seedLoaded && !hasBoxes)
+		return AP_BOX_COLOUR_ROW_NO_BOXES;
 	int state = AP_BoxColour_RowState(seedLoaded, seedOn);
 	if (state == AP_BOX_COLOUR_ROW_PLAYER && seedLoaded && !itemUnlocked)
 		return AP_BOX_COLOUR_ROW_ITEM_LOCKED;

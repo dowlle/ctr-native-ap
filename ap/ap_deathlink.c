@@ -117,9 +117,8 @@ int AP_DeathLinkRowValue(int row)
 	return row;
 }
 
-// Effective receive mode. The forced values ARE the tier enum (1 = mask_reset,
-// 2 = any_hit, 3 = race_loss, 4 = weapon_hit), so all in-game DeathLink layers
-// stay selectable.
+// Effective receive mode. A saved legacy mode 2 still receives like mask reset
+// and keeps its original default send triggers.
 static int AP_DeathLinkEffMode(void)
 {
 	return AP_DeathLinkStateNow().recv;
