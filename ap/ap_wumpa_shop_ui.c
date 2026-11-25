@@ -166,10 +166,19 @@ int AP_WumpaShopHubTrackerLine(int level, char *out, int cap)
 		in_logic += state == 1;
 		unknown += state == 2;
 	}
-	if (unknown)
-		snprintf(out, cap, "WUMPA SHOP: %d LEFT, %d IN LOGIC, %d UNKNOWN", left, in_logic, unknown);
-	else
-		snprintf(out, cap, "WUMPA SHOP: %d LEFT, %d IN LOGIC", left, in_logic);
+	snprintf(out, cap, "WUMPA SHOP: %d LEFT, %d IN LOGIC", left, in_logic);
+	if (unknown) {
+		size_t len = strlen(out);
+		snprintf(out + len, cap - len, ", %d UNKNOWN", unknown);
+	}
+	if (ap_net_wumpa_ready()) {
+		int states[AP_WUMPA_SHOP_MAX_SLOTS];
+		for (int k = 0; k < ctr_wumpa_shop.slots; ++k)
+			states[k] = AP_WShopSlotState(hub, k);
+		AP_WumpaShopTally shop = AP_WumpaShopTallyStates(states, ctr_wumpa_shop.slots);
+		size_t len = strlen(out);
+		snprintf(out + len, cap - len, ", %d ON SALE, %d AFFORDABLE", shop.open, shop.affordable);
+	}
 	return 1;
 }
 

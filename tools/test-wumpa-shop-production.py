@@ -171,7 +171,7 @@ check('the tracker hub tab draws the shop line',
 tline = body(text('ap/ap_wumpa_shop_ui.c'), 'int AP_WumpaShopHubTrackerLine(')
 check('the tracker tallies AP logic for unchecked slots independently of the wallet',
       'AP_ContentCodeChecked(code)' in tline and 'AP_LocationLogicState(code)' in tline
-      and 'ap_net_wumpa_ready()' not in tline)
+      and tline.index('AP_LocationLogicState(code)') < tline.index('ap_net_wumpa_ready()'))
 cfg = text('ap/ap_seedcfg.cpp')
 check('the block parser sits before the plan admission',
       cfg.index('#include "ap_wumpa_shop_parser.hpp"') < cfg.index('#include "ap_content_plan_impl.hpp"'))

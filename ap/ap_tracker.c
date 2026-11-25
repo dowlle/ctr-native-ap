@@ -985,24 +985,38 @@ static int AP_TrackerPendingInLogic(int64_t code)
 
 static void AP_TrackerCupRoute(const ctr_content_pad *track, char *route, size_t size)
 {
-	if (!track || !track->occupied || track->cup || track->crystal || AP_ContentPadOpen(track))
+	if (!track || !track->occupied || track->cup || track->crystal)
 		return;
-	int shared = AP_TrackerPendingInLogic(track->lap_location) ||
-	             AP_TrackerPendingInLogic(track->wumpa_location);
+	int64_t shared[7] = {track->lap_location, track->wumpa_location};
 	for (int i = 0; i < 5; ++i)
-		shared |= AP_TrackerPendingInLogic(track->rung_locations[i]);
-	if (!shared) return;
+		shared[i+2] = track->rung_locations[i];
+	int pending = 0;
+	for (int i = 0; i < 7; ++i)
+		if (AP_TrackerPendingInLogic(shared[i])) shared[pending++] = shared[i];
+	if (!pending) return;
+	int own_open = AP_ContentPadOpen(track);
 	for (int physical = 0; physical <= 104; ++physical) {
 		const ctr_content_pad *cup = ap_content_plan_pad(physical);
-		if (!cup || !cup->cup || !AP_ContentPadOpen(cup)) continue;
+		/* A reachable cup win proves the full race sequence. A location's
+		 * exported status can be true through several routes, so an open cup
+		 * pad by itself is insufficient to name that cup. */
+		if (!cup || !cup->cup || AP_TrackerChecksLogic(cup->trophy_location) != 1) continue;
 		for (int leg = 0; leg < AP_CONTENT_CUP_LEGS; ++leg) {
 			if (cup->legs[leg].track_pad != track->physical) continue;
-			snprintf(route, size, "VIA %s, RACE %d",
-			         cup->room_title[0] ? cup->room_title : cup->display_name, leg + 1);
-			return;
+			int count;
+			const int64_t *codes = ap_content_plan_tracker_locations(physical, &count);
+			for (int i = 0; i < pending; ++i) {
+				if (ap_content_plan_check_boost(shared[i]) > cup->trophy_boost) continue;
+				for (int j = 0; j < count; ++j) {
+					if (codes[j] != shared[i]) continue;
+					snprintf(route, size, "VIA %s, RACE %d",
+					         cup->room_title[0] ? cup->room_title : cup->display_name, leg + 1);
+					return;
+				}
+			}
 		}
 	}
-	snprintf(route, size, "SHARED CHECKS IN LOGIC VIA ANOTHER RACE");
+	if (!own_open) snprintf(route, size, "SHARED CHECKS IN LOGIC VIA ANOTHER RACE");
 }
 
 static void AP_TrackerDrawCheckRow(const AP_TrackerReward *row, int y)

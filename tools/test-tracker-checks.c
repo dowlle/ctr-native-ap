@@ -71,9 +71,10 @@ int AP_LocationLogicState(long long code) { return code%3; }
 int AP_ContentPadOpen(const ctr_content_pad *pad) { return pad == &pads[1]; }
 int AP_BossGarageOpen(int boss) { return boss == 0; }
 int AP_GateCount(int index) { (void)index; return 0; }
+int ap_content_plan_check_boost(int64_t code) { (void)code; return 0; }
 const int64_t *ap_content_plan_tracker_locations(int node, int *count) {
     static const int64_t codes[] = {103, 106, 108, 111, 112};
-    *count = node == 7 ? (int)(sizeof codes / sizeof codes[0]) : 0;
+    *count = node == 7 ? (int)(sizeof codes / sizeof codes[0]) : node == 100 ? 1 : 0;
     return codes;
 }
 char *NativeMenu_Labels(const char *text) { return (char *)text; }
@@ -219,12 +220,16 @@ static void partial_and_pickup_tests(void) {
     strcpy(pads[1].room_title, "YELLOW GEM CUP");
     pads[1].cup = 1;
     pads[1].physical = 100;
+    pads[1].trophy_location = 115;
     for (int i = 0; i < AP_CONTENT_CUP_LEGS; ++i) pads[1].legs[i].track_pad = -1;
     pads[1].legs[2].track_pad = 7;
     strcpy(pads[1].legs[2].track_id, "retail:7");
     char route[128] = "";
     AP_TrackerCupRoute(&pads[0], route, sizeof route);
     assert(!strcmp(route, "VIA YELLOW GEM CUP, RACE 3"));
+    pads[1].trophy_location = 114;
+    AP_TrackerCupRoute(&pads[0], route, sizeof route);
+    assert(!strcmp(route, "SHARED CHECKS IN LOGIC VIA ANOTHER RACE"));
     assert(AP_TrackerCupBoxesInLogic(&pads[1]) == 0);
     checked_code = 0;
     assert(AP_TrackerCupBoxesInLogic(&pads[1]) == 1);
