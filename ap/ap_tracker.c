@@ -1158,18 +1158,18 @@ static void AP_TrackerDrawActivities(void)
 	for (i = 0; i < ap_tracker.acts.count; i++) {
 		int ry = y + 72 + i * 120, open = ap_tracker.acts.reason[i] == AP_PADACT_OPEN;
 		if (i == ap_tracker.acts_cursor) AP_TrackerRect(x + 8, ry - 5, w - 16, 118, AP_TrackerRGBA(120, 48, 12, 255));
-		AP_TrackerText(AP_PadActivityName(ap_tracker.acts.activity[i]), x + 20, ry + 4, 23, TRACKER_WHITE, 255);
-		if (open) AP_TrackerText(ap_tracker.acts.left[i] ? "START" : "REPLAY", x + 290, ry + 4, 21,
-			ap_tracker.acts.left[i] ? TRACKER_GREEN : TRACKER_GOLD, w - 310);
+		AP_TrackerText(AP_PadActivityName(ap_tracker.acts.activity[i]), x + 20, ry + 4, 23, TRACKER_WHITE, 295);
+		if (open) AP_TrackerText(ap_tracker.acts.left[i] ? "START" : "REPLAY", x + 355, ry + 4, 21,
+			ap_tracker.acts.left[i] ? TRACKER_GREEN : TRACKER_GOLD, w - 375);
 		else {
-			AP_TrackerLockIcon(x + 280, ry + 4);
+			AP_TrackerLockIcon(x + 329, ry + 4);
 			int mask = ap_tracker.acts.mask[i];
 			int dy = 0;
 			for (int reason = 1; reason < AP_PADACT_REASONS; ++reason) {
 				if (!(mask & AP_PADACT_BIT(reason))) continue;
 				char detail[192];
 				AP_TrackerActivityReason(n, pad, reason, detail, sizeof detail);
-				AP_TrackerText(detail, x + 302, ry + dy + 4, 19, TRACKER_WHITE, w - 326);
+				AP_TrackerText(detail, x + 355, ry + dy + 4, 19, TRACKER_WHITE, w - 375);
 				dy += 23;
 			}
 		}
@@ -1203,6 +1203,25 @@ static void AP_TrackerDrawGoals(void)
 		AP_TrackerText(line + start, (TRACKER_W - width) / 2, y,
 		               AP_TRACKER_GOAL_FONT, TRACKER_GOLD, AP_TRACKER_GOAL_WIDTH);
 	}
+}
+
+static int AP_TrackerLegendEntry(const char *label, int x, uint32_t colour)
+{
+	const int height = 15;
+	int width = AP_TrackerTextWidth(label, (int)strlen(label), height);
+	AP_TrackerText(label, x, 718, height, colour, width + 2);
+	return x + width + 16;
+}
+
+static void AP_TrackerDrawLegend(void)
+{
+	int x = AP_TrackerLegendEntry(g_config.trackerPartialColour ? "GREEN ALL IN LOGIC" : "GREEN IN LOGIC", 32, TRACKER_GREEN);
+	if (g_config.trackerPartialColour)
+		x = AP_TrackerLegendEntry("ORANGE SOME IN LOGIC", x, TRACKER_ORANGE);
+	x = AP_TrackerLegendEntry("RED OUT", x, TRACKER_RED);
+	x = AP_TrackerLegendEntry("GREY DONE", x, TRACKER_GRAY);
+	x = AP_TrackerLegendEntry("BLUE UNKNOWN", x, TRACKER_UNKNOWN);
+	AP_TrackerLegendEntry("LETTER LOCK NEEDS ITEM", x, TRACKER_WHITE);
 }
 
 static void AP_TrackerDraw(void)
@@ -1271,19 +1290,10 @@ static void AP_TrackerDraw(void)
 			size_t len = strlen(line);
 			snprintf(line + len, sizeof line - len, " | %d SHARED", shared);
 		}
-		AP_TrackerText(line,32,664,14,TRACKER_WHITE,1210);
+		AP_TrackerText(line,32,718,14,TRACKER_WHITE,1060);
+	} else {
+		AP_TrackerDrawLegend();
 	}
-	int x = 32;
-	AP_TrackerText(g_config.trackerPartialColour ? "GREEN ALL IN LOGIC" : "GREEN IN LOGIC",x,718,15,TRACKER_GREEN,190);
-	x += 195;
-	if (g_config.trackerPartialColour) {
-		AP_TrackerText("ORANGE SOME IN LOGIC",x,718,15,TRACKER_ORANGE,220);
-		x += 225;
-	}
-	AP_TrackerText("RED OUT",x,718,15,TRACKER_RED,90);
-	AP_TrackerText("GREY DONE",x+100,718,15,TRACKER_GRAY,105);
-	AP_TrackerText("BLUE UNKNOWN",x+218,718,15,TRACKER_UNKNOWN,145);
-	AP_TrackerText("LETTER LOCK NEEDS ITEM",x+378,718,15,TRACKER_WHITE,225);
 	if (!ap_net_is_connected()) AP_TrackerText("OFFLINE",1120,718,15,TRACKER_UNKNOWN,120);
 	{
 		/* #375: Cross opens the activity list when the seed allows starts. */
