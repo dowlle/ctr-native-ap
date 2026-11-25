@@ -40,6 +40,9 @@ using J = nlohmann::json;
 static const struct { const char *content_id, *revision, *lev_sha256; int rank; int since = 0; } kUsfRulings[] = {
     {"arabian-heights-night", "", "", 2}, {"baby-t-park", "", "", 0}, {"cortex-vortex", "", "", 2},
     {"north-pole", "", "", 0}, {"tv-world", "", "", 0},
+    // Appie's 2026-11-25 Boost 0 lap and finish ruling, carried from Day to Night.
+    {"arabian-heights-day", "1.0.0", "a84dcf7132574b3b2cdd3d51ac4511cd68bbdd38e77ea31208be2029bbb72900", 0, 5},
+    {"arabian-heights-night", "1.1.0", "8093b663855d3fd0096fd2980a85bc6efe334c0aff250e8a33eea11909e5c21c", 0, 5},
     // Project rulings of 2026-11-05 07:19 CET (A2-27), per registry revision and LEV pin.
     {"ancient-lake", "1.0.0", "7e5b776f312f500112061b3b95a1f371571fd7dfe7fbd1dc404e7b3d3a3a1e78", 0},
     {"ancient-lake", "1.0.1", "2fc45ad5edaf735426b99229cc561293d02badc6a578ef53f328ad3fc2f85360", 0},
