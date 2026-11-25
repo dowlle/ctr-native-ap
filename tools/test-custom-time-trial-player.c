@@ -19,6 +19,7 @@ void AP_CupSweepOnLoadRequested(int levelID);
 void AP_ContentCupOnLoadRequested(int levelID);
 void AP_HubSaveBoxCloseForLoad(void);
 void AP_DeathLinkOnRaceEnd(struct GameTracker *gGT, struct Driver *player);
+int AP_TrackFillOfflineTarget(int tier);
 #include "test-custom-time-trial.c"
 
 void AP_CupSweepOnLoadRequested(int levelID)
@@ -39,4 +40,10 @@ void AP_DeathLinkOnRaceEnd(struct GameTracker *gGT, struct Driver *player)
 {
 	(void)gGT;
 	(void)player;
+}
+
+int AP_TrackFillOfflineTarget(int tier)
+{
+	(void)tier;
+	return -1;
 }
