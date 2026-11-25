@@ -450,9 +450,10 @@ assert "AP_TrackerLaunchBegin(ap_tracker.hub" in menu
 assert "ap_tracker.acts.reason[ap_tracker.acts_cursor]==AP_PADACT_OPEN" in menu
 # Decision 34: display every missing requirement.
 drawn = body(tracker, "static void AP_TrackerDrawActivities(void)")
-assert "int mask = ap_tracker.acts.mask[i];" in drawn
-assert "if (!(mask & AP_PADACT_BIT(reason))) continue;" in drawn
-assert "AP_TrackerActivityReason(n, pad, reason, detail, sizeof detail);" in drawn
+details = body(tracker, "static int AP_TrackerActivityDetails(")
+assert "AP_TrackerActivityDetails(n, pad, ap_tracker.acts.mask[i]" in drawn
+assert "if (!(mask & AP_PADACT_BIT(reason))) continue;" in details
+assert "AP_TrackerActivityReason(n, pad, reason, out + used, size - used);" in details
 assert "AP_TrackerLaunchEnabled()" in menu
 freeze = (root / "game/MAIN/MainFreeze.c").read_text()
 resume = body(freeze, "void MainFreeze_APResumeFromTracker(void)")

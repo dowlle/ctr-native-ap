@@ -71,6 +71,8 @@ int AP_LocationLogicState(long long code) { return code%3; }
 int AP_ContentPadOpen(const ctr_content_pad *pad) { return pad == &pads[1]; }
 int AP_BossGarageOpen(int boss) { return boss == 0; }
 int AP_BossGateAdvert(int boss, char *out, int cap) {
+    if (boss == 4)
+        return snprintf(out, (size_t)cap, "FINAL CHALLENGE\rNEEDS 4 RELICS\rNEEDS 2 GEMS");
     assert(boss == 2);
     return snprintf(out, (size_t)cap, "Requires: 8 Trophies (have 2)");
 }
@@ -259,6 +261,10 @@ static void activity_reason_tests(void) {
     node.kind = 3;
     AP_TrackerActivityReason(&node, NULL, AP_PADACT_LOCK_BOSS, line, sizeof line);
     assert(!strcmp(line, "Requires: 8 Trophies (have 2)"));
+    ap_tracker.hub = 0;
+    int mask = AP_PADACT_BIT(AP_PADACT_LOCK_HUB) | AP_PADACT_BIT(AP_PADACT_LOCK_BOSS);
+    assert(AP_TrackerActivityDetails(&node, NULL, mask, line, sizeof line) == 4);
+    assert(!strcmp(line, "NEEDS 1 KEY\rFINAL CHALLENGE\rNEEDS 4 RELICS\rNEEDS 2 GEMS"));
 }
 
 static void reward_tests(void) {

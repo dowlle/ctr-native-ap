@@ -30,7 +30,7 @@ extern SDL_Window *g_window;
 typedef struct { int w, h; uint32_t *pixels; } AP_TrackerSprite;
 typedef struct {
 	int physical, destination, kind, bit, x, y, cx, cy, cw, ch;
-	char title[160], pad[96];
+	char title[160], pad[192], rival[48];
 } AP_TrackerNode;
 
 static struct {
@@ -577,17 +577,13 @@ static void AP_TrackerBuildNodes(void)
 			/* #169: a drawn boss track is shown under the boss name. */
 			if (ap_tracker.hub) AP_BossVenueAdvert(ap_tracker.hub - 1, n->pad, (int)sizeof n->pad);
 			/* #169 tier 2: a drawn rival is shown under the boss name too. */
-			if (ap_tracker.hub) { char rival[48]; size_t used = strlen(n->pad);
-				if (AP_BossRivalAdvert(ap_tracker.hub - 1, rival, (int)sizeof rival) && used + 3 < sizeof n->pad)
-					snprintf(n->pad + used, sizeof n->pad - used, "%s%s", used ? ", " : "", rival); }
+			if (ap_tracker.hub) AP_BossRivalAdvert(ap_tracker.hub - 1, n->rival, (int)sizeof n->rival);
 			/* J03 (decision 7): N. Oxide's garage shows the racer the final race drew. */
 			if (!ap_tracker.hub && AP_BossFinalGarageOpponent() >= 0)
-				snprintf(n->pad, sizeof n->pad, "Rival: %s",
+				snprintf(n->rival, sizeof n->rival, "Rival: %s",
 				         sdata->lngStrings[data.MetaDataCharacters[AP_BossFinalGarageOpponent()].name_LNG_short]);
 			/* The chaos Final Challenge names itself: its rivals do not fit here. */
-			if (!ap_tracker.hub) { char chaos[48]; size_t used = strlen(n->pad);
-				if (AP_ChaosFinalAdvert(chaos, (int)sizeof chaos) && used + 3 < sizeof n->pad)
-					snprintf(n->pad + used, sizeof n->pad - used, "%s%s", used ? ", " : "", chaos); }
+			if (!ap_tracker.hub) AP_ChaosFinalAdvert(n->pad, (int)sizeof n->pad);
 			AP_TrackerProject(AP_TRACKER_MARK_GARAGE, item[0], item[1], &n->x, &n->y);
 			order[ap_tracker.count] = ap_tracker.count; ap_tracker.count++; break;
 		}
@@ -704,10 +700,10 @@ static void AP_TrackerDrawContentNode(const AP_TrackerNode *n, int x, int y)
 	}
 	wumpa = n->kind == 0 && pad->wumpa_modes ? (long)(wumpaGlobal ? fam->wumpa_global : pad->wumpa_location) : 0;
 	if (pad->cup) wumpa = (long)ap_content_cup_wumpa_code(pad, ap_content_plan_pad, AP_ContentCodeChecked);
-	snprintf(text,sizeof text,pad->cup ? "BOX IN %d" : "BOX %d",
+	snprintf(text,sizeof text,pad->cup ? "BOX IN %d, ANY ROUTE" : "BOX %d",
 	         pad->cup ? AP_TrackerCupBoxesInLogic(pad) : ap_content_box_pending(pad,AP_ContentCodeChecked));
-	AP_TrackerText(text,x+12,y+96,16,TRACKER_WHITE,116);
-	AP_TrackerDrawWumpaMark(x,y,wumpa,wumpaGlobal);
+	AP_TrackerText(text,x+12,y+96,16,TRACKER_WHITE,pad->cup ? 250 : 116);
+	AP_TrackerDrawWumpaMark(x+(pad->cup ? 140 : 0),y,wumpa,wumpaGlobal);
 	if (n->kind == 0) for (i = 0; i < 3; i++) {
 		long code = pad->letter_locations[i] > 0 ? (long)pad->letter_locations[i] : -1;
 		AP_TrackerDrawLetterCell(x+216+i*49,y+95,ap_content_letter_glyph(pad,i),fam->lettersanity,code,
@@ -733,14 +729,8 @@ static void AP_TrackerDrawNode(int index)
 			AP_TrackerText(AP_TRACKER_RACER_NAME[lock],x+31,y+53,14,met?TRACKER_WHITE:TRACKER_RED,250);
 			if (met) AP_TrackerTick(x+15,y+54,2); else AP_TrackerLockIcon(x+12,y+49);
 		} else if (n->kind == 3) {
-			char venue[96];
-			snprintf(venue, sizeof venue, "%s", n->pad);
-			char *separator = strstr(venue, ", Rival:");
-			if (separator) {
-				*separator = '\0';
-				AP_TrackerText(separator+2,x+12,y+57,16,TRACKER_WHITE,n->cw-24);
-			}
-			AP_TrackerText(venue,x+12,y+39,16,TRACKER_WHITE,n->cw-24);
+			AP_TrackerText(n->pad,x+12,y+39,16,TRACKER_WHITE,n->cw-24);
+			AP_TrackerText(n->rival,x+12,y+(n->pad[0] ? 57 : 39),16,TRACKER_WHITE,n->cw-24);
 		} else AP_TrackerText(n->pad,x+12,y+39,14,TRACKER_WHITE,n->cw-24);
 	}
 	if (plan) { AP_TrackerDrawContentNode(n,x,y); return; }
@@ -763,8 +753,8 @@ static void AP_TrackerDrawNode(int index)
 			if (n->kind == 3) {
 				const ctr_content_pad *cup = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + ap_tracker.hub - 1);
 				if (ap_tracker.hub > 0 && cup && cup->cup) {
-					snprintf(text,sizeof text,"BOX IN %d",AP_TrackerCupBoxesInLogic(cup));
-					AP_TrackerText(text,x+12,y+102,16,TRACKER_WHITE,116);
+					snprintf(text,sizeof text,"BOX IN %d, ANY ROUTE",AP_TrackerCupBoxesInLogic(cup));
+					AP_TrackerText(text,x+12,y+102,16,TRACKER_WHITE,n->cw-24);
 				}
 			}
 		}
@@ -944,7 +934,8 @@ static void AP_TrackerChecksBuild(const AP_TrackerNode *n, int page, AP_TrackerC
 		int boss = ap_tracker.hub ? ap_tracker.hub - 1 : 4 + page;
 		sanity = ap_content_plan_sanity_boss(boss);
 		wumpa = ap_content_plan_bosses()->wumpa[boss];
-		if (route) snprintf(route, route_size, "%s%s%s BOSS RACE%s", n->pad, n->pad[0]?" | ":"", n->title,
+		if (route) snprintf(route, route_size, "%s%s%s%s%s BOSS RACE%s",
+		                    n->pad, n->pad[0] ? " | " : "", n->rival, n->rival[0] ? " | " : "", n->title,
 		                    !ap_tracker.hub && page ? " REMATCH" : "");
 	} else if (!ap_content_plan_active() && n->kind == 0) {
 		wumpa = n->destination >= 0 && n->destination < 18 ? ctr_cfg.wumpa.tracks[n->destination] :
@@ -1051,6 +1042,9 @@ static void AP_TrackerDrawChecks(void)
 		for (i=ap_tracker.checks_detail*AP_TRACKER_REWARDS_VISIBLE;
 		     i<rewards.count && i<(ap_tracker.checks_detail+1)*AP_TRACKER_REWARDS_VISIBLE;i++)
 			AP_TrackerDrawCheckRow(&rewards.rows[i], 282+(i%AP_TRACKER_REWARDS_VISIBLE)*34);
+		const ctr_content_pad *pad = AP_TrackerChecksPad(n);
+		if (pad && pad->cup)
+			AP_TrackerText("CHECK STATES INCLUDE ANY ROUTE",114,575,16,TRACKER_WHITE,1052);
 	} else {
 	AP_TrackerText("CHECK FAMILY",114,251,18,TRACKER_WHITE,310);
 	AP_TrackerText("DONE / TOTAL",434,251,18,TRACKER_WHITE,170);
@@ -1138,35 +1132,65 @@ static void AP_TrackerActivityReason(const AP_TrackerNode *n, const ctr_content_
 	if (!out[0]) snprintf(out, size, "%s", AP_PadActivityReasonName(reason));
 }
 
+static int AP_TrackerActivityDetails(const AP_TrackerNode *n, const ctr_content_pad *pad, int mask,
+                                     char *out, size_t size)
+{
+	size_t used = 0;
+	out[0] = '\0';
+	for (int reason = 1; reason < AP_PADACT_REASONS && used + 2 < size; ++reason) {
+		if (!(mask & AP_PADACT_BIT(reason))) continue;
+		if (used) out[used++] = '\r';
+		AP_TrackerActivityReason(n, pad, reason, out + used, size - used);
+		used += strlen(out + used);
+	}
+	int lines = used > 0;
+	for (size_t i = 0; i < used; ++i)
+		lines += out[i] == '\r';
+	return lines;
+}
+
 static void AP_TrackerDrawActivities(void)
 {
 	AP_TrackerNode *n = &ap_tracker.nodes[ap_tracker.focus];
 	const ctr_content_pad *pad = AP_TrackerChecksPad(n);
-	int i, w = 1050, rows = ap_tracker.acts.count ? ap_tracker.acts.count : 1;
-	int h = 116 + rows * 120, x = (TRACKER_W - w) / 2, y = (TRACKER_H - h) / 2;
+	char details[AP_PADACT_MAX_ROWS][512];
+	int row_height[AP_PADACT_MAX_ROWS];
+	int count = ap_tracker.acts.count;
+	int extra = n->pad[0] && n->rival[0] ? 22 : 0;
+	int w = 1050, h = 116 + extra;
+	for (int i = 0; i < count; ++i) {
+		int lines = AP_TrackerActivityDetails(n, pad, ap_tracker.acts.mask[i], details[i], sizeof details[i]);
+		row_height[i] = lines > 1 ? lines * 23 + 11 : 44;
+		h += row_height[i];
+	}
+	if (!count) h += 44;
+	int x = (TRACKER_W - w) / 2, y = (TRACKER_H - h) / 2;
 	AP_TrackerRect(x, y, w, h, AP_TrackerRGBA(10, 15, 18, 240));
 	AP_TrackerBorder(x, y, w, h, TRACKER_MINT, 3);
 	AP_TrackerText(n->title, x + 16, y + 12, 23, TRACKER_GOLD, w - 32);
 	AP_TrackerText(n->pad, x + 16, y + 42, 18, TRACKER_WHITE, w - 32);
-	if (!ap_tracker.acts.count) AP_TrackerText("NOTHING TO START HERE", x + 16, y + 74, 18, TRACKER_GRAY, w - 32);
-	for (i = 0; i < ap_tracker.acts.count; i++) {
-		int ry = y + 72 + i * 120, open = ap_tracker.acts.reason[i] == AP_PADACT_OPEN;
-		if (i == ap_tracker.acts_cursor) AP_TrackerRect(x + 8, ry - 5, w - 16, 118, AP_TrackerRGBA(120, 48, 12, 255));
+	AP_TrackerText(n->rival, x + 16, y + 42 + extra, 18, TRACKER_WHITE, w - 32);
+	if (!count) AP_TrackerText("NOTHING TO START HERE", x + 16, y + 74 + extra, 18, TRACKER_GRAY, w - 32);
+	int ry = y + 72 + extra;
+	for (int i = 0; i < count; ++i) {
+		int open = ap_tracker.acts.reason[i] == AP_PADACT_OPEN;
+		if (i == ap_tracker.acts_cursor) AP_TrackerRect(x + 8, ry - 5, w - 16, row_height[i] - 2, AP_TrackerRGBA(120, 48, 12, 255));
 		AP_TrackerText(AP_PadActivityName(ap_tracker.acts.activity[i]), x + 20, ry + 4, 23, TRACKER_WHITE, 295);
 		if (open) AP_TrackerText(ap_tracker.acts.left[i] ? "START" : "REPLAY", x + 355, ry + 4, 21,
 			ap_tracker.acts.left[i] ? TRACKER_GREEN : TRACKER_GOLD, w - 375);
 		else {
 			AP_TrackerLockIcon(x + 329, ry + 4);
-			int mask = ap_tracker.acts.mask[i];
 			int dy = 0;
-			for (int reason = 1; reason < AP_PADACT_REASONS; ++reason) {
-				if (!(mask & AP_PADACT_BIT(reason))) continue;
-				char detail[192];
-				AP_TrackerActivityReason(n, pad, reason, detail, sizeof detail);
-				AP_TrackerText(detail, x + 355, ry + dy + 4, 19, TRACKER_WHITE, w - 375);
+			char *line = details[i];
+			while (line) {
+				char *next = strchr(line, '\r');
+				if (next) *next++ = '\0';
+				AP_TrackerText(line, x + 355, ry + dy + 4, 19, TRACKER_WHITE, w - 375);
 				dy += 23;
+				line = next;
 			}
 		}
+		ry += row_height[i];
 	}
 	int cursor = ap_tracker.acts_cursor;
 	const char *controls = "^ BACK";
@@ -1201,12 +1225,14 @@ static void AP_TrackerDrawGoals(void)
 
 static void AP_TrackerDrawLegend(void)
 {
+	int plan = ap_content_plan_active();
+	int partial = plan && g_config.trackerPartialColour;
 	struct { const char *text; uint32_t colour; } entries[] = {
-		{g_config.trackerPartialColour ? "GREEN ALL IN LOGIC" : "GREEN IN LOGIC", TRACKER_GREEN},
-		{g_config.trackerPartialColour ? "ORANGE SOME IN" : NULL, TRACKER_ORANGE},
-		{"RED OUT", TRACKER_RED},
+		{partial ? "GREEN ALL IN LOGIC" : plan ? "GREEN IN LOGIC" : "GREEN OPEN", TRACKER_GREEN},
+		{partial ? "ORANGE SOME IN" : NULL, TRACKER_ORANGE},
+		{plan ? "RED OUT" : "RED LOCKED", TRACKER_RED},
 		{"GREY DONE", TRACKER_GRAY},
-		{"BLUE UNKNOWN", TRACKER_UNKNOWN},
+		{plan ? "BLUE UNKNOWN" : "GOLD BOSS BEATEN", plan ? TRACKER_UNKNOWN : TRACKER_GOLD},
 		{"LETTER LOCK NEEDS ITEM", TRACKER_WHITE},
 	};
 	const int count = sizeof entries / sizeof entries[0];
