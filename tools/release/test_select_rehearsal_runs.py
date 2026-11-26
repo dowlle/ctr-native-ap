@@ -1,8 +1,12 @@
 """Companion selection must use current successful artifacts or fail closed."""
 import importlib.util
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
+import tempfile
+from textwrap import dedent
 import unittest
 from unittest.mock import patch
 
@@ -30,7 +34,7 @@ class CompanionSelectionTests(unittest.TestCase):
                 allow_pull_request=allow_pull_request)
 
     def test_matching_branch_uses_current_success(self):
-        self.assertEqual(self.select({"object": {"sha": "current"}}), (1, "current"))
+        self.assertEqual(self.select({"object": {"sha": "current"}}), ([1], "current"))
         self.assertIn("branch=pair%2Ftopic", self.query)
 
     def test_stale_success_does_not_satisfy_companion(self):
@@ -39,27 +43,30 @@ class CompanionSelectionTests(unittest.TestCase):
 
     def test_pr_rehearsal_accepts_success_on_current_companion_head(self):
         current = dict(id=1, head_branch="pair/topic", head_sha="current",
-                       event="pull_request", conclusion="success")
+                       event="pull_request", conclusion="success",
+                       head_repository={"full_name": "owner/world"})
         candidates = [
             dict(current, id=6, event="workflow_dispatch"),
             dict(current, id=2, head_sha="stale"),
             dict(current, id=3, head_branch="elsewhere"),
             dict(current, id=4, conclusion="failure"),
             dict(current, id=5),
+            dict(current, id=7, head_repository={"full_name": "fork/world"}),
             current,
         ]
         self.assertEqual(self.select({"object": {"sha": "current"}}, candidates=candidates,
-                                     allow_pull_request=True, missing_artifact_ids=(5,)), (1, "current"))
+                                     allow_pull_request=True, missing_artifact_ids=(5,)), ([1, 6], "current"))
         self.assertIn("head_sha=current", self.query)
         self.assertEqual(self.select({"object": {"sha": "current"}}, candidates=candidates[:-1],
-                                     allow_pull_request=True, missing_artifact_ids=(5,)), (6, "current"))
+                                     allow_pull_request=True, missing_artifact_ids=(5,)), ([6], "current"))
         with self.assertRaisesRegex(RuntimeError, "no successful"):
             self.select({"object": {"sha": "current"}}, candidates=candidates,
                         allow_pull_request=True, missing_artifact_ids=(1, 5, 6))
 
     def test_manual_rehearsal_rejects_pr_run(self):
         pr = dict(id=1, head_branch="pair/topic", head_sha="current",
-                  event="pull_request", conclusion="success")
+                  event="pull_request", conclusion="success",
+                  head_repository={"full_name": "owner/world"})
         with self.assertRaisesRegex(RuntimeError, "no successful"):
             self.select({"object": {"sha": "current"}}, candidates=[pr], required=True)
 
@@ -67,7 +74,7 @@ class CompanionSelectionTests(unittest.TestCase):
         base = dict(id=2, head_branch="main", head_sha="base", event="push", conclusion="success")
         pr = dict(base, id=3, event="pull_request")
         self.assertEqual(self.select({"status": "404"}, 1, [pr, base],
-                                     allow_pull_request=True), (2, "base"))
+                                     allow_pull_request=True), ([2], "base"))
         self.assertIn("branch=main", self.query)
 
     def test_api_failure_does_not_use_base(self):
@@ -75,7 +82,7 @@ class CompanionSelectionTests(unittest.TestCase):
             self.select({"status": "403"}, 1)
 
     def test_explicit_manual_branch_uses_current_head(self):
-        self.assertEqual(self.select({"object": {"sha": "current"}}, required=True), (1, "current"))
+        self.assertEqual(self.select({"object": {"sha": "current"}}, required=True), ([1], "current"))
 
     def test_explicit_manual_branch_rejects_stale_success(self):
         with self.assertRaisesRegex(RuntimeError, "no successful"):
@@ -92,6 +99,46 @@ class CompanionSelectionTests(unittest.TestCase):
                 patch.object(selector, "has_artifacts", return_value=False):
             with self.assertRaisesRegex(RuntimeError, "no successful"):
                 selector.choose_apworld("owner/world", "pair/topic")
+
+
+@unittest.skipUnless(shutil.which("bash"), "release assembly uses Bash")
+class PackedApworldWorkflowTests(unittest.TestCase):
+    def test_merge_tree_mismatch_uses_same_head_fallback_only_when_available(self):
+        repo = Path(__file__).resolve().parents[2]
+        workflow = (repo / ".github/workflows/release-assembly.yml").read_text(encoding="utf-8")
+        step = workflow.split("- name: Download and verify the exact packed apworld\n", 1)[1]
+        script = dedent(step.split("run: |\n", 1)[1].split("\n      - name:", 1)[0])
+        # Model GitHub's merge-tree artifact and the verifier's exact-source check.
+        commands = """
+git() { printf '%s\n' "$APWORLD_SOURCE_COMMIT"; }
+gh() {
+  mkdir -p "${9}"
+  if [[ "$3" == 1 ]]; then
+    printf 'synthetic merge tree' > "${9}/ctr.apworld"
+  else
+    printf 'companion head' > "${9}/ctr.apworld"
+  fi
+}
+python3() {
+  [[ "$4" == "$APWORLD_SOURCE_COMMIT" ]] && [[ "$(cat "$2")" == "companion head" ]]
+}
+"""
+        for alternates in ("2", ""):
+            with self.subTest(alternates=alternates), tempfile.TemporaryDirectory() as workspace:
+                result = subprocess.run(
+                    ["bash", "-c", commands + script], cwd=workspace, text=True, capture_output=True,
+                    env={**os.environ, "APWORLD_RUN_ID": "1", "APWORLD_ALTERNATE_RUN_IDS": alternates,
+                         "APWORLD_SOURCE_COMMIT": "a" * 40, "APWORLD_REPO": "owner/world",
+                         "APWORLD_ARTIFACT_NAME": "ctr.apworld"})
+                output = Path(workspace) / "apworld-artifact" / "ctr.apworld"
+                self.assertIn("Could not verify packed apworld from run 1", result.stderr)
+                if alternates:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("verified_apworld_run_id=2", result.stdout)
+                    self.assertEqual(output.read_text(encoding="utf-8"), "companion head")
+                else:
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

@@ -57,7 +57,7 @@ def choose_native(repo: str, source: str, pr_number: str, pr_head: str) -> int |
 def choose_apworld(
     repo: str, branch: str, companion: str = '', required: bool = False,
     *, allow_pull_request: bool = False,
-) -> tuple[int, str]:
+) -> tuple[list[int], str]:
     expected_sha = None
     if companion:
         # Paired PRs can rehearse together before either side merges. Only a
@@ -82,6 +82,7 @@ def choose_apworld(
     if prefer_pr:
         events.add("pull_request")
         query["head_sha"] = expected_sha
+    pr_runs = []
     fallback = None
     for run in runs(repo, "ctr-world.yml", urlencode(query)):
         if (run.get("event") not in events
@@ -90,15 +91,21 @@ def choose_apworld(
         if expected_sha and run.get('head_sha') != expected_sha:
             continue
         is_pr_run = run.get("event") == "pull_request"
+        if is_pr_run and (run.get("head_repository") or {}).get("full_name") != repo:
+            continue
         if fallback is not None and not is_pr_run:
             continue
         if has_artifacts(repo, run["id"], {"ctr.apworld"}):
-            selection = run["id"], run["head_sha"]
-            if is_pr_run or not prefer_pr:
-                return selection
-            fallback = selection
+            if not prefer_pr:
+                return [run["id"]], run["head_sha"]
+            if is_pr_run:
+                pr_runs.append(run["id"])
+            else:
+                fallback = run["id"]
     if fallback is not None:
-        return fallback
+        pr_runs.append(fallback)
+    if pr_runs and expected_sha:
+        return pr_runs, expected_sha
     raise RuntimeError(f"no successful ctr-world run with ctr.apworld on {repo}:{branch}")
 
 
@@ -117,7 +124,7 @@ def main() -> None:
     elif mode == "rehearsal":
         repo = os.environ["GITHUB_REPOSITORY"]
         apworld_repo = os.environ["APWORLD_REPO"]
-        world_id, world_sha = choose_apworld(
+        world_ids, world_sha = choose_apworld(
             apworld_repo, os.environ["APWORLD_BRANCH"],
             os.environ.get("APWORLD_COMPANION_BRANCH", ""),
             os.environ.get("APWORLD_COMPANION_REQUIRED", "false").lower() == "true",
@@ -135,7 +142,8 @@ def main() -> None:
         selected = {
             "native_run_id": str(native_id),
             "native_source_commit": source,
-            "apworld_run_id": str(world_id),
+            "apworld_run_id": str(world_ids[0]),
+            "apworld_alternate_run_ids": " ".join(map(str, world_ids[1:])),
             "apworld_source_commit": world_sha,
         }
     else:

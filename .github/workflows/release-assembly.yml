@@ -146,28 +146,35 @@ jobs:
           set -euo pipefail
           gh run download "$NATIVE_RUN_ID" --repo "$GITHUB_REPOSITORY" --dir native-artifacts
 
-      - name: Download exact packed apworld
+      - name: Download and verify the exact packed apworld
         env:
           GH_TOKEN: ${{ github.token }}
           APWORLD_RUN_ID: ${{ steps.select.outputs.apworld_run_id }}
+          APWORLD_ALTERNATE_RUN_IDS: ${{ steps.select.outputs.apworld_alternate_run_ids }}
+          APWORLD_SOURCE_COMMIT: ${{ steps.select.outputs.apworld_source_commit }}
           APWORLD_REPO: ${{ inputs.apworld_repo }}
           APWORLD_ARTIFACT_NAME: ${{ inputs.apworld_artifact_name }}
         run: |
           set -euo pipefail
-          gh run download "$APWORLD_RUN_ID" \
-            --repo "$APWORLD_REPO" \
-            --name "$APWORLD_ARTIFACT_NAME" \
-            --dir apworld-artifact
-          test "$(find apworld-artifact -type f -name ctr.apworld | wc -l)" -eq 1
-
-      - name: Compare packed apworld with the exact source commit
-        env:
-          APWORLD_SOURCE_COMMIT: ${{ steps.select.outputs.apworld_source_commit }}
-        run: |
-          set -euo pipefail
           test "$(git -C apworld-source rev-parse HEAD)" = "$APWORLD_SOURCE_COMMIT"
-          downloaded="$(find apworld-artifact -type f -name ctr.apworld -print -quit)"
-          python3 tools/release/solo_source.py "$downloaded" apworld-source "$APWORLD_SOURCE_COMMIT"
+          # A PR run can pack a merge tree that differs from its reported head.
+          # Try the next same-head run if its artifact fails exact-source verification.
+          read -r -a alternates <<< "$APWORLD_ALTERNATE_RUN_IDS"
+          for run_id in "$APWORLD_RUN_ID" "${alternates[@]}"; do
+            candidate="apworld-candidate-$run_id"
+            if gh run download "$run_id" --repo "$APWORLD_REPO" \
+                --name "$APWORLD_ARTIFACT_NAME" --dir "$candidate"; then
+              mapfile -t packed < <(find "$candidate" -type f -name ctr.apworld)
+              if [ "${#packed[@]}" -eq 1 ] && python3 tools/release/solo_source.py \
+                  "${packed[0]}" apworld-source "$APWORLD_SOURCE_COMMIT"; then
+                mv "$candidate" apworld-artifact
+                printf 'verified_apworld_run_id=%s\n' "$run_id"
+                exit 0
+              fi
+            fi
+            printf 'Could not verify packed apworld from run %s\n' "$run_id" >&2
+          done
+          exit 1
 
       - name: Install Archipelago for the release template
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
