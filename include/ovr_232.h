@@ -103,7 +103,11 @@ struct WarpPad
 
 	// 0x28
 	SVec3 spinRot_Prize;
+#ifdef CTR_AP
+	u16 childSlots; // slots populated at birth, kept in the pad's saved object
+#else
 	s16 _pad_spinRot_Prize;
+#endif
 
 	// 0x30
 	SVec3 spinRot_Wisp[2];
