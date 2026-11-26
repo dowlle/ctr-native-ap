@@ -5911,6 +5911,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "name": "Acid Lake"
     },
     {
+      "key": "acropolis",
+      "block": 91,
+      "name": "Acropolis"
+    },
+    {
       "key": "ancient-lake",
       "block": 1,
       "name": "Ancient Lake"
@@ -6164,6 +6169,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "key": "neonstadion",
       "block": 52,
       "name": "Neonstadion"
+    },
+    {
+      "key": "nina-s-nightmare",
+      "block": 90,
+      "name": "Nina's Nightmare"
     },
     {
       "key": "north-pole",
@@ -8823,6 +8833,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       37200080,
       37200096
     ],
+    "Acropolis": [
+      37211648,
+      37211728,
+      37211744
+    ],
     "Ancient Lake": [
       37200128,
       37200208,
@@ -9077,6 +9092,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       37206656,
       37206736,
       37206752
+    ],
+    "Nina's Nightmare": [
+      37211520,
+      37211600,
+      37211616
     ],
     "North Pole": [
       37206784,
