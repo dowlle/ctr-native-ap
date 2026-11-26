@@ -44,6 +44,7 @@ expected = dict(retail=[dict(id=i, name=n, location=L[n + ": Trophy Race"], ctr=
 expected["sanity"] = cp.sanity.CATALOG
 expected["pickup_ruling_counts"] = cp.sanity.PICKUP_RULING_COUNTS
 expected["sanity_exclusions"] = cp.sanity.crate_exclusions.EXCLUSIONS
+expected["seat_spots_v2"] = cp.content_item_boxes.box_spots.SEAT_SPOTS
 expected["object_rulings"] = json.loads((args.apworld / "worlds/ctr/data/object_rulings.json").read_text())
 expected["track_ruling_revisions"] = cp.track_rulings.REVIEWS
 native_ruling_version = re.search(r"kTrackRulingVersion = (\d+);", (root / "ap/ap_content_plan_impl.hpp").read_text())
@@ -2505,6 +2506,24 @@ with fifty_spots(custom=True):
             forged["content_plan"]["required_features"].remove("box_count_v1")
             cases.append((f"box-count-{count}-feature", forged, False))
 from worlds.ctr.test.test_object_rulings import options as object_ruling_options
+
+for count, picked in ((4, []), (6, [2, 3]), (15, [4, 6, 14])):
+    seat_options = dict(object_ruling_options(), item_box_count=count)
+    wire = make_world(seat_options, seed=52, stop_before="pre_fill").fill_slot_data()
+    plan = wire["content_plan"]
+    tv_boxes = [c for c in plan["checks"] if c["owner"] == "custom/tv-world/1.1.0" and c["kind"] == "box"]
+    assert [c["spot"]["number"] for c in tv_boxes if "spot" in c] == picked
+    assert cp.validate(plan)
+    cases.append((f"tv-seat-spots-count-{count}", wire, True))
+    if picked:
+        forged = copy.deepcopy(wire)
+        spot = next(c["spot"] for c in forged["content_plan"]["checks"]
+                    if c["owner"] == tv_boxes[0]["owner"] and "spot" in c)
+        spot["pos"][0] += 1
+        cases.append((f"tv-seat-spots-shifted-{count}", forged, False))
+        forged = copy.deepcopy(wire)
+        forged["content_plan"]["required_features"].remove("seat_spots_v2")
+        cases.append((f"tv-seat-spots-missing-feature-{count}", forged, False))
 
 for reviewed in (True, False):
     options = object_ruling_options()

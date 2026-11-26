@@ -156,6 +156,8 @@ typedef struct ctr_content_pad {
      * "Item Box <number>"), box_pos and box_rot_y where each stands (LEV
      * world units, engine angle). No weapon crate is hidden on such a track. */
     int box_spots;
+    /* Fallback seats with an individual authored spot (one bit per slot). */
+    unsigned int box_seat_spots;
     int box_number[50];
     short box_pos[50][3], box_rot_y[50];
     char entry_id[65], track_id[65], display_name[129];
