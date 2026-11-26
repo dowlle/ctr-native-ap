@@ -1078,6 +1078,15 @@ void AP_LetterCollected(int track, int letter)
 	// own-checked guard still dedupes a re-touch, reload or reconnect, and
 	// AP_FeedOnLocationSent still suppresses the toast for a local recipient
 	// (that case is already shown once through the received-item path).
+#ifdef CTR_CUSTOM_TRACKS
+	const ctr_content_pad *pad = AP_StandaloneLetterPad(track);
+	if (pad && pad->placed_letters)
+	{
+		AP_EmitClassCheck(AP_LetterLocation(track, letter), 0, -1, 0, AP_LETTER_TOAST_SENT_ITEM,
+		                  "[AP LETTER] track=%d letter=%c\n", track, ap_content_letter_glyph(pad, letter));
+		return;
+	}
+#endif
 	AP_EmitClassCheck(AP_LetterLocation(track, letter), 0, -1, 0, AP_LETTER_TOAST_SENT_ITEM,
 	                  "[AP LETTER] track=%d%s letter=%d\n", track,
 	                  AP_CortexLetterTrack(track) ? " (Cortex Vortex)" : "", letter);

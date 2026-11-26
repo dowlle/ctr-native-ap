@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include "ap_trial_letters.h"
 #include "ap_trial_letter_logic.h"
+#include "ap_placed_letters.h"
+#include "ap_content_plan.h"
 #include "ap_retail_asset.h"
 #include "ap_seedcfg.h"
 #include "ap_hooks.h"
@@ -19,6 +21,81 @@ static struct Model *s_trialModels[3];
 static struct BoundingBox s_trialLetterBoxOffset[3];
 static struct BoundingBox s_trialLetterBox[3];
 static int s_trialAssets; // 0 untried, 1 ready, -1 refused (logged once)
+
+/* Original block glyphs extruded from three convex strokes. Vertices in
+ * each stroke run around its face in model X/Z order. */
+static const u8 s_originStrokes[3][3][4][2] = {
+    {{{25, 35}, {70, 35}, {70, 215}, {25, 215}},
+     {{70, 35}, {225, 35}, {225, 80}, {70, 80}},
+     {{70, 170}, {225, 170}, {225, 215}, {70, 215}}},
+    {{{25, 35}, {70, 35}, {70, 215}, {25, 215}},
+     {{70, 35}, {185, 155}, {185, 215}, {70, 95}},
+     {{185, 35}, {230, 35}, {230, 215}, {185, 215}}},
+    {{{25, 35}, {70, 35}, {70, 215}, {25, 215}},
+     {{70, 115}, {177, 35}, {235, 35}, {70, 152}},
+     {{70, 115}, {235, 215}, {174, 215}, {70, 150}}}
+};
+
+#define AP_GLYPH_VERTICES (3 * 6 * 2 * 3)
+static struct {
+    struct Model model;
+    struct ModelHeader header;
+    struct {
+        struct ModelFrame header;
+        u8 vertices[AP_GLYPH_VERTICES][3];
+    } frame;
+    u32 commands[AP_GLYPH_VERTICES + 2];
+} s_originModels[3];
+
+static void AP_TrialLetters_BuildOriginModels(void)
+{
+    static const u8 faces[6][4] = {
+        {0, 1, 2, 3}, {7, 6, 5, 4}, {0, 4, 5, 1},
+        {1, 5, 6, 2}, {2, 6, 7, 3}, {3, 7, 4, 0}
+    };
+    static const u8 triangles[] = {0, 1, 2, 0, 2, 3};
+    static const char glyphs[] = "CNK";
+    static u32 colors[] = {0x00808080, 0x00585858};
+    static struct TextureLayout *texture[1];
+    if (texture[0]) return;
+    texture[0] = s_trialModels[0]->headers[0].ptrTexLayout[0];
+    for (int glyph = 0; glyph < 3; ++glyph) {
+        struct Model *model = &s_originModels[glyph].model;
+        struct ModelHeader *header = &s_originModels[glyph].header;
+        struct ModelFrame *frame = &s_originModels[glyph].frame.header;
+        unsigned cursor = 0;
+        model->name[0] = glyphs[glyph];
+        model->id = STATIC_C + glyph;
+        model->numHeaders = 1;
+        model->headers = header;
+        header->name[0] = glyphs[glyph];
+        header->maxDistanceLOD = 0x7fff;
+        header->scale = s_trialModels[glyph]->headers[0].scale;
+        header->ptrCommandList = (u32)(uintptr_t)s_originModels[glyph].commands;
+        header->ptrFrameData = frame;
+        header->ptrTexLayout = texture;
+        header->ptrColors = colors;
+        frame->pos = s_trialModels[0]->headers[0].ptrFrameData->pos;
+        frame->vertexOffset = sizeof *frame;
+        s_originModels[glyph].commands[0] = 2;
+        for (int stroke = 0; stroke < 3; ++stroke) {
+            for (int face = 0; face < 6; ++face) {
+                for (int j = 0; j < 6; ++j) {
+                    unsigned corner = faces[face][triangles[j]];
+                    const u8 *point = s_originStrokes[glyph][stroke][corner % 4];
+                    u8 *vertex = s_originModels[glyph].frame.vertices[cursor];
+                    vertex[0] = point[0];
+                    vertex[1] = corner < 4 ? 20 : 58;
+                    vertex[2] = point[1] - (point[0] >= 128);
+                    s_originModels[glyph].commands[++cursor] =
+                        (j % 3 == 0 ? 0x80000000u : 0) | ((j % 3 + 1u) << 16) |
+                        (face < 2 ? 0 : 1u << 9) | 1u;
+                }
+            }
+        }
+        s_originModels[glyph].commands[cursor + 1] = 0xffffffffu;
+    }
+}
 
 static int AP_TrialLetters_FindRetailBoxes(unsigned char *body, unsigned map)
 {
@@ -136,23 +213,52 @@ static int AP_TrialLetters_Active(struct GameTracker *gGT)
     return 1;
 }
 
+static const struct AP_PlacedLetterSet *AP_TrialLetters_Custom(
+    struct GameTracker *gGT, const ctr_content_pad **out)
+{
+#ifdef CTR_CUSTOM_TRACKS
+    const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(gGT->levelID);
+    if (race && !race->retail && !race->cortex && !race->cup &&
+        race->mode == AP_CONTENT_MODE_CTR && !CustomTrack_ServeFaultReason() &&
+        gGT->numPlyrCurrGame == 1 && (gGT->gameMode1 & ADVENTURE_MODE) &&
+        (gGT->gameMode2 & TOKEN_RACE) && ap_content_plan_active() &&
+        race->seedEpoch == ap_content_plan_epoch()) {
+        const ctr_content_pad *pad = ap_content_plan_pad(race->physicalPad);
+        if (pad && pad->placed_letters && !strcmp(pad->track_id, race->trackID)) {
+            *out = pad;
+            return AP_PlacedLetters_Find(NULL, race->levSha256, race->vrmSha256);
+        }
+    }
+#else
+    (void)gGT;
+    (void)out;
+#endif
+    return NULL;
+}
+
 void AP_TrialLetters_Register(struct GameTracker *gGT)
 {
-    int i;
-    if (!AP_TrialLetters_Active(gGT) || !AP_TrialLetters_Prepare()) return;
+    const ctr_content_pad *pad = NULL;
+    const struct AP_PlacedLetterSet *custom = AP_TrialLetters_Custom(gGT, &pad);
+    if ((!custom && !AP_TrialLetters_Active(gGT)) || !AP_TrialLetters_Prepare()) return;
+    int origin = custom && pad->letter_glyphs[0];
+    if (origin) AP_TrialLetters_BuildOriginModels();
     // MainInit, BEFORE UI_INSTANCE_InitAll, including same-level restart.
-    for (i=0; i<3; ++i) gGT->modelPtr[STATIC_C+i]=s_trialModels[i];
+    for (int i = 0; i < 3; ++i)
+        gGT->modelPtr[STATIC_C+i] = origin ? &s_originModels[i].model : s_trialModels[i];
 }
 
 static void AP_TrialLetters_Tick(struct Thread *t)
 {
     struct GameTracker *gGT=sdata->gGT;
     struct Driver *d;
+    const ctr_content_pad *pad = NULL;
     SVec3 prev, curr;
     int letter=t->inst->model->id-STATIC_C;
     if (t->flags & THREAD_FLAG_DEAD) return;
     RB_CtrLetter_ThTick(t);
-    if (sdata->Loading.stage!=LOAD_IDLE || !AP_TrialLetters_Active(gGT) ||
+    if (sdata->Loading.stage!=LOAD_IDLE ||
+        (!AP_TrialLetters_Active(gGT) && !AP_TrialLetters_Custom(gGT, &pad)) ||
         (gGT->gameMode1 & (PAUSE_ALL|START_OF_RACE|END_OF_RACE))) return;
     d=gGT->drivers[0];
     if (!d || !d->instSelf || !d->instSelf->thread ||
@@ -175,9 +281,12 @@ static void AP_TrialLetters_Tick(struct Thread *t)
 void AP_TrialLetters_Spawn(struct GameTracker *gGT)
 {
     static const char names[3][16]={"ap-trial-c","ap-trial-t","ap-trial-r"};
+    const ctr_content_pad *pad = NULL;
+    const struct AP_PlacedLetterSet *custom = AP_TrialLetters_Custom(gGT, &pad);
     int i,axis,track=gGT->levelID-16;
-    if (!AP_TrialLetters_Active(gGT) || s_trialAssets!=1) return;
+    if ((!custom && !AP_TrialLetters_Active(gGT)) || s_trialAssets!=1) return;
     for (i=0; i<3; ++i) {
+        const short *anchor = custom ? custom->anchors[i] : AP_TRIAL_LETTER_POS[track][i];
         struct Instance *inst=INSTANCE_BirthWithThread(STATIC_C+i,names[i],SMALL,STATIC,
             AP_TrialLetters_Tick,sizeof(struct CtrLetter),NULL);
         struct CtrLetter *obj;
@@ -187,15 +296,15 @@ void AP_TrialLetters_Spawn(struct GameTracker *gGT)
         }
         obj=inst->thread->object;
         memset(obj,0,sizeof(*obj));
-        obj->rot.y=AP_TRIAL_LETTER_YAW[track][i];
+        obj->rot.y=custom ? anchor[3] : AP_TRIAL_LETTER_YAW[track][i];
         ConvertRotToMatrix(&inst->matrix,&obj->rot);
-        for (axis=0; axis<3; ++axis) inst->matrix.t[axis]=AP_TRIAL_LETTER_POS[track][i][axis];
-        s_trialLetterBox[i].min.x=s_trialLetterBoxOffset[i].min.x+AP_TRIAL_LETTER_POS[track][i][0];
-        s_trialLetterBox[i].min.y=s_trialLetterBoxOffset[i].min.y+AP_TRIAL_LETTER_POS[track][i][1];
-        s_trialLetterBox[i].min.z=s_trialLetterBoxOffset[i].min.z+AP_TRIAL_LETTER_POS[track][i][2];
-        s_trialLetterBox[i].max.x=s_trialLetterBoxOffset[i].max.x+AP_TRIAL_LETTER_POS[track][i][0];
-        s_trialLetterBox[i].max.y=s_trialLetterBoxOffset[i].max.y+AP_TRIAL_LETTER_POS[track][i][1];
-        s_trialLetterBox[i].max.z=s_trialLetterBoxOffset[i].max.z+AP_TRIAL_LETTER_POS[track][i][2];
+        for (axis=0; axis<3; ++axis) inst->matrix.t[axis]=anchor[axis];
+        s_trialLetterBox[i].min.x=s_trialLetterBoxOffset[i].min.x+anchor[0];
+        s_trialLetterBox[i].min.y=s_trialLetterBoxOffset[i].min.y+anchor[1];
+        s_trialLetterBox[i].min.z=s_trialLetterBoxOffset[i].min.z+anchor[2];
+        s_trialLetterBox[i].max.x=s_trialLetterBoxOffset[i].max.x+anchor[0];
+        s_trialLetterBox[i].max.y=s_trialLetterBoxOffset[i].max.y+anchor[1];
+        s_trialLetterBox[i].max.z=s_trialLetterBoxOffset[i].max.z+anchor[2];
         inst->scale=(SVec3){{0x1800,0x1800,0x1800}};
         inst->colorRGBA=0xffc8000;
         inst->flags=DRAW_COLLISION_MASK|DRAW_TRANSPARENT|USE_SPECULAR_LIGHT;
@@ -203,6 +312,7 @@ void AP_TrialLetters_Spawn(struct GameTracker *gGT)
     }
     // No retained instance/thread handles: the engine owns and clears all
     // three on load/restart, and the next MainInit births a fresh complete set.
-    AP_LogLine("[AP TRIAL LETTERS] authored C/T/R set spawned for this attempt\n");
+    AP_LogLine(custom ? "[AP LETTER] custom letter set spawned for this attempt\n"
+                      : "[AP TRIAL LETTERS] authored C/T/R set spawned for this attempt\n");
 }
 #endif

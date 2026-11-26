@@ -675,6 +675,11 @@ int AP_ContentPreparePad(int physicalPad, int mode)
 	// selector used; a Crystal Challenge has no modes and races mode 0.
 	if (pad->crystal ? mode != AP_CONTENT_MODE_TROPHY
 	                 : (!AP_ContentModeOpen(pad, mode) || ap_content_mode_codes(pad, mode, codes) < 1)) return -1;
+	if (mode == AP_CONTENT_MODE_CTR && pad->placed_letters && !AP_TrialLetters_Prepare())
+	{
+		AP_FeedNoticeLine("LETTER ASSETS NOT FOUND");
+		return -1;
+	}
 	memset(&race, 0, sizeof race);
 	race.physicalPad = physicalPad; race.returnHub = pad->hub;
 	race.laps = ap_content_mode_laps(pad, mode); race.trophyLocation = pad->crystal ? pad->trophy_location : ap_content_mode_route(pad, mode);

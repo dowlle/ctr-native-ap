@@ -14,6 +14,7 @@
 #include "ap_named_blocks.h"
 #include "ap_content_object_rulings.hpp"
 #include "ap_box_spot_logic.h"
+#include "ap_placed_letters.h"
 #include "ap_arena_content.h"
 #include "ap_wumpa_shop.h"
 #include "../include/platform/native_tizi_madness.h"
@@ -1371,6 +1372,8 @@ static void validate(const J &p, State &out) {
     if(plan_laps)features.push_back("lap_checks_v1");             // #344
     if (std::any_of(p["tracks"].begin(), p["tracks"].end(), [](const J &track) { return track.contains("letters"); }))
         features.push_back("origin_letters_v1");
+    if (std::any_of(p["tracks"].begin(), p["tracks"].end(), [](const J &track) { return track.contains("placed_letters"); }))
+        features.push_back("placed_track_letters_v1");
     const bool safe_pickups = repeatable_pickups(p);
     if(safe_pickups) {
         need(has_bosses && out.bosses.oxide_goal != 3 && (has_sanity || fam.wumpa == 2),
@@ -1509,6 +1512,7 @@ static void validate(const J &p, State &out) {
                 // A shared track keeps its standalone CTR Challenge code.
                 // The pad parser validates it. The cup only races the trophy leg.
                 base.erase("letters");
+                base.erase("placed_letters");
             }
             if (titled) base.erase("room_title");
             fields(base, {"id", "origin", "package_id", "custom_slot", "display_name", "laps", "modes", "capabilities", "field_size"});
@@ -1833,6 +1837,12 @@ static void validate(const J &p, State &out) {
             const bool titled = base.is_object() && base.contains("room_title");
             if (named) base.erase("named_block");
             if (titled) base.erase("room_title");
+            const bool placed = base.contains("placed_letters");
+            if (placed) {
+                need(base.at("placed_letters").is_boolean() && base.at("placed_letters") == true,
+                     "invalid placed letter flag");
+                base.erase("placed_letters");
+            }
             if (base.contains("letters")) {
                 const auto glyphs = text(base.at("letters"));
                 need(named && glyphs.size() == 3 &&
@@ -1853,8 +1863,17 @@ static void validate(const J &p, State &out) {
             // Trophy needs arcade, CTR arcade and the letters, Relic time
             // crates with targets on a timed lap graph.
             const unsigned caps = record.capabilities;
+            if (placed) {
+                const auto key = canonical_track_key(record.content_id);
+                need(named && (mode_bits & (1u << AP_CONTENT_MODE_CTR)) && (caps & AP_CONTENT_CAP_ARCADE) &&
+                     (!dest.letter_glyphs[0] || track.at("letters") == "CNK") &&
+                     AP_PlacedLetters_Find(key.c_str(), record.lev_sha256, record.vrm_sha256),
+                     "invalid placed letter revision");
+                dest.placed_letters = 1;
+            }
             if (caps & AP_CONTENT_CAP_ARCADE) supported |= 1u << AP_CONTENT_MODE_TROPHY;
-            if ((caps & AP_CONTENT_CAP_ARCADE) && (caps & AP_CONTENT_CAP_CTR_TOKENS)) supported |= 1u << AP_CONTENT_MODE_CTR;
+            if ((caps & AP_CONTENT_CAP_ARCADE) && ((caps & AP_CONTENT_CAP_CTR_TOKENS) || placed))
+                supported |= 1u << AP_CONTENT_MODE_CTR;
             if ((caps & AP_CONTENT_CAP_RELIC) && (caps & AP_CONTENT_CAP_TIME_TRIAL) && record.has_relic_targets) supported |= 1u << AP_CONTENT_MODE_RELIC;
             used_packages.insert(package_id);
             dest.package_index = package_index.at(package_id); dest.custom_slot = slot;
@@ -2126,6 +2145,7 @@ static void validate(const J &p, State &out) {
         const J &track = *tracks.at(pair.first);
         const ctr_content_leg &leg = pair.second.leg;
         need(!track.contains("letters"), "origin letters require a standalone CTR Challenge");
+        need(!track.contains("placed_letters"), "placed letters require a standalone CTR Challenge");
         need(track.at("modes") == J::array({"trophy"}) && track.at("capabilities") == J::array({"trophy"}) &&
              track.at("field_size") == 8, "a track raced only in cups lists the trophy mode only");
         if (leg.retail_id >= 0) need(retail_ids.insert(leg.retail_id).second, "unknown or duplicate retail track");
