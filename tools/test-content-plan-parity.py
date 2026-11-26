@@ -2800,7 +2800,7 @@ for fixture, reviewed in ((matsuri, 27), (lockbox_track_4, 29)):
     package["capabilities"].update(weapon_crates=reviewed + 1, fruit_crates=3, loose_fruit=0)
     wire = first_world(options, seed=3).fill_slot_data()
     plan = wire["content_plan"]
-    assert plan["track_ruling_sources"]["version"] == track_rulings.RULING_VERSION
+    assert plan["track_ruling_sources"]["version"] == track_rulings.BASE_RULING_VERSION
     assert plan["track_ruling_sources"]["pickup_limits"] is True
     [excluded] = plan["item_boxes"][crate_exclusions.KEY]
     assert excluded["track_id"] == tid and excluded["crates"] == [{"ordinal": 1, "pos": None}]
