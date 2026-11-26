@@ -582,10 +582,14 @@ refused:
 // leaf tests then run over those hitboxes after every search of the level's
 // BSP, so every breaker reaches RB_CrateWeapon_LInC through its own retail
 // path, with the retail hitbox size.
-// The hitboxes of the filled crates whose reach overlaps `search`. The crate
-// rows are static, so a search far from every crate costs one box test per
-// row; only a near crate is looked up in the instance pool, every search, so
-// no pointer outlives a quick load, a restart or a crate's death.
+// The hitboxes of the filled crates whose reach overlaps `search`, one slot
+// per fill row so a crate keeps one address: the kart search remembers the
+// hitboxes it already met by address across its sub-steps. A row that is far
+// away or has no live crate holds an inert entry (not collidable, empty box)
+// that no leaf test can touch. The crate rows are static, so a search far
+// from every crate costs one box test per row; only a near crate is looked up
+// in the instance pool, every search, so no pointer outlives a quick load, a
+// restart or a crate's death.
 static int AP_TrackFillWeaponHitboxes(const struct BoundingBox *search)
 {
 	struct GameTracker *g = sdata->gGT;
@@ -596,18 +600,26 @@ static int AP_TrackFillWeaponHitboxes(const struct BoundingBox *search)
 		return 0;
 	const int radius = apFillWeaponHitboxTemplate.data.hitbox.radius;
 	const int reach = radius + apFillWeaponHitboxLift;
-	int count = 0;
-	for (int row = 0; row < pkg->fill_weapon_count && count < AP_CONTENT_MAX_FILL_WEAPONS; ++row)
+	const int rows = pkg->fill_weapon_count < AP_CONTENT_MAX_FILL_WEAPONS ? pkg->fill_weapon_count
+	                                                                     : AP_CONTENT_MAX_FILL_WEAPONS;
+	int live = 0;
+	for (int row = 0; row < rows; ++row)
 	{
 		const ctr_content_fill_weapon *crate = &pkg->fill_weapons[row];
+		struct InstDef *def = &apFillWeaponDefs[row];
+		struct BSP *hit = &apFillWeaponHitboxes[row];
 		int near = 1;
 		for (int axis = 0; axis < 3 && near; ++axis)
 			near = crate->pos[axis] - reach <= search->max.v[axis] && search->min.v[axis] <= crate->pos[axis] + reach;
 		struct Instance *inst = near ? AP_TrackFillWeaponInstance(g, crate) : NULL;
+		memset(hit, 0, sizeof *hit);
 		if (!inst)
+		{
+			hit->flag = BSP_HITBOX_USE_Y_AXIS; // inert: nonzero, so the list goes on
+			hit->box.min.x = hit->box.min.y = hit->box.min.z = 32767;
+			hit->box.max.x = hit->box.max.y = hit->box.max.z = -32768;
 			continue;
-		struct InstDef *def = &apFillWeaponDefs[count];
-		struct BSP *hit = &apFillWeaponHitboxes[count];
+		}
 		memset(def, 0, sizeof *def);
 		def->model = apFillWeaponModel;
 		def->scale.x = def->scale.y = def->scale.z = 0x1000;
@@ -626,10 +638,10 @@ static int AP_TrackFillWeaponHitboxes(const struct BoundingBox *search)
 			hit->box.max.v[axis] = AP_TrackFillBound(center + radius);
 		}
 		hit->data.hitbox.instDef = def;
-		++count;
+		++live;
 	}
-	memset(&apFillWeaponHitboxes[count], 0, sizeof apFillWeaponHitboxes[count]);
-	return count;
+	memset(&apFillWeaponHitboxes[rows], 0, sizeof apFillWeaponHitboxes[rows]);
+	return live;
 }
 
 void AP_TrackFillWeaponSearch(const struct BSP *root, void (*callback)(struct BSP *, struct ScratchpadStruct *),

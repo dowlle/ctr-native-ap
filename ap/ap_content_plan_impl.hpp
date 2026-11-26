@@ -55,6 +55,9 @@ struct State {
     // over, per track id of a LEV measured without crates (apworld
     // content_global_checks.crate_rank). A track missing here needs rank 0.
     std::map<std::string, int> fill_crate_rank;
+    // The same without any seat: a boss race on a custom garage venue stands
+    // no AP box (ap_boxes.c), so every filled crate is free there.
+    std::map<std::string, int> fill_crate_rank_unseated;
     // Each package's descriptor as the room sent it (#89: solo keeps it once
     // the files are verified, for its custom-track step).
     std::array<std::string, AP_CONTENT_MAX_PACKAGES> package_json{};
@@ -2858,6 +2861,7 @@ static void validate(const J &p, State &out) {
         return best;
     };
     out.fill_crate_rank.clear();
+    out.fill_crate_rank_unseated.clear();
     race_routes.erase(std::remove_if(race_routes.begin(), race_routes.end(),
                                      [&](const RaceRoute &r) { return fill_free_rank(r.track, r.package_index) < 0; }),
                       race_routes.end());
@@ -2871,7 +2875,16 @@ static void validate(const J &p, State &out) {
     for (const auto &track : p.at("tracks"))
         if (track.is_object() && track.value("origin", std::string()) == "custom" && track.contains("package_id") &&
             package_index.count(track["package_id"].get<std::string>()))
-            fill_free_rank(track.at("id").get<std::string>(), package_index.at(track["package_id"].get<std::string>()));
+        {
+            const std::string tid = track.at("id").get<std::string>();
+            const ctr_content_package &pkg = out.packages[package_index.at(track["package_id"].get<std::string>())];
+            fill_free_rank(tid, package_index.at(track["package_id"].get<std::string>()));
+            for (int i = 0; pkg.weapon_crates == 0 && i < pkg.fill_weapon_count; ++i) {
+                const auto rank = out.fill_crate_rank_unseated.find(tid);
+                if (rank == out.fill_crate_rank_unseated.end() || pkg.fill_weapons[i].rank < rank->second)
+                    out.fill_crate_rank_unseated[tid] = pkg.fill_weapons[i].rank;
+            }
+        }
     cup_hit_routes.erase(std::remove_if(cup_hit_routes.begin(), cup_hit_routes.end(),
                                         [&](const CupHitRoute &r) {
                                             // A leg track with no standalone pad has no seats.

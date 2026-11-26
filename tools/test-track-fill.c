@@ -387,8 +387,17 @@ int main(void)
 			// One that reaches crate 0 only gets crate 0.
 			probe.bbox = (struct BoundingBox){.min = {{4950, 0, -10}}, .max = {{5050, 20, 10}}};
 			AP_TrackFillWeaponSearch(level_bsp, COLL_FIXED_BSPLEAF_TestInstance, &probe);
-			assert(captured_leaf && captured_leaf->data.leaf.bspHitboxArray[0].data.hitbox.instDef->ptrInstance == &instances[0] &&
-			       !captured_leaf->data.leaf.bspHitboxArray[1].flag);
+			// Each row keeps its own slot; the far row is inert, not removed.
+			struct BSP *rows = captured_leaf->data.leaf.bspHitboxArray;
+			assert(rows[0].data.hitbox.instDef->ptrInstance == &instances[0] &&
+			       rows[1].flag && !(rows[1].flag & BSP_HITBOX_COLLIDABLE) && !rows[1].data.hitbox.instDef &&
+			       rows[1].box.min.x > rows[1].box.max.x && !rows[2].flag);
+			// The next probe reaches only crate 1: it takes row 1's slot, and
+			// crate 0's slot goes inert, so a remembered address never moves.
+			probe.bbox = (struct BoundingBox){.min = {{6950, 0, -10}}, .max = {{7050, 20, 10}}};
+			AP_TrackFillWeaponSearch(level_bsp, COLL_FIXED_BSPLEAF_TestInstance, &probe);
+			assert(rows[1].data.hitbox.instDef && rows[1].data.hitbox.instDef->ptrInstance == &instances[1] &&
+			       !(rows[0].flag & BSP_HITBOX_COLLIDABLE));
 			// A level hitbox the search already touched keeps its claim.
 			probe.boolDidTouchHitbox = 1;
 			captured_leaf = NULL;

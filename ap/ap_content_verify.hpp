@@ -739,8 +739,11 @@ static Model build() {
                 } else if (entry.contains("track_id") && entry["track_id"].is_string()) {
                     tid = entry["track_id"].get<std::string>();
                 }
-                const auto rank = content_plan::state.fill_crate_rank.find(tid);
-                if (rank != content_plan::state.fill_crate_rank.end()) R.need = std::max(R.need, rank->second);
+                // A boss race on a custom venue stands no AP box: no seats.
+                const auto &ranks = mode == "boss_race" ? content_plan::state.fill_crate_rank_unseated
+                                                        : content_plan::state.fill_crate_rank;
+                const auto rank = ranks.find(tid);
+                if (rank != ranks.end()) R.need = std::max(R.need, rank->second);
             }
             L.routes.push_back(R);
         }
