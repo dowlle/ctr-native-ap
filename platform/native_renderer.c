@@ -1313,6 +1313,11 @@ TextureID NativeRenderer_CreateRGBATexture(int width, int height, u8 *data)
 
 TextureID NativeRenderer_CreateRGBATextureChecked(int width, int height, u8 *data)
 {
+	// Drain earlier OpenGL errors, with a bound for a failing context.
+	int staleErrors = 0;
+	while (glGetError() != GL_NO_ERROR)
+		if (++staleErrors == 8)
+			return 0;
 	TextureID texture = NativeRenderer_CreateRGBATexture(width, height, data);
 	if (glGetError() == GL_NO_ERROR)
 		return texture;

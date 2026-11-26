@@ -774,6 +774,7 @@ int AP_NotifyStandaloneRelic(int raceTime)
 	    (!context->retail && !CustomTrack_ServingLoad(gGT->levelID, 0, 0)) ||
 	    !(pad = AP_StandaloneRoutePad(context)))
 		return 0;
+	const int fill = AP_TrackFillRaceActive(gGT);
 	for (t = 0; t < 3; ++t) targets[t] = AP_StandaloneRelicTarget(t);
 	tiers = ap_content_relic_tiers(raceTime, targets);
 	for (t = 0; t < 3; ++t)
@@ -791,7 +792,9 @@ int AP_NotifyStandaloneRelic(int raceTime)
 		++sent;
 		gGT->podiumRewardID = STATIC_RELIC;
 		gGT->gameModeEnd |= NEW_RELIC;
-		if (t > 0)
+		if (fill)
+			gGT->fillRelicTier = t;
+		if (t > 0 || fill)
 		{
 			sdata->relicTime_1min = targets[t] / 0xe100;
 			sdata->relicTime_10sec = (targets[t] / 0x2580) % 6;

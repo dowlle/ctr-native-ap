@@ -52,7 +52,7 @@ static char s_arcadeQuery[CTR_LIBRARY_QUERY_MAX + 1], s_arcadeQueryBackup[CTR_LI
 static int s_arcadePrepareBusy;
 static int s_arcadeConfirm;
 static int s_arcadePrepareMode;
-static char s_arcadeRelicVersion[24];
+static struct CustomTrackLibraryEntry s_arcadeRelicSelection;
 static int s_arcadeMotion, s_arcadeMotionDirection;
 static struct CustomOfflineRequest *s_arcadeRequest;
 static char s_arcadeMessage[512];
@@ -423,7 +423,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
                 s_arcadePrepareMode = relic ? CTR_OFFLINE_MODE_RELIC : MM_CustomTrackSelect_Mode();
                 const struct CustomTrackLibraryEntry *chosen = relic ? relic : entry;
                 if (relic)
-                    snprintf(s_arcadeRelicVersion, sizeof s_arcadeRelicVersion, "%.20s", relic->version);
+                    s_arcadeRelicSelection = *relic;
                 s_arcadePrepareBusy = CustomOffline_StartPrepare(NativeAssets_GetAssetDir(), chosen->manifestSha256);
                 snprintf(s_arcadeMessage, sizeof s_arcadeMessage, "%s", s_arcadePrepareBusy ?
                     "Checking selected track..." : "Could not prepare this revision.");
@@ -473,14 +473,14 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
     if (s_arcadeMotion) s_arcadeMotion--;
     DecalFont_DrawLineOT("SELECT", 394 + dx, 43 + dy, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
     DecalFont_DrawLineOT("LEVEL", 394 + dx, 61 + dy, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
+    if (s_arcadeConfirm && s_arcadePrepareMode == CTR_OFFLINE_MODE_RELIC)
+        entry = &s_arcadeRelicSelection;
     if (entry)
     {
         /* 174 pixels hold 13 small glyphs: title, version, author, measured
            facts, then three lines for the state or the start prompt. */
         const char *note = AP_CustomOfflineRoomNote();
-        const char *version = s_arcadeConfirm && s_arcadePrepareMode == CTR_OFFLINE_MODE_RELIC ?
-            s_arcadeRelicVersion : entry->version;
-        snprintf(line, sizeof line, "v%.20s", version);
+        snprintf(line, sizeof line, "v%.20s", entry->version);
         DecalFont_DrawLineBox(entry->title, 309 + dx, 85 + dy, 174, FONT_SMALL,
             ORANGE, TEXT_MARQUEE, TEXT_SLOT_ARCADE_DETAIL, ot);
         MM_CustomTrackSelect_Text(line, 309 + dx, 98 + dy, 174, 1, WHITE, ot);

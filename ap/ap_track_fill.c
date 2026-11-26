@@ -287,7 +287,7 @@ static s16 AP_TrackFillBound(int value)
 	return value < -32768 ? -32768 : value > 32767 ? 32767 : (s16)value;
 }
 
-void AP_TrackFillOnFrame(struct GameTracker *g)
+void AP_TrackFillCollide(struct GameTracker *g)
 {
 	if (apFillAssetState != 1 || !AP_TrackFillRace(g) || sdata->Loading.stage != LOAD_IDLE ||
 	    (g->gameMode1 & (PAUSE_ALL | START_OF_RACE | END_OF_RACE)))

@@ -96,7 +96,7 @@ void RR_EndEvent_UnlockAward(void)
 	if (AP_TrackFillOfflineTarget(0) > 0)
 	{
 		const int tier = AP_TrackFillOfflineTier(raceTime);
-		gGT->offlineRelicTier = tier;
+		gGT->fillRelicTier = tier;
 		if (tier >= 0)
 		{
 			gGT->podiumRewardID = STATIC_RELIC;
@@ -256,18 +256,18 @@ void RR_EndEvent_DrawMenu(void)
 	// finished, so they mis-colour the ceremony relic (the SAPPHIRE-label bug's
 	// sibling). Drive the colour from the true just-won tier instead; tier 0 keeps
 	// the model's base sapphire colour.
-	int offlineRelic = 0;
-#ifdef CTR_CUSTOM_PACKAGES
-	offlineRelic = AP_TrackFillOfflineTarget(0) > 0;
+	int fillRelic = 0;
+#ifdef CTR_CUSTOM_TRACKS
+	fillRelic = AP_TrackFillRaceActive(gGT);
 #endif
-	if (ctr_cfg_active() || offlineRelic)
+	if (ctr_cfg_active() || fillRelic)
 	{
 		int apRelicTier = AP_CeremonyRelicTier();
 		if (apRelicTier == 2)
 			relic->colorRGBA = RR_PLATINUM_RELIC_COLOR;
 		else if (apRelicTier == 1)
 			relic->colorRGBA = RR_GOLD_RELIC_COLOR;
-		else if (offlineRelic)
+		else if (fillRelic)
 			relic->colorRGBA = RR_SAPPHIRE_RELIC_COLOR;
 	}
 #endif

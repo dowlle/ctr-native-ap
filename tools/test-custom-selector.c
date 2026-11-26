@@ -446,6 +446,8 @@ int main(void)
     strcpy(revisions[0].local.levSha256, "fill fixture");
     strcpy(revisions[1].manifestSha256, entries[1].manifestSha256);
     strcpy(revisions[1].version, "2.0.0");
+    revisions[0].local.laps = 3;
+    revisions[1].local.laps = 5;
     revisions[1].local.arcade = 1;
     publish(revisions, 2);
     MM_CustomTrackSelect_Init(); D230.trackSel_transitionState = IN_MENU; tick(0); tick(BTN_RIGHT);
@@ -457,6 +459,7 @@ int main(void)
     tick(BTN_SQUARE_one); tick(0);
     CHECK(prepared == before + 1 && s_arcadeConfirm && checkedMode == CTR_OFFLINE_MODE_RELIC);
     CHECK(!strcmp(preparedPin, revisions[0].manifestSha256));
+    CHECK(drawnHas("3 laps TT\n") && !drawnHas("5 laps TT\n"));
     tick(BTN_CROSS_one);
     CHECK(beganMode == CTR_OFFLINE_MODE_RELIC && tracker.currLEV == 6 && tracker.numLaps == 7);
     CHECK(D230.trackSel_transitionState == EXITING_MENU && D230.trackSel_StartRaceAfterFadeOut == 1);

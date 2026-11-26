@@ -111,10 +111,10 @@ static void AP_CeremonyLedgerAdd(long code, int bit, int rung)
 // during the pre-race clock draw and the vanilla path stands.
 int AP_CeremonyRelicTier(void)
 {
-#ifdef CTR_CUSTOM_PACKAGES
+#ifdef CTR_CUSTOM_TRACKS
 	const struct GameTracker *g = sdata->gGT;
-	if (AP_TrackFillOfflineTarget(0) > 0)
-		return (g->gameModeEnd & NEW_RELIC) ? g->offlineRelicTier : -1;
+	if (AP_TrackFillRaceActive(g))
+		return (g->gameModeEnd & NEW_RELIC) ? g->fillRelicTier : -1;
 #endif
 	int best = -1;
 	for (int i = 0; i < ap_ceremony_count; i++)

@@ -92,7 +92,7 @@ int AP_TrackFillPrepare(void);
 int AP_TrackFillRaceActive(const struct GameTracker *g);
 void AP_TrackFillRegister(struct GameTracker *g);
 void AP_TrackFillSpawn(struct GameTracker *g);
-void AP_TrackFillOnFrame(struct GameTracker *g);
+void AP_TrackFillCollide(struct GameTracker *g);
 int AP_TrackFillFailed(const struct GameTracker *g);
 void AP_TrackFillAfterCheckpointRestore(struct GameTracker *g);
 #ifdef CTR_CUSTOM_PACKAGES

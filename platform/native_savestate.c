@@ -329,15 +329,20 @@ internal s32 NativeSaveState_LoadQuick(void)
 	memcpy(&saved, s_quickPayload + checkpointSize, sizeof saved);
 	if (saved.magic != NATIVE_SAVESTATE_RACE_MAGIC)
 		return NativeSaveState_Refuse("STATE NOT LOADED: UNREADABLE", "quick state has no recognized race identity");
+	int allowFillCheckpoint = 0;
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-	if (AP_TrackFillRaceActive(sdata->gGT) && memcmp(saved.fillSession, live.fillSession, sizeof live.fillSession) != 0)
-		return NativeSaveState_Refuse("STATE NOT LOADED: OTHER SESSION", "a fill race requires its original client session");
+	if (AP_TrackFillRaceActive(sdata->gGT))
+	{
+		if (memcmp(saved.fillSession, live.fillSession, sizeof live.fillSession) != 0)
+			return NativeSaveState_Refuse("STATE NOT LOADED: OTHER SESSION", "a fill race requires its original client session");
+		allowFillCheckpoint = 1;
+	}
 #endif
 	if (memcmp(&saved, &live, sizeof saved) != 0)
 		return NativeSaveState_Refuse("STATE NOT LOADED: OTHER RACE", "quick state belongs to a different race");
 
 	s_quickRefusalFrames = 0;
-	if (!NativeCheckpoint_Restore(s_quickPayload, checkpointSize))
+	if (!NativeCheckpoint_Restore(s_quickPayload, checkpointSize, allowFillCheckpoint))
 	{
 		Platform_Log("[CTR State] failed to restore quick state: %s\n", NATIVE_SAVESTATE_QUICK_PATH);
 		return 0;
