@@ -66,6 +66,9 @@ const char *NativeAssets_GetAssetDir(void) { return assets_root; }
 static ctr_content_package plan_package;
 static ctr_content_pad plan_pad;
 static int plan_has_package = 1;
+static int retail_letters_ready = 1;
+int AP_TrialLetters_Prepare(void) { return retail_letters_ready; }
+void AP_FeedNoticeLine(const char *text) { AP_LogLine(text); }
 const ctr_content_package *ap_content_plan_package(int index) { return index == 0 && plan_has_package ? &plan_package : NULL; }
 const char *ap_content_plan_package_json(int index) { return index == 0 && plan_has_package ? "{}" : ""; }
 /* Play Solo keeps the descriptor of a verified package (#89). */
@@ -318,6 +321,17 @@ int main(void)
 		reset_calls();
 		expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_CTR) == 6 && staged == 1 && staged_race.laps == 2,
 		       "A4-70: the CTR Challenge stays on the pad's laps");
+		plan_pad.placed_letters = 1;
+		retail_letters_ready = 0;
+		reset_calls();
+		expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_CTR) == -1 && staged == 0,
+		       "a placed letter challenge refuses entry without its models and collision boxes");
+		expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6 && staged == 1,
+		       "missing letter assets leave the Trophy Race available");
+		retail_letters_ready = 1;
+		reset_calls();
+		expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_CTR) == 6 && staged == 1,
+		       "a placed letter challenge can enter once the assets are ready");
 		plan_pad.relic_laps = 0; /* an A4-13 pad: the Relic Race stays on the pad's two laps */
 		reset_calls();
 		expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_RELIC) == 6 && staged == 1 && staged_race.laps == 2,

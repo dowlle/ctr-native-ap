@@ -55,6 +55,8 @@ static unsigned ap_state_gen;
 static struct CustomTrackManagerStatus ap_custom_content_status;
 const char *NativeAssets_GetAssetDir(void) { return assetRoot; }
 void AP_LogLine(const char *s) { (void)s; }
+int AP_TrialLetters_Prepare(void) { return 1; }
+void AP_FeedNoticeLine(const char *text) { (void)text; }
 void AP_PerfNoteCheckSent(void) {}
 int AP_GateCount(int type) { assert(type==AP_IDX_KEY); return keys; }
 static void AP_CustomContentBuildRequirement(struct CustomTrackManagerRequirement *r) { (void)r; assert(0); }
