@@ -280,14 +280,14 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
     std::set<std::array<int16_t, 3>> weapon_positions;
     weapons_out.reserve(weapons.size());
     for (const auto &crate : weapons) {
-        fields(crate, {"pos", "rot_y", "rank", "rank_source"});
+        fields(crate, {"pos", "rot", "rank", "rank_source"});
         ctr_content_fill_weapon item{};
         fill_position(crate.at("pos"), item.pos);
-        item.rot_y = (int16_t)number(crate.at("rot_y"), -32768, 32767);
+        fill_position(crate.at("rot"), item.rot);
         item.rank = (uint8_t)number(crate.at("rank"), 0, 2);
         const auto &source = crate.at("rank_source");
         need((source == "donor_ruling" || source == "start_ground" || source == "default_usf") &&
-             (source == "start_ground") == (item.rank == 0) && (source != "default_usf" || item.rank == 2),
+             (source != "start_ground" || item.rank == 0) && (source != "default_usf" || item.rank == 2),
              "invalid track fill weapon crate rank");
         need(weapon_positions.insert({item.pos[0], item.pos[1], item.pos[2]}).second,
              "track fill weapon crates repeat a position");
@@ -3049,22 +3049,27 @@ static void validate(const J &p, State &out) {
         if (!pad.box_spots) continue;
         int on_fill = 0;
         const ctr_content_package *filled = pad.package_index >= 0 ? &out.packages[pad.package_index] : nullptr;
+        std::set<int> claimed;
         for (int b = 0; b < pad.box_count && b < AP_BOX_SPOT_MAX_NUMBER; ++b) {
             const auto &spot = out.box_spots.at(pad.box_locations[b]);
             pad.box_pos[b][0] = spot.x; pad.box_pos[b][1] = spot.y; pad.box_pos[b][2] = spot.z;
             pad.box_rot_y[b] = spot.rot_y;
             for (int i = 0; filled && i < filled->fill_weapon_count; ++i) {
                 const auto &crate = filled->fill_weapons[i];
-                on_fill += crate.pos[0] == spot.x && crate.pos[1] == spot.y && crate.pos[2] == spot.z &&
-                           crate.rot_y == spot.rot_y;
+                if (crate.pos[0] == spot.x && crate.pos[1] == spot.y && crate.pos[2] == spot.z) {
+                    // One box per filled crate, at the crate's own angle.
+                    need(crate.rot[1] == spot.rot_y && claimed.insert(i).second,
+                         "box spot picks disagree with box_count or the pool");
+                    ++on_fill;
+                }
             }
         }
-        // A capped pick needs every box on a filled crate (WF1). An uncapped
-        // one over 15 may not stand all its boxes on filled crates.
+        // WF1: fallback seats on filled crates pick at most 15 and stand every
+        // box on a crate; spots that are not seats stand none on a crate.
         const auto set = out.spot_sets.find(pad.track_id);
         if (set != out.spot_sets.end())
             need(set->second.capped ? on_fill == pad.box_count && pad.box_count > 0
-                                    : !(on_fill == pad.box_count && pad.box_count > AP_BOX_SPOT_PICK),
+                                    : (on_fill == 0 || (on_fill == pad.box_count && pad.box_count <= AP_BOX_SPOT_PICK)),
                  "box spot picks disagree with box_count or the pool");
     }
     for (auto &pad : out.pads) {

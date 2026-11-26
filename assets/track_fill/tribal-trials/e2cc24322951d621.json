@@ -30,7 +30,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": 0
+        "rot": [
+          -57,
+          0,
+          102
+        ]
       },
       {
         "pos": [
@@ -40,7 +44,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": 683
+        "rot": [
+          0,
+          683,
+          0
+        ]
       },
       {
         "pos": [
@@ -50,7 +58,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": 683
+        "rot": [
+          0,
+          683,
+          0
+        ]
       },
       {
         "pos": [
@@ -60,7 +72,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": 683
+        "rot": [
+          0,
+          683,
+          0
+        ]
       },
       {
         "pos": [
@@ -70,7 +86,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": 683
+        "rot": [
+          0,
+          683,
+          0
+        ]
       },
       {
         "pos": [
@@ -80,7 +100,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": -519
+        "rot": [
+          100,
+          -519,
+          114
+        ]
       },
       {
         "pos": [
@@ -90,7 +114,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": -519
+        "rot": [
+          91,
+          -519,
+          114
+        ]
       },
       {
         "pos": [
@@ -100,7 +128,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": -519
+        "rot": [
+          75,
+          -519,
+          134
+        ]
       },
       {
         "pos": [
@@ -110,11 +142,15 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": -519
+        "rot": [
+          66,
+          -519,
+          127
+        ]
       }
     ]
   },
-  "fill_sha256": "da5a5e27b13025d34088490cf868d53a3ef5d464558408f2c8b90d29e9684400",
+  "fill_sha256": "d7693952feeadb84105d98f4736eeee3b383c3c027cd248cce7c136c03213a4a",
   "generator": {
     "name": "ctr-track-fill",
     "version": 1

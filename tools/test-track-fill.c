@@ -29,7 +29,10 @@ static const char *asset_dir;
 
 uint64_t ap_content_plan_epoch(void) { return 1; }
 const ctr_content_pad *ap_content_plan_pad(int index) { assert(index == 3); return &pad; }
-const ctr_content_package *ap_content_plan_package(int index) { assert(index == 0); return &package; }
+const ctr_content_package *ap_content_plan_package(int index) { assert(index >= 0); return index == 0 ? &package : NULL; }
+int ap_content_plan_active(void) { return 1; }
+static const char *boss_venue_lev;
+const char *CustomTrack_BossVenueLevSha(int level, int boss, int active) { (void)level; (void)boss; (void)active; return boss_venue_lev; }
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int index)
 {
 	assert(index == 3);
@@ -231,7 +234,7 @@ int main(void)
 	// roll through the retail handler, the crate regrows on its own thread,
 	// and a crate whose AP box stands is out of reach until the box frees it.
 	{
-		const ctr_content_fill_weapon weapons[] = {{{5000, 10, 0}, -2048, 0}, {{7000, 10, 0}, 1019, 2}};
+		const ctr_content_fill_weapon weapons[] = {{{5000, 10, 0}, {0, -2048, 0}, 0}, {{7000, 10, 0}, {1, 1019, -35}, 2}};
 		born = 0;
 		thread_count = 0;
 		tracker.JitPools.instance.taken.first = NULL;
@@ -282,6 +285,16 @@ int main(void)
 		AP_TrackFillWeaponCollide(&tracker);
 		assert(driver.heldItemID == 0x10 && instances[1].scale.x == 0);
 		puts("PASS: a seated weapon crate is out of reach until its AP box frees it");
+		// A boss race on a custom venue serving the same LEV stands the crates
+		// too; another venue does not.
+		tracker.gameMode1 = ADVENTURE_BOSS;
+		boss_venue_lev = "b";
+		assert(!AP_TrackFillWeaponCount(&tracker));
+		boss_venue_lev = package.lev_sha256;
+		assert(AP_TrackFillWeaponCount(&tracker) == 2);
+		boss_venue_lev = NULL;
+		tracker.gameMode1 = 0;
+		puts("PASS: the served LEV decides on pad, cup and boss venue routes");
 		package.fill_weapon_count = 0;
 		tracker.gameMode1 = RELIC_RACE;
 		context.mode = AP_CONTENT_MODE_RELIC;

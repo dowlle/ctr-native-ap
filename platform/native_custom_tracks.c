@@ -683,6 +683,17 @@ int CustomTrack_GarageVenueServing(int levelID, int bossID, int adventureBossAct
 	       s_garageVenue[bossID].hostLevelID == levelID ? bossID : -1;
 }
 
+// WF1: the LEV pin a boss race on a custom venue serves, or NULL.
+const char *CustomTrack_BossVenueLevSha(int levelID, int bossID, int adventureBossActive)
+{
+	const int garage = CustomTrack_GarageVenueServing(levelID, bossID, adventureBossActive);
+	if (garage >= 0)
+		return s_garageVenue[garage].levSha256;
+	if (CustomTrack_OxideFinalServing(levelID, bossID, adventureBossActive))
+		return s_oxideFinalDescriptor.levSha256;
+	return NULL;
+}
+
 int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActive)
 {
 #ifdef CTR_CUSTOM_PACKAGES

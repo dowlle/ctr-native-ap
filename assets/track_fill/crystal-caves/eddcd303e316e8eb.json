@@ -30,7 +30,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1265
+        "rot": [
+          -34,
+          1265,
+          -93
+        ]
       },
       {
         "pos": [
@@ -40,7 +44,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1265
+        "rot": [
+          -36,
+          1265,
+          -58
+        ]
       },
       {
         "pos": [
@@ -50,7 +58,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1265
+        "rot": [
+          35,
+          1265,
+          -49
+        ]
       },
       {
         "pos": [
@@ -60,7 +72,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1265
+        "rot": [
+          33,
+          1265,
+          -51
+        ]
       },
       {
         "pos": [
@@ -70,7 +86,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -160
+        "rot": [
+          173,
+          -160,
+          1
+        ]
       },
       {
         "pos": [
@@ -80,7 +100,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -160
+        "rot": [
+          178,
+          -160,
+          -14
+        ]
       },
       {
         "pos": [
@@ -90,7 +114,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -160
+        "rot": [
+          308,
+          -160,
+          10
+        ]
       },
       {
         "pos": [
@@ -100,7 +128,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -160
+        "rot": [
+          306,
+          -160,
+          11
+        ]
       },
       {
         "pos": [
@@ -110,7 +142,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1798
+        "rot": [
+          -16,
+          1798,
+          150
+        ]
       },
       {
         "pos": [
@@ -120,7 +156,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1798
+        "rot": [
+          -15,
+          1798,
+          130
+        ]
       },
       {
         "pos": [
@@ -130,7 +170,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1798
+        "rot": [
+          7,
+          1798,
+          129
+        ]
       },
       {
         "pos": [
@@ -140,11 +184,15 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1798
+        "rot": [
+          7,
+          1798,
+          131
+        ]
       }
     ]
   },
-  "fill_sha256": "7d657fa92c8a8734eb53701c3cae4d7f918dd207078b5b90b7acbd4ba1998c71",
+  "fill_sha256": "3adb12c539dc1aecc61ffd83b3b6e180ab42dcc590eb293990611bfc531184f4",
   "generator": {
     "name": "ctr-track-fill",
     "version": 1

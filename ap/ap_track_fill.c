@@ -367,19 +367,39 @@ void AP_TrackFillCollide(struct GameTracker *g)
 
 static const ctr_content_package *AP_TrackFillWeaponRace(const struct GameTracker *g)
 {
-	if (!g || g->numPlyrCurrGame != 1 || (g->gameMode1 & (RELIC_RACE | TIME_TRIAL | BATTLE_MODE | MAIN_MENU)))
+	if (!g || g->numPlyrCurrGame != 1 || (g->gameMode1 & (RELIC_RACE | TIME_TRIAL | BATTLE_MODE | MAIN_MENU)) ||
+	    !ap_content_plan_active())
 		return NULL;
-	const struct CustomTrackRaceContext *context = CustomTrack_StandaloneContext(g->levelID);
-	if (!context || context->retail || context->cortex || !context->seedEpoch ||
-	    context->seedEpoch != ap_content_plan_epoch())
+	// The served LEV decides: a pad race or cup leg serves its context's
+	// pair, a boss race on a custom garage or Oxide venue its venue's pair.
+	// Every route that races the package stands its filled crates, so the
+	// sanity counts agree with the apworld on each of them.
+	const char *served = NULL;
+	if (IS_BOSS_RACE(g->gameMode1))
+		served = CustomTrack_BossVenueLevSha(g->levelID, g->bossID, 1);
+	else
+	{
+		const struct CustomTrackRaceContext *context = CustomTrack_StandaloneContext(g->levelID);
+		if (context && !context->retail && !context->cortex && context->seedEpoch &&
+		    context->seedEpoch == ap_content_plan_epoch())
+			served = context->levSha256;
+	}
+	if (!served || !served[0])
 		return NULL;
-	const ctr_content_pad *pad = ap_content_plan_pad(context->physicalPad);
-	// A cup leg races its track's own crates; the pad of that track holds them.
-	if (pad && pad->cup)
-		pad = context->leg >= 0 && context->leg < AP_CONTENT_CUP_LEGS && pad->legs[context->leg].track_pad >= 0
-		          ? ap_content_plan_pad(pad->legs[context->leg].track_pad) : NULL;
-	const ctr_content_package *pkg = pad ? ap_content_plan_package(pad->package_index) : NULL;
-	return pkg && pkg->fill_weapon_count && !strcmp(context->levSha256, pkg->lev_sha256) ? pkg : NULL;
+	for (int i = 0; i < AP_CONTENT_MAX_PACKAGES; ++i)
+	{
+		const ctr_content_package *pkg = ap_content_plan_package(i);
+		if (!pkg)
+			break;
+		if (pkg->fill_weapon_count && !strcmp(served, pkg->lev_sha256))
+			return pkg;
+	}
+	return NULL;
+}
+
+int AP_TrackFillWeaponRaceActive(const struct GameTracker *g)
+{
+	return AP_TrackFillWeaponRace(g) != NULL;
 }
 
 static int AP_TrackFillIsWeapon(const struct Instance *inst)
@@ -418,7 +438,7 @@ struct Instance *AP_TrackFillWeaponAt(struct GameTracker *g, int x, int y, int z
 	for (int i = 0; pkg && i < pkg->fill_weapon_count; ++i)
 	{
 		const ctr_content_fill_weapon *crate = &pkg->fill_weapons[i];
-		if (crate->pos[0] == x && crate->pos[1] == y && crate->pos[2] == z && crate->rot_y == rotY)
+		if (crate->pos[0] == x && crate->pos[1] == y && crate->pos[2] == z && crate->rot[1] == rotY)
 			return AP_TrackFillWeaponInstance(g, crate);
 	}
 	return NULL;
@@ -440,7 +460,7 @@ void AP_TrackFillWeaponSpawn(struct GameTracker *g)
 		if (!inst)
 			goto refused;
 		spawned[count] = inst;
-		SVec3 rot = {{0, crate->rot_y, 0}};
+		SVec3 rot = {{crate->rot[0], crate->rot[1], crate->rot[2]}};
 		ConvertRotToMatrix(&inst->matrix, &rot);
 		for (int axis = 0; axis < 3; ++axis)
 			inst->matrix.t[axis] = crate->pos[axis];

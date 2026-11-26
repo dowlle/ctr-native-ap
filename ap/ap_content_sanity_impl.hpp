@@ -162,6 +162,11 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         }
         std::set<int> &excluded = excluded_by_kind[0];
         if (track["origin"] == "custom" && pkg && pkg->contains("fill")) {
+            // Inherited exclusions name the LEV's own crates, never filled ones.
+            const int own = inv["counts"][0].get<int>() - (int)pkg->at("fill")["families"]["weapon_crates"].size();
+            excluded.erase(excluded.upper_bound(own), excluded.end());
+        }
+        if (track["origin"] == "custom" && pkg && pkg->contains("fill")) {
             // WF1: an AP box standing at a filled weapon crate's exact
             // position and angle takes that crate's seat (ap_boxes.c).
             const J &weapons = pkg->at("fill")["families"]["weapon_crates"];
@@ -175,7 +180,7 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
                         check["location"].is_number_integer() && codes.count(check["location"].get<int64_t>()))
                         for (size_t i = 0; i < weapons.size(); ++i)
                             if (weapons[i]["pos"] == check["spot"].value("pos", J()) &&
-                                weapons[i]["rot_y"] == check["spot"].value("rot_y", J()))
+                                weapons[i]["rot"][1] == check["spot"].value("rot_y", J()))
                                 excluded.insert(lev + 1 + (int)i);
             }
         }

@@ -170,7 +170,8 @@ int main(int argc, char **argv) {
         for (int i = 0; day_package && i < day_package->fill_weapon_count && i < (int)weapons.size(); ++i) {
             const auto &crate = day_package->fill_weapons[i];
             expect(crate.pos[0] == weapons[i]["pos"][0] && crate.pos[1] == weapons[i]["pos"][1] &&
-                   crate.pos[2] == weapons[i]["pos"][2] && crate.rot_y == weapons[i]["rot_y"] &&
+                   crate.pos[2] == weapons[i]["pos"][2] && crate.rot[0] == weapons[i]["rot"][0] &&
+                   crate.rot[1] == weapons[i]["rot"][1] && crate.rot[2] == weapons[i]["rot"][2] &&
                    crate.rank == weapons[i]["rank"], "the native weapon crate matches the generator");
         }
         const auto *day_sanity = day_loaded ? ap_content_plan_sanity("custom/arabian-heights-day/1.0.0") : nullptr;
@@ -191,7 +192,7 @@ int main(int argc, char **argv) {
             }
         refuse(day_changed, "a seated weapon crate cannot be a sanity check too");
         day_changed = day;
-        day_changed["content_plan"]["packages"][0]["fill"]["families"]["weapon_crates"][0]["rot_y"] = 0;
+        day_changed["content_plan"]["packages"][0]["fill"]["families"]["weapon_crates"][0]["rot"][1] = 0;
         refuse(day_changed, "a changed weapon crate angle fails the fill digest");
         day_changed = day;
         day_changed["content_plan"]["packages"][0]["capabilities"]["weapon_crates"] = 4;

@@ -130,7 +130,12 @@ static int AP_SanityEnsure(struct GameTracker *gt)
     for (i = 0, f = AP_TrackFillWeaponCount(gt); i < f; ++i) {
         struct Instance *inst = AP_TrackFillWeaponOrdinal(gt, i);
         ++counts[0];
-        if (counts[0] > 80 || !inst) continue;
+        if (!inst) {
+            // A partial set would leave checks that cannot be reached here.
+            AP_AppendLog("[AP SANITY] filled weapon crates are missing; sanity disabled on this track\n");
+            ap_sanity_size = 0; ap_sanity_ready = -1; return 0;
+        }
+        if (counts[0] > 80) continue;
         if (row->locations[0][counts[0] - 1] > 0 && ap_sanity_size < 512) {
             int n = ap_sanity_size++;
             ap_sanity_objects[n].inst = inst;

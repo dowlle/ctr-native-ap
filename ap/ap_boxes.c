@@ -400,6 +400,38 @@ static void AP_BoxesFreeSeat(int i)
 	s_live[i].seatFlags = 0;
 }
 
+#ifdef CTR_CUSTOM_TRACKS
+// WF1: a quick load restores the instance pool, flags included, but not this
+// module's live set. Give every filled crate the state the live set says: a
+// crate under a standing seated box stays hidden, every other one is live.
+void AP_BoxesAfterCheckpointRestore(struct GameTracker *gGT)
+{
+	int k, i, n = AP_TrackFillWeaponCount(gGT);
+
+	for (k = 0; k < n; k++)
+	{
+		struct Instance *crate = AP_TrackFillWeaponOrdinal(gGT, k);
+		int claimed = 0;
+
+		if (crate == 0)
+			continue;
+		for (i = 0; i < AP_BOX_LIVE_MAX; i++)
+			if (s_live[i].used && s_live[i].seated && s_live[i].x == crate->matrix.t[0] &&
+			    s_live[i].y == crate->matrix.t[1] && s_live[i].z == crate->matrix.t[2])
+			{
+				s_live[i].seatInst = crate;
+				s_live[i].seatGen = AP_Spawn_Generation();
+				s_live[i].seatFlags = DRAW_COLLISION_MASK;
+				claimed = 1;
+			}
+		if (claimed)
+			crate->flags &= ~DRAW_COLLISION_MASK;
+		else
+			crate->flags |= DRAW_COLLISION_MASK;
+	}
+}
+#endif
+
 static void AP_BoxesClear(void)
 {
 	int i;
@@ -743,7 +775,7 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 			synth[k].model = &s_mainCrateModel;
 			synth[k].ptrInstance = AP_TrackFillWeaponOrdinal(gGT, (int)k);
 			synth[k].pos.x = row->pos[0]; synth[k].pos.y = row->pos[1]; synth[k].pos.z = row->pos[2];
-			synth[k].rot.y = row->rot_y;
+			synth[k].rot.y = row->rot[1];
 		}
 		defs = synth;
 		count = found;

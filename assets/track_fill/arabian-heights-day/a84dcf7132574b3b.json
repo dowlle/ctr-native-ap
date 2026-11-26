@@ -30,7 +30,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": -2048
+        "rot": [
+          0,
+          -2048,
+          0
+        ]
       },
       {
         "pos": [
@@ -40,7 +44,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1019
+        "rot": [
+          0,
+          1019,
+          0
+        ]
       },
       {
         "pos": [
@@ -50,7 +58,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1019
+        "rot": [
+          0,
+          1019,
+          0
+        ]
       },
       {
         "pos": [
@@ -60,7 +72,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1019
+        "rot": [
+          0,
+          1019,
+          0
+        ]
       },
       {
         "pos": [
@@ -70,7 +86,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1019
+        "rot": [
+          0,
+          1019,
+          0
+        ]
       },
       {
         "pos": [
@@ -80,7 +100,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -4
+        "rot": [
+          0,
+          -4,
+          0
+        ]
       },
       {
         "pos": [
@@ -90,7 +114,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -4
+        "rot": [
+          0,
+          -4,
+          0
+        ]
       },
       {
         "pos": [
@@ -100,7 +128,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -4
+        "rot": [
+          0,
+          -4,
+          0
+        ]
       },
       {
         "pos": [
@@ -110,7 +142,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -1024
+        "rot": [
+          0,
+          -1024,
+          0
+        ]
       },
       {
         "pos": [
@@ -120,7 +156,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -1024
+        "rot": [
+          0,
+          -1024,
+          0
+        ]
       },
       {
         "pos": [
@@ -130,7 +170,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -1024
+        "rot": [
+          0,
+          -1024,
+          0
+        ]
       },
       {
         "pos": [
@@ -140,7 +184,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -1024
+        "rot": [
+          0,
+          -1024,
+          0
+        ]
       },
       {
         "pos": [
@@ -150,7 +198,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1024
+        "rot": [
+          0,
+          1024,
+          0
+        ]
       },
       {
         "pos": [
@@ -160,7 +212,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1024
+        "rot": [
+          0,
+          1024,
+          0
+        ]
       },
       {
         "pos": [
@@ -170,7 +226,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1024
+        "rot": [
+          0,
+          1024,
+          0
+        ]
       },
       {
         "pos": [
@@ -180,7 +240,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 1024
+        "rot": [
+          0,
+          1024,
+          0
+        ]
       },
       {
         "pos": [
@@ -190,7 +254,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -1024
+        "rot": [
+          0,
+          -1024,
+          0
+        ]
       },
       {
         "pos": [
@@ -200,7 +268,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -1024
+        "rot": [
+          0,
+          -1024,
+          0
+        ]
       },
       {
         "pos": [
@@ -210,7 +282,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -1024
+        "rot": [
+          0,
+          -1024,
+          0
+        ]
       },
       {
         "pos": [
@@ -220,7 +296,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -1024
+        "rot": [
+          0,
+          -1024,
+          0
+        ]
       },
       {
         "pos": [
@@ -230,7 +310,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": 2043
+        "rot": [
+          1,
+          2043,
+          -35
+        ]
       },
       {
         "pos": [
@@ -240,7 +324,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": 2043
+        "rot": [
+          1,
+          2043,
+          -35
+        ]
       },
       {
         "pos": [
@@ -250,7 +338,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": 2043
+        "rot": [
+          0,
+          2043,
+          -36
+        ]
       },
       {
         "pos": [
@@ -260,7 +352,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": 2043
+        "rot": [
+          0,
+          2043,
+          -36
+        ]
       },
       {
         "pos": [
@@ -270,7 +366,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": -2048
+        "rot": [
+          0,
+          -2048,
+          0
+        ]
       },
       {
         "pos": [
@@ -280,7 +380,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": -2048
+        "rot": [
+          0,
+          -2048,
+          0
+        ]
       },
       {
         "pos": [
@@ -290,11 +394,15 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": -2048
+        "rot": [
+          0,
+          -2048,
+          0
+        ]
       }
     ]
   },
-  "fill_sha256": "f850b8e47a625f0903f37ec32a387bbe03cbe069657dd446628ccb2ab26d3fcc",
+  "fill_sha256": "6ff00d653063df6419dd95cd8d3691e0f41e2cbb541f6ae5bc9952b22b2acc5c",
   "generator": {
     "name": "ctr-track-fill",
     "version": 1

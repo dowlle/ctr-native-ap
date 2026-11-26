@@ -219,7 +219,7 @@ typedef struct ctr_content_fill_crate {
 #define AP_CONTENT_MAX_FILL_WEAPONS 80
 typedef struct ctr_content_fill_weapon {
     int16_t pos[3];
-    int16_t rot_y;
+    int16_t rot[3]; /* the donor InstDef rotation, x y z */
     uint8_t rank; /* box spot `needs` scale: 0 none, 1 boost, 2 usf */
 } ctr_content_fill_weapon;
 

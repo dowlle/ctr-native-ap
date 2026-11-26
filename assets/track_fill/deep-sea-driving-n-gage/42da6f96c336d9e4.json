@@ -30,7 +30,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 97
+        "rot": [
+          -160,
+          97,
+          -318
+        ]
       },
       {
         "pos": [
@@ -40,7 +44,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 97
+        "rot": [
+          15,
+          97,
+          -273
+        ]
       },
       {
         "pos": [
@@ -50,7 +58,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 97
+        "rot": [
+          13,
+          97,
+          -273
+        ]
       },
       {
         "pos": [
@@ -60,7 +72,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": 97
+        "rot": [
+          107,
+          97,
+          -260
+        ]
       },
       {
         "pos": [
@@ -70,7 +86,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -6
+        "rot": [
+          -3,
+          -6,
+          240
+        ]
       },
       {
         "pos": [
@@ -80,7 +100,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -6
+        "rot": [
+          19,
+          -6,
+          239
+        ]
       },
       {
         "pos": [
@@ -90,7 +114,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -6
+        "rot": [
+          19,
+          -6,
+          236
+        ]
       },
       {
         "pos": [
@@ -100,7 +128,11 @@
         ],
         "rank": 2,
         "rank_source": "default_usf",
-        "rot_y": -6
+        "rot": [
+          65,
+          -6,
+          234
+        ]
       },
       {
         "pos": [
@@ -110,7 +142,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": 1766
+        "rot": [
+          -294,
+          1766,
+          -119
+        ]
       },
       {
         "pos": [
@@ -120,7 +156,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": 1766
+        "rot": [
+          -118,
+          1766,
+          -185
+        ]
       },
       {
         "pos": [
@@ -130,7 +170,11 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": 1766
+        "rot": [
+          0,
+          1766,
+          0
+        ]
       },
       {
         "pos": [
@@ -140,11 +184,15 @@
         ],
         "rank": 0,
         "rank_source": "start_ground",
-        "rot_y": 1766
+        "rot": [
+          13,
+          1766,
+          -142
+        ]
       }
     ]
   },
-  "fill_sha256": "174fc298aeaf48639b27ff3ee61ee144c063e45e88a9d2ab1a1b214271bb6623",
+  "fill_sha256": "80e4992029a91a658c7ec90672872099e4be9a4c6967be03f307e08ff01bbd4c",
   "generator": {
     "name": "ctr-track-fill",
     "version": 1

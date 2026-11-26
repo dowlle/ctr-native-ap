@@ -98,8 +98,10 @@ void AP_TrackFillAfterCheckpointRestore(struct GameTracker *g);
 void AP_TrackFillWeaponSpawn(struct GameTracker *g);
 void AP_TrackFillWeaponCollide(struct GameTracker *g);
 int AP_TrackFillWeaponCount(struct GameTracker *g);
+int AP_TrackFillWeaponRaceActive(const struct GameTracker *g);
 struct Instance *AP_TrackFillWeaponOrdinal(struct GameTracker *g, int index);
 struct Instance *AP_TrackFillWeaponAt(struct GameTracker *g, int x, int y, int z, int rotY);
+void AP_BoxesAfterCheckpointRestore(struct GameTracker *g);
 #ifdef CTR_CUSTOM_PACKAGES
 struct CustomOfflineRequest;
 int AP_TrackFillStageOffline(const struct CustomOfflineRequest *request);
