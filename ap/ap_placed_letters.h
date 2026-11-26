@@ -14,6 +14,14 @@ static inline const struct AP_PlacedLetterSet *AP_PlacedLetters_Find(
     const char *track, const char *lev, const char *vrm)
 {
     static const struct AP_PlacedLetterSet placements[] = {
+        {"android-alley-n-gage",
+         "a06bbb0a6c171b702166271b1024830b7a12b3c1faf43477b1e28f218585665a",
+         "f13d8a876620f92bc69407f5de3d4b89eee93f9cbda0abc862529608f353c042",
+         {{1899, 366, 14310, 2375}, {9027, 335, 22310, 1024}, {-5464, 195, 14482, 2167}}},
+        {"deep-sea-driving-n-gage",
+         "9a94ba597c53d5ca62f9d16a3622f713b1455ab48e9b93a7e22d5dc0b043fed8",
+         "285e03d7b414b98b73711bb08a8e96d1f6a1f1bbbb3e95a418a92c3aee8f88c8",
+         {{13746, 324, 1451, 3875}, {11124, 1344, -17730, 3461}, {474, 245, -11779, 2318}}},
         {"jungle-boogie-n-gage",
          "ac968f6ce814ecbe67a7efd6e926f4fa7c59803c56e8f05a194156962ec0f906",
          "73095c1261541884f9046104134c5c0ff2d95b917cfd847cad2cef687b138e0f",

@@ -236,6 +236,12 @@ static const struct AP_PlacedLetterSet *AP_TrialLetters_Custom(
     return NULL;
 }
 
+int AP_TrialLetters_ReplaceBaked(struct GameTracker *gGT)
+{
+    const ctr_content_pad *pad = NULL;
+    return s_trialAssets == 1 && AP_TrialLetters_Custom(gGT, &pad) != NULL;
+}
+
 void AP_TrialLetters_Register(struct GameTracker *gGT)
 {
     const ctr_content_pad *pad = NULL;
