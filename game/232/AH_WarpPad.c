@@ -275,6 +275,39 @@ static int AH_WarpPad_PhysOf(struct Thread *t)
 		levelID = levelID * 10 + t->inst->name[i] - '0';
 	return levelID;
 }
+
+// Compare against the taken list before dereferencing a cached child. A
+// recycled slot can still have its old thread pointer while on the free list.
+static int AH_WarpPad_LiveInstances(struct Thread *t, struct Instance **live)
+{
+	const struct WarpPad *wp = t->object;
+	const struct JitPool *pool = &sdata->gGT->JitPools.instance;
+	struct Instance *inst;
+	int i, pending = 0;
+
+	for (i = 0; i < WPIS_NUM_INSTANCES; i++)
+	{
+		live[i] = NULL;
+		pending += wp->inst[i] != NULL;
+	}
+
+	for (inst = (struct Instance *)pool->taken.first; inst != NULL && pending != 0; inst = inst->next)
+	{
+		if (inst->thread != t || inst == t->inst || strcmp(inst->name, "beamFilter") == 0)
+			continue;
+		for (i = 0; i < WPIS_NUM_INSTANCES; i++)
+		{
+			if (wp->inst[i] == inst)
+			{
+				live[i] = inst;
+				pending--;
+				break;
+			}
+		}
+	}
+
+	return pending == 0;
+}
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abbdc-0x800abd80.
@@ -300,8 +333,13 @@ void AH_WarpPad_AllWarppadNum()
 		// count of 20 or more pushed past the eight digit headers.
 		{
 			int header;
+			struct Instance *live[WPIS_NUM_INSTANCES];
 
-			inst = wp->inst[WPIS_CLOSED_1S];
+			if (wp->inst[WPIS_CLOSED_1S] == NULL && wp->inst[WPIS_CLOSED_10S] == NULL)
+				continue;
+			AH_WarpPad_LiveInstances(t, live);
+
+			inst = live[WPIS_CLOSED_1S];
 			if ((inst != 0) && (inst->model != 0) && (inst->model->id == AP_WARPPAD_DIGIT_MODEL_1TO8))
 			{
 				header = ap_warppad_digit_header(wp->digit1s, inst->model->numHeaders);
@@ -309,7 +347,7 @@ void AH_WarpPad_AllWarppadNum()
 					AH_WarpPad_SetNumModelData(inst, &inst->model->headers[header]);
 			}
 
-			inst = wp->inst[WPIS_CLOSED_10S];
+			inst = live[WPIS_CLOSED_10S];
 			if ((inst != 0) && (inst->model != 0) && (inst->model->id == AP_WARPPAD_DIGIT_MODEL_1TO8))
 			{
 				header = ap_warppad_digit_header(wp->digit10s, inst->model->numHeaders);
@@ -478,6 +516,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	struct Instance *warppadInst;
 	struct Instance **visInstSrc;
 	struct Instance **instArr;
+#ifdef CTR_AP
+	struct Instance *live[WPIS_NUM_INSTANCES];
+#endif
 
 	struct Driver *driver;
 	struct Instance *driverInst;
@@ -522,14 +563,25 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	visInstSrc = gGT->cameraDC[0].visInstSrc;
 
 #ifdef CTR_AP
+	if (!AH_WarpPad_LiveInstances(t, live))
+	{
+		if (!warppadObj->boolEnteredWarppad)
+		{
+			AH_WarpPad_ThDestroy(t);
+			AH_WarpPad_BuildInstances(t);
+			return;
+		}
+		// An active warp uses the remaining live visuals and keeps its
+		// progress. Its pad was open when the warp started.
+		live[WPIS_CLOSED_1S] = NULL;
+	}
+
 	// AP live pad refresh: the locked/open/done look + gate instances are latched at
 	// birth. When an AP event changes THIS pad's state while the player is in the hub
 	// (a received gate item opens it; the last location checked makes it done),
 	// AP_StateGen() bumps. Re-derive by tearing down and rebuilding via the exact
-	// birth logic -- only on an actual AP_PadState change, and never mid-warp. Mid-
-	// tick INSTANCE_Death is already the norm in this proc (the locked-digit teardown
-	// below); the rebuild adds the matching births. AP_PadState is recomputed only on
-	// a gen change, so the steady-state cost is one integer compare per pad per frame.
+	// birth logic when the birth key changes. AP_PadState is recomputed only on
+	// a generation change, and a rebuild waits until the pad is out of its warp.
 	if (ctr_cfg_active() && warppadObj->boolEnteredWarppad == 0)
 	{
 		int rbPhys = AH_WarpPad_PhysOf(t);
@@ -544,7 +596,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				{
 					AH_WarpPad_ThDestroy(t);       // free current child instances
 					AH_WarpPad_BuildInstances(t);  // rebuild for the new state
-					return; // render fresh next frame; instArr is now the new set
+					return; // use the new children next tick
 				}
 			}
 		}
@@ -569,8 +621,11 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		}
 	}
 
-	// array of instances in warppad object
+#ifdef CTR_AP
+	instArr = live;
+#else
 	instArr = &warppadObj->inst[0];
+#endif
 	warppadMatrix = &warppadInst->matrix;
 
 	// make instances visible
@@ -939,6 +994,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			    // Dont have hint "you must have more trophies"
 			    (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_HINT_NEED_MORE_TROPHIES) == 0) &&
 
+#ifdef CTR_AP
+			    instArr[WPIS_CLOSED_ITEM] != NULL &&
+			    instArr[WPIS_CLOSED_ITEM]->model != NULL &&
+#endif
 			    // required item is not KEY
 			    (instArr[WPIS_CLOSED_ITEM]->model->id != STATIC_KEY))
 			{
@@ -977,6 +1036,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// if warppad is locked
 	if (instArr[WPIS_CLOSED_1S] != 0)
 	{
+#ifdef CTR_AP
+		// An incomplete lock display must still block entry.
+		if (instArr[WPIS_CLOSED_ITEM] == NULL || instArr[WPIS_CLOSED_ITEM]->model == NULL ||
+		    (instArr[WPIS_CLOSED_10S] != NULL && instArr[WPIS_CLOSED_X] == NULL))
+			return;
+#endif
 		angleCamToWarppad = ratan2(warppadMatrix->t[0] - gGT->pushBuffer[0].pos.x, warppadMatrix->t[2] - gGT->pushBuffer[0].pos.z);
 
 		angleCamToWarppad = -angleCamToWarppad;
@@ -2094,6 +2159,7 @@ WarpPad_AnimateOpen:
 		warppadObj->spinRot_Rewards.y += 0x4;
 	}
 
+#ifndef CTR_AP
 	if (instArr[WPIS_CLOSED_1S] != 0)
 	{
 		INSTANCE_Death(instArr[WPIS_CLOSED_1S]);
@@ -2101,11 +2167,27 @@ WarpPad_AnimateOpen:
 		INSTANCE_Death(instArr[WPIS_CLOSED_X]);
 		INSTANCE_Death(instArr[WPIS_CLOSED_ITEM]);
 	}
+#endif
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ad2c8-0x800ad3ec.
 void AH_WarpPad_ThDestroy(struct Thread *t)
 {
+#ifdef CTR_AP
+	struct WarpPad *wp = t->object;
+	struct Instance *inst = (struct Instance *)sdata->gGT->JitPools.instance.taken.first;
+
+	// This also frees the beam filter and any child whose cached slot was lost.
+	// Keep the level instance that owns the pad thread.
+	while (inst != NULL)
+	{
+		struct Instance *next = inst->next;
+		if (inst->thread == t && inst != t->inst)
+			INSTANCE_Death(inst);
+		inst = next;
+	}
+	memset(wp->inst, 0, sizeof(wp->inst));
+#else
 	int i;
 	struct Instance **instArr;
 	struct WarpPad *warppadObj;
@@ -2143,13 +2225,6 @@ void AH_WarpPad_ThDestroy(struct Thread *t)
 	{
 		INSTANCE_Death(instArr[WPIS_OPEN_BEAM]);
 		instArr[WPIS_OPEN_BEAM] = 0;
-#ifdef CTR_AP
-		{
-			struct Instance *apFilter = AH_WarpPad_ApFilterOf(t);
-			if (apFilter != 0)
-				INSTANCE_Death(apFilter);
-		}
-#endif
 	}
 
 	for (i = WPIS_OPEN_RING1; i < WPIS_OPEN_PRIZE1; i++)
@@ -2169,6 +2244,7 @@ void AH_WarpPad_ThDestroy(struct Thread *t)
 			instArr[i] = 0;
 		}
 	}
+#endif
 }
 
 static const s16 s_warpPadRewardModelIDs[3] = {STATIC_TROPHY, STATIC_RELIC, STATIC_TOKEN};

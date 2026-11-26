@@ -108,11 +108,11 @@ ContentPad_BuildGate:
 		*openOut = 1;
 }
 
-enum { WPIS_CLOSED_ITEM = 0, WPIS_CLOSED_X, WPIS_CLOSED_1S, WPIS_CLOSED_10S, WPIS_COUNT = 8 };
+enum { WPIS_CLOSED_ITEM = 0, WPIS_CLOSED_X, WPIS_CLOSED_1S, WPIS_CLOSED_10S, WPIS_NUM_INSTANCES = 10 };
 struct ModelHeader { int tag; };
 struct Model { short id; short numHeaders; struct ModelHeader *headers; };
 struct Instance { struct Model *model; int shownHeader; };
-struct WarpPad { struct Instance *inst[WPIS_COUNT]; short digit10s; short digit1s; };
+struct WarpPad { struct Instance *inst[WPIS_NUM_INSTANCES]; short digit10s; short digit1s; };
 static struct ModelHeader g_hdr[8];
 static struct Model g_models[3];
 static int g_overrun;
@@ -139,10 +139,16 @@ static struct Model *model_of(int id)
 
 static void digit_pass(struct WarpPad *wp)
 {
-	struct Instance *inst;
-	struct ModelHeader *mh = 0;
+	// This fixture only feeds live digits. The digits production harness
+	// exercises the engine's pool membership check itself.
+#define AH_WarpPad_LiveInstances(thread, live) memcpy(live, wp->inst, sizeof(live))
+	for (; wp; wp = NULL)
+	{
+		struct Instance *inst;
+		struct ModelHeader *mh = 0;
 """ + digit_pass + r"""
-	(void)mh;
+	}
+#undef AH_WarpPad_LiveInstances
 }
 
 static int drawn(const struct Instance *inst)

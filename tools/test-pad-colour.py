@@ -149,10 +149,9 @@ refresh = body(warp, 'static void AH_WarpPad_ApRefreshCopies(struct GameTracker 
 assert 's_apBeamHueSource[slot][0] == (uintptr_t)retail' in refresh and 'retail->headers[0].ptrCommandList' in refresh
 assert 'AH_WarpPad_ApHueModel(retail, rgb, slot, use == AP_BEAM_USE_FILTER)' in refresh
 assert 's_apBeamHueModel[slot].numHeaders = 0;' in refresh
-destroy = body(warp, 'void AH_WarpPad_ThDestroy(struct Thread *t)')
-beam_death = destroy[destroy.index('INSTANCE_Death(instArr[WPIS_OPEN_BEAM]);'):]
-beam_death = beam_death[:beam_death.index('for (i = WPIS_OPEN_RING1')]
-assert 'AH_WarpPad_ApFilterOf(t)' in beam_death and 'INSTANCE_Death(apFilter);' in beam_death
+destroy = body(warp, 'void AH_WarpPad_ThDestroy(struct Thread *t)').split('#else')[0]
+assert 'JitPools.instance.taken.first' in destroy
+assert 'inst->thread == t && inst != t->inst' in destroy and 'INSTANCE_Death(inst);' in destroy
 # The wisps take the state wisp model; open and stage 2 open keep apart copies.
 assert 'AH_WarpPad_ApWispModel(wispModel, AP_PadLook(levelID, warppadObj->levelID))' in build
 assert 'INSTANCE_Birth3D(wispModel, "bottomRing", t);' in build
