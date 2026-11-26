@@ -54,7 +54,10 @@ def choose_native(repo: str, source: str, pr_number: str, pr_head: str) -> int |
     return None
 
 
-def choose_apworld(repo: str, branch: str, companion: str = '', required: bool = False) -> tuple[int, str]:
+def choose_apworld(
+    repo: str, branch: str, companion: str = '', required: bool = False,
+    *, allow_pull_request: bool = False,
+) -> tuple[int, str]:
     expected_sha = None
     if companion:
         # Paired PRs can rehearse together before either side merges. Only a
@@ -73,14 +76,29 @@ def choose_apworld(repo: str, branch: str, companion: str = '', required: bool =
                 raise RuntimeError(f"could not resolve companion branch on {repo}: {ref}")
         else:
             branch, expected_sha = companion, ref['object']['sha']
-    for run in runs(repo, "ctr-world.yml", urlencode({"branch": branch, "status": "success"})):
-        if (run.get("event") not in ("push", "workflow_dispatch", "schedule")
+    query = {"branch": branch, "status": "success"}
+    events = {"push", "workflow_dispatch", "schedule"}
+    prefer_pr = allow_pull_request and expected_sha is not None
+    if prefer_pr:
+        events.add("pull_request")
+        query["head_sha"] = expected_sha
+    fallback = None
+    for run in runs(repo, "ctr-world.yml", urlencode(query)):
+        if (run.get("event") not in events
                 or run.get("head_branch") != branch or run.get("conclusion") != "success"):
             continue
         if expected_sha and run.get('head_sha') != expected_sha:
             continue
+        is_pr_run = run.get("event") == "pull_request"
+        if fallback is not None and not is_pr_run:
+            continue
         if has_artifacts(repo, run["id"], {"ctr.apworld"}):
-            return run["id"], run["head_sha"]
+            selection = run["id"], run["head_sha"]
+            if is_pr_run or not prefer_pr:
+                return selection
+            fallback = selection
+    if fallback is not None:
+        return fallback
     raise RuntimeError(f"no successful ctr-world run with ctr.apworld on {repo}:{branch}")
 
 
@@ -103,6 +121,7 @@ def main() -> None:
             apworld_repo, os.environ["APWORLD_BRANCH"],
             os.environ.get("APWORLD_COMPANION_BRANCH", ""),
             os.environ.get("APWORLD_COMPANION_REQUIRED", "false").lower() == "true",
+            allow_pull_request=bool(os.environ["PR_NUMBER"]),
         )
         deadline = time.monotonic() + 55 * 60
         native_id = None

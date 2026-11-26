@@ -262,8 +262,14 @@ and upload steps are scoped to a complete two-platform release in section 7.
 
 ## 5. Tag
 
+- A native pull request rehearsal can use a successful `ctr-world` pull
+  request run with an unexpired `ctr.apworld` artifact from the current head
+  of the matching apworld branch. It prefers that PR run when available.
+  The PR fuzz tier or a pack-only run is sufficient for this rehearsal.
 - [ ] Tag only the exact native commit whose `Release rehearsal` check passed,
-      using the apworld commit selected by that rehearsal for the pair.
+      using the apworld commit selected by that rehearsal for the pair. Use
+      a full-tier `ctr-world` run on that exact apworld commit for release
+      preparation and the tag gate.
 - [ ] Same tag `vX.Y.Z` on BOTH repos at the exact release commits, pushed.
       The player-facing GitHub release lives on this repo only; the apworld
       tag exists for traceability.
