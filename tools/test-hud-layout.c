@@ -81,7 +81,8 @@ int main(void)
 	const struct Bounds dot = {421, 191, 444, 204};
 	const struct Bounds customDot = {366, 207, 380, 216};
 	const struct Bounds lap = {400, 8, 485, 34};
-	const struct Bounds position = {0, 55, 67, 202};
+	// The icons, large position numeral and ordinal suffix occupy the left edge.
+	const struct Bounds position = {0, 55, 110, 216};
 
 	struct Driver driver = {.const_AccelSpeed_ClassStat = FP8(40)};
 	const int speeds[] = {-1, 42, 127};
