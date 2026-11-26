@@ -5,7 +5,7 @@
     "letters": 0,
     "loose_fruit": 0,
     "time_crates": 0,
-    "weapon_crates": 15
+    "weapon_crates": 16
   },
   "donors": [
     {
@@ -136,6 +136,20 @@
       },
       {
         "pos": [
+          1642,
+          399,
+          -2041
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "pos": [
           1646,
           310,
           -1167
@@ -234,7 +248,7 @@
       }
     ]
   },
-  "fill_sha256": "bc7d2a7f24d5adc4fb9a83f702c18e0897e31025ddcd71ca999cdc6d5681c12f",
+  "fill_sha256": "cb6677022d2744618cc9e7a74191c1c69b6e64796476516bcb7a9a34a46e3d6a",
   "generator": {
     "name": "ctr-track-fill",
     "version": 1

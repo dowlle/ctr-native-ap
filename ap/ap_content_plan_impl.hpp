@@ -244,6 +244,7 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
     const auto &donors = fill.at("donors");
     need(donors.is_array() && !donors.empty() && donors.size() <= 2, "track fill donor count");
     std::set<std::string> seen{lev.get<std::string>()};
+    bool has_ruled_donor = false;
     for (const auto &donor : donors) {
         fields(donor, {"lev_sha256", "road_sha256", "kind", "overlap"});
         const auto &sha = donor.at("lev_sha256");
@@ -251,10 +252,14 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
         need(sha.is_string() && lower_hex(sha.get<std::string>(), 64) &&
              road.is_string() && lower_hex(road.get<std::string>(), 64) &&
              seen.insert(sha.get<std::string>()).second, "invalid track fill donor identity");
-        const int overlap = number(donor.at("overlap"), 95000, 100000);
+        const int overlap = number(donor.at("overlap"), 1, 100000);
         const auto &kind = donor.at("kind");
-        need(kind == "similar>=0.95" || (kind == "identical" && overlap == 100000),
-             "track fill requires a same-road donor");
+        if (kind == "ruled" && overlap < 95000)
+            has_ruled_donor = true;
+        else
+            need((kind == "similar>=0.95" && overlap >= 95000) ||
+                 (kind == "identical" && overlap == 100000),
+                 "invalid track fill donor kind or overlap");
     }
 
     const auto &families = fill.at("families");
@@ -303,6 +308,8 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
     const auto &crates = families.at("time_crates");
     need(crates.is_array() && crates.size() <= AP_CONTENT_MAX_FILL_CRATES && (!crates.empty() || !weapons.empty()),
          "track fill time crate count");
+    need(!has_ruled_donor || (donors.size() == 1 && crates.empty() && grid.is_null()),
+         "a ruled weak donor requires a weapon-only fill");
     const int count = (int)crates.size();
     number(counts.at("time_crates"), count, count);
     out.reserve(count);
