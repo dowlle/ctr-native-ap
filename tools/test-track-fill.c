@@ -32,7 +32,12 @@ const ctr_content_pad *ap_content_plan_pad(int index) { assert(index == 3); retu
 const ctr_content_package *ap_content_plan_package(int index) { assert(index >= 0); return index == 0 ? &package : NULL; }
 int ap_content_plan_active(void) { return 1; }
 static const char *boss_venue_lev;
-const char *CustomTrack_BossVenueLevSha(int level, int boss, int active) { (void)level; (void)boss; (void)active; return boss_venue_lev; }
+int CustomTrack_BossVenuePins(int level, int boss, int active, const char **lev, const char **vrm)
+{
+	(void)level; (void)boss; (void)active;
+	*lev = boss_venue_lev; *vrm = "v";
+	return boss_venue_lev != NULL;
+}
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int index)
 {
 	assert(index == 3);
@@ -143,6 +148,7 @@ int main(void)
 	context.mode = AP_CONTENT_MODE_RELIC;
 	context.physicalPad = 3;
 	context.levSha256[0] = package.lev_sha256[0] = 'a';
+	context.vrmSha256[0] = package.vrm_sha256[0] = 'v';
 	package.fill_crates = crates;
 	package.fill_crate_count = 3;
 
@@ -288,11 +294,17 @@ int main(void)
 		// A boss race on a custom venue serving the same LEV stands the crates
 		// too; another venue does not.
 		tracker.gameMode1 = ADVENTURE_BOSS;
+		context.seedEpoch = 0; // no pad or cup context: the garage venue decides
 		boss_venue_lev = "b";
 		assert(!AP_TrackFillWeaponCount(&tracker));
 		boss_venue_lev = package.lev_sha256;
 		assert(AP_TrackFillWeaponCount(&tracker) == 2);
+		// A boss cup leg keeps ADVENTURE_BOSS and serves its own context.
+		context.seedEpoch = 1;
+		context.cup = 1;
 		boss_venue_lev = NULL;
+		assert(AP_TrackFillWeaponCount(&tracker) == 2);
+		context.cup = 0;
 		tracker.gameMode1 = 0;
 		puts("PASS: the served LEV decides on pad, cup and boss venue routes");
 		package.fill_weapon_count = 0;

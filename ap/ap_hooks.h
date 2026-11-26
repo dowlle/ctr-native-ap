@@ -99,6 +99,7 @@ void AP_TrackFillWeaponSpawn(struct GameTracker *g);
 void AP_TrackFillWeaponCollide(struct GameTracker *g);
 int AP_TrackFillWeaponCount(struct GameTracker *g);
 int AP_TrackFillWeaponRaceActive(const struct GameTracker *g);
+int AP_TrackFillBossVenueReady(int levelID, int bossID);
 struct Instance *AP_TrackFillWeaponOrdinal(struct GameTracker *g, int index);
 struct Instance *AP_TrackFillWeaponAt(struct GameTracker *g, int x, int y, int z, int rotY);
 void AP_BoxesAfterCheckpointRestore(struct GameTracker *g);

@@ -159,7 +159,7 @@ void CustomTrack_ClearGarageVenueDescriptors(void);
 int CustomTrack_GarageVenueReady(int garage);
 // The garage whose custom venue this load serves, or -1.
 int CustomTrack_GarageVenueServing(int levelID, int bossID, int adventureBossActive);
-const char *CustomTrack_BossVenueLevSha(int levelID, int bossID, int adventureBossActive);
+int CustomTrack_BossVenuePins(int levelID, int bossID, int adventureBossActive, const char **lev, const char **vrm);
 #ifdef CTR_CUSTOM_PACKAGES
 // Pin the geometry pair first and return optional verified audio owned by HOWL.
 // A failed pin or read sets a diagnostic. An absent optional SCA leaves it NULL.

@@ -365,36 +365,50 @@ void AP_TrackFillCollide(struct GameTracker *g)
 // angle. They stand in every race on that LEV except Time Trial and Relic
 // Race, where retail tracks carry no weapon crates either.
 
-static const ctr_content_package *AP_TrackFillWeaponRace(const struct GameTracker *g)
+// The plan package pinned to exactly this LEV and VRM pair (unique per room).
+static const ctr_content_package *AP_TrackFillWeaponPackage(const char *lev, const char *vrm)
 {
-	if (!g || g->numPlyrCurrGame != 1 || (g->gameMode1 & (RELIC_RACE | TIME_TRIAL | BATTLE_MODE | MAIN_MENU)) ||
-	    !ap_content_plan_active())
-		return NULL;
-	// The served LEV decides: a pad race or cup leg serves its context's
-	// pair, a boss race on a custom garage or Oxide venue its venue's pair.
-	// Every route that races the package stands its filled crates, so the
-	// sanity counts agree with the apworld on each of them.
-	const char *served = NULL;
-	if (IS_BOSS_RACE(g->gameMode1))
-		served = CustomTrack_BossVenueLevSha(g->levelID, g->bossID, 1);
-	else
-	{
-		const struct CustomTrackRaceContext *context = CustomTrack_StandaloneContext(g->levelID);
-		if (context && !context->retail && !context->cortex && context->seedEpoch &&
-		    context->seedEpoch == ap_content_plan_epoch())
-			served = context->levSha256;
-	}
-	if (!served || !served[0])
+	if (!lev || !vrm || !lev[0] || !vrm[0])
 		return NULL;
 	for (int i = 0; i < AP_CONTENT_MAX_PACKAGES; ++i)
 	{
 		const ctr_content_package *pkg = ap_content_plan_package(i);
 		if (!pkg)
 			break;
-		if (pkg->fill_weapon_count && !strcmp(served, pkg->lev_sha256))
+		if (pkg->fill_weapon_count && !strcmp(lev, pkg->lev_sha256) && !strcmp(vrm, pkg->vrm_sha256))
 			return pkg;
 	}
 	return NULL;
+}
+
+static const ctr_content_package *AP_TrackFillWeaponRace(const struct GameTracker *g)
+{
+	if (!g || g->numPlyrCurrGame != 1 || (g->gameMode1 & (RELIC_RACE | TIME_TRIAL | BATTLE_MODE | MAIN_MENU)) ||
+	    !ap_content_plan_active())
+		return NULL;
+	// The served pair decides: a pad race or cup leg (boss cups included)
+	// serves its context's pair, another boss race its custom venue's pair.
+	// Every route that races the package stands its filled crates, so the
+	// sanity counts agree with the apworld on each of them.
+	const struct CustomTrackRaceContext *context = CustomTrack_StandaloneContext(g->levelID);
+	if (context && !context->retail && !context->cortex && context->seedEpoch &&
+	    context->seedEpoch == ap_content_plan_epoch() && (context->cup || !IS_BOSS_RACE(g->gameMode1)))
+		return AP_TrackFillWeaponPackage(context->levSha256, context->vrmSha256);
+	const char *lev = NULL, *vrm = NULL;
+	if (IS_BOSS_RACE(g->gameMode1) && CustomTrack_BossVenuePins(g->levelID, g->bossID, 1, &lev, &vrm))
+		return AP_TrackFillWeaponPackage(lev, vrm);
+	return NULL;
+}
+
+// Before a custom garage venue is entered: the crates its race would stand
+// need their model and texture (pads and cup legs check at race entry).
+int AP_TrackFillBossVenueReady(int levelID, int bossID)
+{
+	const char *lev = NULL, *vrm = NULL;
+	if (!ap_content_plan_active() || !CustomTrack_BossVenuePins(levelID, bossID, 1, &lev, &vrm) ||
+	    !AP_TrackFillWeaponPackage(lev, vrm))
+		return 1;
+	return AP_TrackFillPrepare();
 }
 
 int AP_TrackFillWeaponRaceActive(const struct GameTracker *g)
