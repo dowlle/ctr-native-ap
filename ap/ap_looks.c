@@ -6,9 +6,8 @@
 #include <common.h>
 #include <platform/native_assets.h>
 #include <platform/native_config.h>
-#include <platform/native_sha256.h>
+#include <ctr_character_looks.h>
 #include "ap_look_logic.h"
-#include "ap_komodo_moe_embedded.h"
 #include "ap_looks.h"
 #include "ap_hooks.h" // AP_LogLine
 
@@ -20,9 +19,8 @@
 // the look's item index, or 0 for ORIGINAL, and is read through the owned bits,
 // so a look this seed never delivered drives as the original model.
 //
-// A look is loaded on first use into host memory (not MEMPACK). Try the disk
-// file first, then the embedded fallback if available. Both sources are
-// checked against the same pin and AP_LookValidateModel before relocation.
+// A look is loaded from a local file on first use into host memory (not MEMPACK).
+// The file is checked with AP_LookValidateModel before relocation.
 // The loaded driver packs stay intact: VehBirth_GetModelByName returns a small
 // look Model (the found model's name and id, the look's one header), so
 // switching back to ORIGINAL needs no undo and a racer born before the change
@@ -73,7 +71,7 @@ static int *AP_LooksConfigFor(int racer)
 
 static int AP_LooksRacerForRow(const int *valuePtr)
 {
-	if (valuePtr == &g_config.lookJoe)
+	if (CTR_AP_CHARACTER_LOOKS && valuePtr == &g_config.lookJoe)
 		return AP_LOOK_RACER_JOE;
 	return -1;
 }
@@ -85,7 +83,7 @@ void AP_LooksConnectReset(void)
 
 void AP_LooksReceiveOwned(long long itemIndex)
 {
-	int look = AP_LookForItem(itemIndex);
+	int look = CTR_AP_CHARACTER_LOOKS ? AP_LookForItem(itemIndex) : -1;
 	if (look >= 0)
 		ap_looks_owned |= 1u << look;
 }
@@ -93,7 +91,7 @@ void AP_LooksReceiveOwned(long long itemIndex)
 void AP_LooksReceiveNew(long long itemIndex)
 {
 	char msg[160];
-	int look = AP_LookForItem(itemIndex);
+	int look = CTR_AP_CHARACTER_LOOKS ? AP_LookForItem(itemIndex) : -1;
 	int *saved;
 
 	if (look < 0)
@@ -135,21 +133,9 @@ static int AP_LooksReadFile(const AP_LookDef *def, unsigned char *buf, const cha
 static int AP_LooksValidate(const AP_LookDef *def, const unsigned char *bytes, size_t size,
                             AP_LookModelInfo *info, const char **why)
 {
-	char hex[NATIVE_SHA256_HEX_BYTES];
-	unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
-	struct NativeSha256Ctx sha;
 	if (size != def->size)
 	{
 		*why = "wrong size";
-		return 0;
-	}
-	NativeSha256_Init(&sha);
-	NativeSha256_Update(&sha, bytes, size);
-	NativeSha256_Final(&sha, digest);
-	NativeSha256_ToHex(digest, hex);
-	if (!NativeSha256_HexEquals(def->sha256, hex))
-	{
-		*why = "SHA-256 does not match the pin";
 		return 0;
 	}
 	if (!AP_LookValidateModel(bytes, size, info, why))
@@ -168,7 +154,6 @@ static int AP_LooksLoadFile(int look)
 	char msg[256];
 	AP_LookModelInfo info;
 	const char *why;
-	const char *source = "disk";
 	unsigned char *buf = NULL;
 
 	if (ap_look_files[look].state != AP_LOOK_FILE_UNTRIED)
@@ -186,13 +171,7 @@ static int AP_LooksLoadFile(int look)
 		goto fail;
 	}
 	if (!AP_LooksReadFile(def, buf, &why) || !AP_LooksValidate(def, buf, def->size, &info, &why))
-	{
-		if (def->itemIndex != AP_LOOK_KOMODO_MOE_ITEM_INDEX ||
-		    !AP_LooksValidate(def, ap_komodo_moe_embedded, sizeof ap_komodo_moe_embedded, &info, &why))
-			goto fail;
-		memcpy(buf, ap_komodo_moe_embedded, sizeof ap_komodo_moe_embedded);
-		source = "embedded fallback";
-	}
+		goto fail;
 	{
 		// Relocate exactly like LOAD_RunPtrMap: every listed slot becomes an
 		// absolute pointer into this buffer.
@@ -209,8 +188,8 @@ static int AP_LooksLoadFile(int look)
 		ap_look_files[look].header = (struct ModelHeader *)(void *)(data + info.headerOff);
 	}
 	ap_look_files[look].state = AP_LOOK_FILE_READY;
-	snprintf(msg, sizeof msg, "[AP LOOK] loaded %s from %s (%u bytes, %d triangles, pin ok)\n",
-	         def->assetRel, source, def->size, info.triangles);
+	snprintf(msg, sizeof msg, "[AP LOOK] loaded %s (%u bytes, %d triangles)\n",
+	         def->assetRel, def->size, info.triangles);
 	AP_LogLine(msg);
 	return 1;
 
@@ -227,7 +206,7 @@ struct Model *AP_LooksModelFor(const char *searchName, struct Model *found)
 	int *saved;
 	struct Model *m;
 
-	if (found == NULL || searchName == NULL)
+	if (!CTR_AP_CHARACTER_LOOKS || found == NULL || searchName == NULL)
 		return found;
 	for (racer = 0; racer < (int)(sizeof ap_looks_logged_racer_look / sizeof ap_looks_logged_racer_look[0]); racer++)
 		if (AP_LooksConfigFor(racer) != NULL && data.MetaDataCharacters[racer].name_Debug != NULL &&
@@ -266,7 +245,7 @@ struct Model *AP_LooksModelFor(const char *searchName, struct Model *found)
 	m->id = found->id;
 	m->numHeaders = 1;
 	m->headers = ap_look_files[look].header;
-	// The header keeps the bundled name ("fake_hi" for Komodo Moe); nothing
+	// The header keeps the file's name; nothing
 	// looks a driver header up by name.
 	return m;
 }
@@ -281,7 +260,7 @@ void AP_LooksRebindDrivers(void)
 	struct GameTracker *gGT = sdata->gGT;
 	int rebound = 0;
 
-	if (gGT == NULL)
+	if (!CTR_AP_CHARACTER_LOOKS || gGT == NULL)
 		return;
 	for (int i = 0; i < 8; i++)
 	{
@@ -310,7 +289,7 @@ int AP_LooksGhostWearsLook(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 
-	if (gGT == NULL)
+	if (!CTR_AP_CHARACTER_LOOKS || gGT == NULL)
 		return 0;
 	for (struct Thread *t = gGT->threadBuckets[GHOST].thread; t != NULL; t = t->siblingThread)
 		if (t->inst != NULL && AP_LooksTimingModel(t->inst->model) != t->inst->model)
@@ -320,6 +299,8 @@ int AP_LooksGhostWearsLook(void)
 
 struct Model *AP_LooksTimingModel(struct Model *m)
 {
+	if (!CTR_AP_CHARACTER_LOOKS)
+		return m;
 	for (int i = 0; i < AP_LOOK_MODEL_SLOTS; i++)
 		if (m != NULL && m == &ap_look_models[i].model && ap_look_models[i].orig != NULL)
 			return ap_look_models[i].orig;

@@ -121,11 +121,6 @@ static const struct ApCreditLine AP_CREDITS_LINES[] = {
     // permission (THIRD_PARTY_NOTICES.md "Cortex Vortex track").
     {0, CTR_CORTEX_CREDIT},
     {0, ""},
-    // THIRD_PARTY_NOTICES.md "Komodo Moe driver model": the first character
-    // look (JL2), Lockheart's model, bundled unchanged with his permission.
-    {1, "CHARACTER LOOKS"},
-    {0, "KOMODO MOE MODEL - LOCKHEART"},
-    {0, ""},
     // Authors who said yes (2026-11-12 and 2026-11-13) to their tracks being
     // offered through the client's Project Saphi download or importer. Names as
     // Project Saphi lists them; Lolothesamurai asked for exactly that spelling.

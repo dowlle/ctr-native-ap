@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string.h>
+#include <ctr_character_looks.h>
 #include <platform/native_config.h>
 
 // Pages of the in-game Options menu (game/230/MM_ConfigMenu.c). Which page a
@@ -97,6 +98,13 @@ static inline int CTR_MenuSectionHidden(const char *section)
 	       strcmp(section, "Discord") == 0;
 }
 
+static inline int CTR_MenuEntryHidden(const ConfigEntry *entry)
+{
+	// Keep the old config key readable even while the menu gates it out.
+	return CTR_MenuSectionHidden(entry->section) ||
+	       (!CTR_AP_CHARACTER_LOOKS && strcmp(entry->key, "look_joe") == 0);
+}
+
 static inline int CTR_MenuFindEntry(const ConfigEntry *entries, int numEntries, const char *key)
 {
 	for (int i = 0; i < numEntries; i++)
@@ -125,7 +133,7 @@ static inline int CTR_MenuBuildPages(const ConfigEntry *entries, int numEntries,
 			const int i = CTR_MenuFindEntry(entries, numEntries, *k);
 			if (i < 0 || i >= (int)sizeof placed || placed[i] || n >= CTR_MENU_PAGE_ROW_CAP)
 				continue;
-			if (CTR_MenuSectionHidden(entries[i].section))
+			if (CTR_MenuEntryHidden(&entries[i]))
 				continue;
 			placed[i] = 1;
 			rows[numPages][n++] = i;
@@ -139,7 +147,7 @@ static inline int CTR_MenuBuildPages(const ConfigEntry *entries, int numEntries,
 
 	for (int i = 0; i < numEntries && i < (int)sizeof placed; i++)
 	{
-		if (placed[i] || CTR_MenuSectionHidden(entries[i].section))
+		if (placed[i] || CTR_MenuEntryHidden(&entries[i]))
 			continue;
 		int p = 0;
 		while (p < numPages && strcmp(names[p], entries[i].section) != 0)

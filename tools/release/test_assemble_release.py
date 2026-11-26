@@ -95,7 +95,6 @@ class AssemblerFixtureTests(unittest.TestCase):
         })()
 
     ASSET_MEMBERS = (
-        "assets/looks/komodo-moe/komodo_moe_hi.bin",
         "assets/tracks/cortex-vortex/CVortex Arcade All.lev",
         "assets/tracks/cortex-vortex/CVortex Arcade All.vrm",
         "assets/tracks/cortex-vortex/CVortex Relic.lev",
@@ -226,8 +225,7 @@ class AssemblerFixtureTests(unittest.TestCase):
             self.assertEqual(modes[f"{root_name}/{member}"][0], 0o644)
         self.assertEqual(modes[f"{root_name}/ctr_native_ap"][0], 0o755)
         self.assertEqual(modes[f"{root_name}/support-bundle.sh"][0], 0o755)
-        for directory in ("assets", "assets/tracks", "assets/tracks/cortex-vortex", "assets/looks",
-                          "assets/looks/komodo-moe"):
+        for directory in ("assets", "assets/tracks", "assets/tracks/cortex-vortex"):
             self.assertEqual(modes[f"{root_name}/{directory}"], (0o755, True))
 
         zip_path = self.root / "bundle.zip"
