@@ -54,7 +54,10 @@ def choose_native(repo: str, source: str, pr_number: str, pr_head: str) -> int |
     return None
 
 
-def choose_apworld(repo: str, branch: str, companion: str = '', required: bool = False) -> tuple[int, str]:
+def choose_apworld(
+    repo: str, branch: str, companion: str = '', required: bool = False,
+    *, allow_pull_request: bool = False,
+) -> tuple[int, str]:
     expected_sha = None
     if companion:
         # Paired PRs can rehearse together before either side merges. Only a
@@ -73,8 +76,11 @@ def choose_apworld(repo: str, branch: str, companion: str = '', required: bool =
                 raise RuntimeError(f"could not resolve companion branch on {repo}: {ref}")
         else:
             branch, expected_sha = companion, ref['object']['sha']
+    events = {"push", "workflow_dispatch", "schedule"}
+    if allow_pull_request and expected_sha:
+        events.add("pull_request")
     for run in runs(repo, "ctr-world.yml", urlencode({"branch": branch, "status": "success"})):
-        if (run.get("event") not in ("push", "workflow_dispatch", "schedule")
+        if (run.get("event") not in events
                 or run.get("head_branch") != branch or run.get("conclusion") != "success"):
             continue
         if expected_sha and run.get('head_sha') != expected_sha:
@@ -103,6 +109,7 @@ def main() -> None:
             apworld_repo, os.environ["APWORLD_BRANCH"],
             os.environ.get("APWORLD_COMPANION_BRANCH", ""),
             os.environ.get("APWORLD_COMPANION_REQUIRED", "false").lower() == "true",
+            allow_pull_request=bool(os.environ["PR_NUMBER"]),
         )
         deadline = time.monotonic() + 55 * 60
         native_id = None
