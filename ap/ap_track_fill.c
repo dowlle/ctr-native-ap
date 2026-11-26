@@ -102,6 +102,83 @@ static u32 apFillWeaponLev[552960 / sizeof(u32)];
 static struct Model *apFillWeaponModel;
 static const unsigned apFillWeaponModelOffset = 406760;
 
+// WF1b: see AP_TrackFillWeaponSearch.
+static struct BSP apFillWeaponHitboxTemplate; // flag, radius and radius squared
+static int apFillWeaponHitboxLift;              // centre height along the crate's up axis
+static int apFillWeaponHitboxReady;
+static struct BSP apFillWeaponHitboxes[AP_CONTENT_MAX_FILL_WEAPONS + 1];
+static struct InstDef apFillWeaponDefs[AP_CONTENT_MAX_FILL_WEAPONS];
+static struct BSP apFillWeaponLeaf;
+
+// Retail weapon crate hitboxes (Dingo Canyon, 16 crates, 32 leaf entries): flag 0x04c0 (touch,
+// Y axis, collidable), a sphere of radius 76 whose centre sits 48 units along
+// the crate's up axis, and a box of the centre plus and minus the radius.
+// Every crate on the donor must agree, or the fill refuses.
+static int AP_TrackFillFindWeaponHitbox(u8 *body, unsigned map)
+{
+	struct Level *level = (struct Level *)body;
+	struct mesh_info *mesh = level->ptr_mesh_info;
+	struct InstDef *defs = level->ptrInstDefs;
+	uintptr_t lo = (uintptr_t)body, hi = lo + map;
+	int found = 0, upright = 0;
+	if (!mesh || !defs || (uintptr_t)mesh < lo || (uintptr_t)(mesh + 1) > hi ||
+	    (uintptr_t)defs < lo || level->numInstances > 65536 ||
+	    (uintptr_t)(defs + level->numInstances) > hi || !mesh->bspRoot ||
+	    (uintptr_t)mesh->bspRoot < lo || mesh->numBspNodes <= 0 || mesh->numBspNodes > 65536 ||
+	    (uintptr_t)(mesh->bspRoot + mesh->numBspNodes) > hi)
+		return 0;
+	for (int i = 0; i < mesh->numBspNodes; ++i)
+	{
+		struct BSP *node = &mesh->bspRoot[i];
+		if (!(node->flag & BSP_NODE_FLAG_LEAF) || !node->data.leaf.bspHitboxArray)
+			continue;
+		struct BSP *hit = node->data.leaf.bspHitboxArray;
+		if ((uintptr_t)hit < lo)
+			return 0;
+		for (int j = 0; j < 2048 && (uintptr_t)(hit + j + 1) <= hi && hit[j].flag; ++j)
+		{
+			struct InstDef *def = hit[j].data.hitbox.instDef;
+			if (!def || (uintptr_t)def < (uintptr_t)defs || (uintptr_t)def >= (uintptr_t)(defs + level->numInstances) ||
+			    def->modelID != PU_RANDOM_CRATE)
+				continue;
+			const int radius = hit[j].data.hitbox.radius;
+			if (radius <= 0 || hit[j].data.hitbox.unk18 != radius * radius)
+				return 0;
+			// The box is the broad phase only; the donor rounds one of its 32
+			// boxes by a unit (a crate near y 0 has a box from 0, not -1).
+			for (int axis = 0; axis < 3; ++axis)
+				if (abs(hit[j].box.min.v[axis] - (hit[j].data.hitbox.center.v[axis] - radius)) > 1 ||
+				    abs(hit[j].box.max.v[axis] - (hit[j].data.hitbox.center.v[axis] + radius)) > 1)
+					return 0;
+			if (found && (hit[j].flag != apFillWeaponHitboxTemplate.flag ||
+			              radius != apFillWeaponHitboxTemplate.data.hitbox.radius ||
+			              hit[j].data.hitbox.unk1A != apFillWeaponHitboxTemplate.data.hitbox.unk1A))
+				return 0;
+			const int dx = hit[j].data.hitbox.center.x - def->pos.x;
+			const int dy = hit[j].data.hitbox.center.y - def->pos.y;
+			const int dz = hit[j].data.hitbox.center.z - def->pos.z;
+			if (def->rot.x == 0 && def->rot.z == 0)
+			{
+				// An upright crate gives the lift exactly.
+				if (dx || dz || dy <= 0 || (upright && dy != apFillWeaponHitboxLift))
+					return 0;
+				apFillWeaponHitboxLift = dy;
+				++upright;
+			}
+			if (!found)
+			{
+				memset(&apFillWeaponHitboxTemplate, 0, sizeof apFillWeaponHitboxTemplate);
+				apFillWeaponHitboxTemplate.flag = hit[j].flag;
+				apFillWeaponHitboxTemplate.data.hitbox.radius = (s16)radius;
+				apFillWeaponHitboxTemplate.data.hitbox.unk18 = hit[j].data.hitbox.unk18;
+				apFillWeaponHitboxTemplate.data.hitbox.unk1A = hit[j].data.hitbox.unk1A;
+			}
+			++found;
+		}
+	}
+	return found > 0 && upright > 0;
+}
+
 // The relic LEV/VRM pair of track 0 (BIGFILE 7 and 6) contains all three time
 // crate models. Check both pins before relocation or reading the audited
 // model and texture tables. Texture sheet slots 8 to 10 hold the weapon crate tiles.
@@ -192,6 +269,16 @@ int AP_TrackFillPrepare(void)
 	    !AP_TrialPointerMapValid(weaponRaw, weaponSize))
 		goto refused;
 
+	// Relocate the donor before any texture exists, so a refusal leaks nothing.
+	u8 *weaponBody = weaponRaw + 4;
+	unsigned weaponMap = AP_TrialU32(weaponRaw);
+	LOAD_RunPtrMap((char *)weaponBody, (int *)(weaponBody + weaponMap + 4), AP_TrialU32(weaponBody + weaponMap) / 4);
+	apFillWeaponModel = (struct Model *)(weaponBody + apFillWeaponModelOffset);
+	apFillWeaponHitboxReady = apFillWeaponModel->id == PU_RANDOM_CRATE &&
+	    AP_TrackFillFindWeaponHitbox(weaponBody, weaponMap);
+	if (!apFillWeaponHitboxReady)
+		goto refused;
+
 	u8 *vrm = malloc(460800);
 	u8 *pixels = calloc(AP_FILL_TEXTURE_W * AP_FILL_TEXTURE_H, 4);
 	unsigned texture = 0;
@@ -220,10 +307,6 @@ int AP_TrackFillPrepare(void)
 		for (int i = 0; i < 2; ++i)
 			AP_TrackFillRemapTexture(model->headers[1].ptrTexLayout[i], 0);
 	}
-	u8 *weaponBody = weaponRaw + 4;
-	unsigned weaponMap = AP_TrialU32(weaponRaw);
-	LOAD_RunPtrMap((char *)weaponBody, (int *)(weaponBody + weaponMap + 4), AP_TrialU32(weaponBody + weaponMap) / 4);
-	apFillWeaponModel = (struct Model *)(weaponBody + apFillWeaponModelOffset);
 	for (int i = 0; i < 20; ++i)
 		AP_TrackFillRemapTexture(apFillWeaponModel->headers[0].ptrTexLayout[i], 1);
 	for (int i = 0; i < 2; ++i)
@@ -490,40 +573,74 @@ refused:
 	AP_LogLine("[TrackFill] could not spawn the filled weapon crates; this race has none\n");
 }
 
-void AP_TrackFillWeaponCollide(struct GameTracker *g)
+// WF1b: filled crates take part in the retail collision searches. A LEV
+// measured without weapon crates has no BSP hitbox for them, so rockets,
+// bombs, potions, the Warp Orb, explosions and karts never met them. Each
+// live filled crate gets the hitbox retail gives a weapon crate (flag, box,
+// centre and radius copied from Dingo Canyon's own crate hitboxes, relative
+// to the crate) and an InstDef that points at the crate instance. The retail
+// leaf tests then run over those hitboxes after every search of the level's
+// BSP, so every breaker reaches RB_CrateWeapon_LInC through its own retail
+// path, with the retail hitbox size.
+static int AP_TrackFillWeaponHitboxes(void)
 {
-	if (apFillAssetState != 1 || !AP_TrackFillWeaponRace(g) || sdata->Loading.stage != LOAD_IDLE ||
-	    (g->gameMode1 & (PAUSE_ALL | START_OF_RACE)))
-		return;
-	for (int driver = 0; driver < 8; ++driver)
+	struct GameTracker *g = sdata->gGT;
+	if (apFillAssetState != 1 || !apFillWeaponHitboxReady || !g || sdata->Loading.stage != LOAD_IDLE ||
+	    !AP_TrackFillWeaponRace(g))
+		return 0;
+	int count = 0;
+	// Rebuilt from the instance pool on every search, so no pointer outlives
+	// a quick load, a restart or a crate's death.
+	for (struct Instance *inst = (struct Instance *)g->JitPools.instance.taken.first;
+	     inst && count < AP_CONTENT_MAX_FILL_WEAPONS; inst = inst->next)
 	{
-		struct Driver *d = g->drivers[driver];
-		if (!d || !d->instSelf || !d->instSelf->thread || (d->actionsFlagSet & ACTION_RACE_FINISHED))
+		if (!AP_TrackFillIsWeapon(inst))
 			continue;
-		SVec3 prev, curr;
-		prev.x = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.x, 8), d->originToCenter.x);
-		prev.y = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.y, 8), d->originToCenter.y);
-		prev.z = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.z, 8), d->originToCenter.z);
-		curr.x = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.x, 8), d->originToCenter.x);
-		curr.y = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.y, 8), d->originToCenter.y);
-		curr.z = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.z, 8), d->originToCenter.z);
-		for (struct Instance *inst = (struct Instance *)g->JitPools.instance.taken.first; inst; inst = inst->next)
+		struct InstDef *def = &apFillWeaponDefs[count];
+		struct BSP *hit = &apFillWeaponHitboxes[count];
+		memset(def, 0, sizeof *def);
+		def->model = apFillWeaponModel;
+		def->scale.x = def->scale.y = def->scale.z = 0x1000;
+		def->ptrInstance = inst;
+		def->modelID = PU_RANDOM_CRATE;
+		*hit = apFillWeaponHitboxTemplate;
+		const int radius = apFillWeaponHitboxTemplate.data.hitbox.radius;
+		for (int axis = 0; axis < 3; ++axis)
 		{
-			// A crate whose AP box stands has no draw or collision bits.
-			if (!AP_TrackFillIsWeapon(inst) || !(inst->flags & DRAW_COLLISION_MASK))
-				continue;
-			const int x = inst->matrix.t[0], y = inst->matrix.t[1], z = inst->matrix.t[2];
-			struct BoundingBox box = {
-				.min = {{AP_TrackFillBound(x - 92), AP_TrackFillBound(y - 44), AP_TrackFillBound(z - 92)}},
-				.max = {{AP_TrackFillBound(x + 92), AP_TrackFillBound(y + 140), AP_TrackFillBound(z + 92)}},
-			};
-			if (AP_TrialLetterHit(&prev, &curr, &box))
-			{
-				struct ScratchpadStruct collision = {0};
-				collision.Input1.modelID = DYNAMIC_PLAYER;
-				RB_CrateWeapon_LInC(inst, d->instSelf->thread, &collision);
-			}
+			// The centre follows the crate's up axis, as on a tilted retail crate.
+			const int pos = inst->matrix.t[axis];
+			const int center = pos + CTR_MipsSra(inst->matrix.m[axis][1] * apFillWeaponHitboxLift, 12);
+			def->pos.v[axis] = AP_TrackFillBound(pos);
+			hit->data.hitbox.center.v[axis] = AP_TrackFillBound(center);
+			hit->box.min.v[axis] = AP_TrackFillBound(center - radius);
+			hit->box.max.v[axis] = AP_TrackFillBound(center + radius);
 		}
+		hit->data.hitbox.instDef = def;
+		++count;
 	}
+	memset(&apFillWeaponHitboxes[count], 0, sizeof apFillWeaponHitboxes[count]);
+	return count;
+}
+
+void AP_TrackFillWeaponSearch(const struct BSP *root, void (*callback)(struct BSP *, struct ScratchpadStruct *),
+                              struct ScratchpadStruct *sps)
+{
+	struct GameTracker *g = sdata->gGT;
+	if (!g || !g->level1 || !g->level1->ptr_mesh_info || root != g->level1->ptr_mesh_info->bspRoot)
+		return;
+	const int instanceTest = callback == COLL_FIXED_BSPLEAF_TestInstance ||
+	    ((callback == COLL_FIXED_BSPLEAF_TestQuadblocks || callback == COLL_MOVED_BSPLEAF_TestQuadblocks) &&
+	     (sps->Union.QuadBlockColl.searchFlags & COLL_SEARCH_TEST_INSTANCES));
+	if (!instanceTest && callback != PROC_PerBspLeaf_CheckInstances)
+		return;
+	if (!AP_TrackFillWeaponHitboxes())
+		return;
+	memset(&apFillWeaponLeaf, 0, sizeof apFillWeaponLeaf);
+	apFillWeaponLeaf.flag = BSP_NODE_FLAG_LEAF;
+	apFillWeaponLeaf.data.leaf.bspHitboxArray = apFillWeaponHitboxes;
+	if (instanceTest)
+		COLL_FIXED_BSPLEAF_TestInstance(&apFillWeaponLeaf, sps);
+	else
+		PROC_PerBspLeaf_CheckInstances(&apFillWeaponLeaf, sps);
 }
 #endif

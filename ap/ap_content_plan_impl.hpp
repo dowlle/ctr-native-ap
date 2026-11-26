@@ -51,6 +51,10 @@ struct State {
     std::array<ctr_content_package, AP_CONTENT_MAX_PACKAGES> packages{};
     std::array<std::vector<ctr_content_fill_crate>, AP_CONTENT_MAX_PACKAGES> fill_crates{};
     std::array<std::vector<ctr_content_fill_weapon>, AP_CONTENT_MAX_PACKAGES> fill_weapons{};
+    // WF1b: the lowest rank among the filled weapon crates no AP box takes
+    // over, per track id of a LEV measured without crates (apworld
+    // content_global_checks.crate_rank). A track missing here needs rank 0.
+    std::map<std::string, int> fill_crate_rank;
     // Each package's descriptor as the room sent it (#89: solo keeps it once
     // the files are verified, for its custom-track step).
     std::array<std::string, AP_CONTENT_MAX_PACKAGES> package_json{};
@@ -1603,11 +1607,11 @@ static void validate(const J &p, State &out) {
     // Every Trophy Race and CTR Challenge (#133 PR 4d), an Itemsanity and Hit
     // route each. Since #133 PR 5b native seats the Hit Character draw on
     // every such race, custom-served included, so a guest routes from all.
-    struct RaceRoute { int physical; std::string entry, pad; unsigned modes; };
+    struct RaceRoute { int physical; std::string entry, pad; unsigned modes; std::string track; int package_index; };
     std::vector<RaceRoute> race_routes;
     // Every leg of every cup (#133 PR 5b): a Hit route each, the cup's frozen
     // field seated in every leg. A leg on a crateless custom track is none.
-    struct CupHitRoute { int physical; std::string entry, pad, leg; };
+    struct CupHitRoute { int physical; std::string entry, pad, leg; std::string track; int package_index; ctr_content_leg *dest; };
     std::vector<CupHitRoute> cup_hit_routes;
     std::map<int, ctr_content_pad *> manual_pad; // occupied pad per manual or stage 1 record
     std::map<int, ctr_content_pad *> stage2_pad; // pad whose later modes use each stage-2 record
@@ -1854,9 +1858,13 @@ static void validate(const J &p, State &out) {
                         wumpa_uses.push_back(RaceUse{dest.legs[n].track_id, title, entry_id, id, "cup", leg_id, "", dest.legs[n].wumpa});
                     if (fam.podium) rung_uses.push_back(RungUse{dest.legs[n].track_id, entry_id, id, leg_id});
                 }
-                if (dest.legs[n].package_index < 0 || out.packages[dest.legs[n].package_index].weapon_crates != 0) {
+                // WF1b: a crateless LEV whose fill adds crates is decided once
+                // every pad's AP box seats are known (fill_free_rank below).
+                if (dest.legs[n].package_index < 0 || out.packages[dest.legs[n].package_index].weapon_crates != 0 ||
+                    out.packages[dest.legs[n].package_index].fill_weapon_count) {
                     dest.legs[n].shared_weapon_route = 1;
-                    cup_hit_routes.push_back(CupHitRoute{physical, entry_id, id, leg_id});
+                    cup_hit_routes.push_back(CupHitRoute{physical, entry_id, id, leg_id, dest.legs[n].track_id,
+                                                         dest.legs[n].package_index, &dest.legs[n]});
                 }
             }
             dest.occupied = dest.cup = 1;
@@ -2169,8 +2177,11 @@ static void validate(const J &p, State &out) {
         const unsigned reach = mode_bits & ((1u << AP_CONTENT_MODE_TROPHY) | (1u << AP_CONTENT_MODE_CTR));
         // A custom track whose package states no weapon crates rolls no weapon,
         // so it is no Itemsanity or Hit route (#133 PR 4e).
-        const bool crateless = dest.package_index >= 0 && out.packages[dest.package_index].weapon_crates == 0;
-        if (reach && !crateless) race_routes.push_back(RaceRoute{physical, entry_id, id, reach});
+        // WF1b: unless its frozen fill adds crates, decided with the seats below.
+        const bool crateless = dest.package_index >= 0 && out.packages[dest.package_index].weapon_crates == 0 &&
+                               !out.packages[dest.package_index].fill_weapon_count;
+        if (reach && !crateless)
+            race_routes.push_back(RaceRoute{physical, entry_id, id, reach, dest.track_id, dest.package_index});
         if (fam.wumpa && fruit && reach) {
             dest.wumpa_modes = reach;
             if (fam.wumpa == 2) {
@@ -2805,6 +2816,64 @@ static void validate(const J &p, State &out) {
     // instead (A3-7, a 27-cup seed; apworld content_global_checks.checks).
     // The codes and names are the registry's (the apworld's frozen class
     // order).
+    // WF1b (dowlle, 2026-11-26: filled weapon crates "need to count for the
+    // logic for both"): a track whose package states no weapon crates but
+    // whose frozen fill adds some is a route through the filled crates no AP
+    // box takes over in this room, and none when every one is seated. The
+    // seats are the track's standalone pad's box checks: a hand-placed spot
+    // at a crate's exact place and angle, or a fallback box on the fill's
+    // spread seats (apworld content_item_boxes.free_fill_ranks). The lowest
+    // free rank is the route's boost term (content_verify).
+    auto fill_free_rank = [&](const std::string &tid, int package_index) -> int {
+        if (package_index < 0) return 0;
+        const ctr_content_package &pkg = out.packages[package_index];
+        if (pkg.weapon_crates != 0) return 0;
+        std::set<int> seated;
+        for (const auto &pad : out.pads) {
+            if (!pad.occupied || pad.cup || pad.crystal || !pad.box_count || tid != pad.track_id) continue;
+            if (pad.box_spots) {
+                const std::set<int64_t> codes(pad.box_locations, pad.box_locations + pad.box_count);
+                for (const auto &check : p.at("checks"))
+                    if (check.is_object() && check.contains("spot") && check["spot"].is_object() &&
+                        check.contains("location") && check["location"].is_number_integer() &&
+                        codes.count(check["location"].get<int64_t>()))
+                        for (int i = 0; i < pkg.fill_weapon_count; ++i) {
+                            const auto &crate = pkg.fill_weapons[i];
+                            if (check["spot"].value("pos", J()) == J::array({crate.pos[0], crate.pos[1], crate.pos[2]}) &&
+                                check["spot"].value("rot_y", J()) == J(crate.rot[1]))
+                                seated.insert(i);
+                        }
+            } else {
+                const std::set<int> carried(pad.box_excluded, pad.box_excluded + pad.box_excluded_count);
+                std::vector<int> pool;
+                for (int n = 1; n <= pad.box_crates; ++n) if (!carried.count(n)) pool.push_back(n);
+                const int seats = std::min((int)pool.size(), pad.box_count);
+                for (int i = 0; i < seats; ++i) seated.insert(pool[i * pool.size() / seats] - 1);
+            }
+        }
+        int best = -1;
+        for (int i = 0; i < pkg.fill_weapon_count; ++i)
+            if (!seated.count(i)) best = best < 0 ? pkg.fill_weapons[i].rank : std::min(best, (int)pkg.fill_weapons[i].rank);
+        if (best >= 0) out.fill_crate_rank[tid] = best;
+        return best;
+    };
+    out.fill_crate_rank.clear();
+    race_routes.erase(std::remove_if(race_routes.begin(), race_routes.end(),
+                                     [&](const RaceRoute &r) { return fill_free_rank(r.track, r.package_index) < 0; }),
+                      race_routes.end());
+    for (const auto &r : race_routes)
+        for (auto &pad : out.pads)
+            if (pad.occupied && !pad.cup && r.pad == "pad:" + std::to_string(pad.physical) && r.package_index >= 0 &&
+                out.packages[r.package_index].weapon_crates == 0)
+                pad.fill_weapon_route = 1;
+    cup_hit_routes.erase(std::remove_if(cup_hit_routes.begin(), cup_hit_routes.end(),
+                                        [&](const CupHitRoute &r) {
+                                            // A leg track with no standalone pad has no seats.
+                                            if (fill_free_rank(r.track, r.package_index) >= 0) return false;
+                                            r.dest->shared_weapon_route = 0;
+                                            return true;
+                                        }),
+                         cup_hit_routes.end());
     std::sort(race_routes.begin(), race_routes.end(),
               [](const RaceRoute &a, const RaceRoute &b) { return a.physical < b.physical; });
     fam.itemsanity_cup_routes = out.itemsanity && race_routes.empty();

@@ -223,6 +223,76 @@ int main(int argc, char **argv) {
                "Tribal Trials seats nine fallback boxes on its nine filled crates");
         const auto *tribal_sanity = tribal_loaded ? ap_content_plan_sanity("custom/tribal-trials/1.0.0") : nullptr;
         expect(tribal_sanity && tribal_sanity->counts[0] == 9, "sanity counts Tribal Trials' filled crates");
+        // WF1b (dowlle, 2026-11-26): filled weapon crates are Itemsanity and
+        // Hit Character routes through the crates no AP box takes over.
+        auto load = [&](const char *name) {
+            std::ifstream in(std::string("tools/fixtures/content-plan/") + name + ".json");
+            return J::parse(in);
+        };
+        auto pad_of_package = [&]() -> const ctr_content_pad * {
+            for (int physical = 0; physical < 105; ++physical) {
+                const auto *pad = ap_content_plan_pad(physical);
+                if (pad && pad->occupied && !pad->cup && pad->package_index == 0) return pad;
+            }
+            return nullptr;
+        };
+        auto routes_on = [](const J &slot, const std::string &kind, const std::string &track) {
+            int n = 0;
+            for (const auto &check : slot["content_plan"]["checks"])
+                if (check["kind"] == kind)
+                    for (const auto &route : check["routes"]) n += route["entry_id"] == "entry/" + track;
+            return n;
+        };
+        const J day_items = load("day-itemsanity");
+        expect(parse(day_items) && bind_room(day_items), "a Day-only pool with Itemsanity and Hit Character is admitted");
+        const auto *day_pad = pad_of_package();
+        expect(day_pad && day_pad->fill_weapon_route && day_pad->box_count == 15,
+               "Day keeps 12 free filled crates beside its 15 seats, so its pad routes the weapon checks");
+        expect(routes_on(day_items, "itemsanity", "custom/arabian-heights-day/1.0.0") == 22 * 2 &&
+               routes_on(day_items, "hit", "custom/arabian-heights-day/1.0.0") == 16 * 2,
+               "every Itemsanity and Hit check routes from Day's Trophy Race and CTR Challenge");
+        J forged = day_items;
+        for (auto &check : forged["content_plan"]["checks"])
+            if (check["kind"] == "itemsanity") check["routes"] = J::array();
+        refuse(forged, "a filled track's Itemsanity routes cannot be dropped");
+        const J seated = load("tribal-seated-itemsanity");
+        expect(parse(seated) && bind_room(seated), "a fully seated fallback fill room is admitted");
+        const auto *seated_pad = pad_of_package();
+        expect(seated_pad && !seated_pad->fill_weapon_route && seated_pad->box_count == 9 &&
+               !routes_on(seated, "itemsanity", "custom/tribal-trials/1.0.0") &&
+               !routes_on(seated, "hit", "custom/tribal-trials/1.0.0"),
+               "Tribal Trials with all nine crates seated is no weapon route");
+        forged = seated;
+        for (auto &check : forged["content_plan"]["checks"])
+            if (check["kind"] == "itemsanity" && !check["routes"].empty()) {
+                J route = check["routes"][0];
+                for (const auto &entry : seated["content_plan"]["entries"])
+                    if (entry.value("track_id", std::string()) == "custom/tribal-trials/1.0.0") route["entry_id"] = entry["id"];
+                for (const auto &pad : seated["content_plan"]["pads"])
+                    if (pad["entry_id"] == "entry/custom/tribal-trials/1.0.0") route["own_pad_id"] = pad["id"];
+                route["mode"] = "trophy";
+                check["routes"].push_back(route);
+            }
+        refuse(forged, "a fully seated filled track cannot carry an Itemsanity route");
+        const J free_room = load("tribal-free-itemsanity");
+        expect(parse(free_room) && bind_room(free_room), "a fallback fill room with free crates is admitted");
+        const auto *free_pad = pad_of_package();
+        expect(free_pad && free_pad->fill_weapon_route && free_pad->box_count == 5 &&
+               routes_on(free_room, "itemsanity", "custom/tribal-trials/1.0.0") > 0 &&
+               routes_on(free_room, "hit", "custom/tribal-trials/1.0.0") > 0,
+               "Tribal Trials at Item Box Count 5 keeps four free crates and routes both families");
+        const J usf_room = load("dark-ruins-usf-itemsanity");
+        expect(parse(usf_room) && bind_room(usf_room), "a filled track whose free crates all need USF is admitted");
+        // The client's YAML export leaves fruit_crates and loose_fruit out.
+        const J no_fruit = load("tribal-no-fruit-counts");
+        expect(!no_fruit["content_plan"]["packages"][0]["capabilities"].contains("fruit_crates") &&
+               parse(no_fruit) && bind_room(no_fruit), "a filled descriptor without fruit counts is admitted");
+        const auto *no_fruit_sanity = ap_content_plan_sanity("custom/tribal-trials/1.0.0");
+        int no_fruit_checks = 0;
+        for (int n = 0; no_fruit_sanity && n < 9; ++n) no_fruit_checks += no_fruit_sanity->locations[0][n] > 0;
+        expect(no_fruit_sanity && no_fruit_sanity->counts[0] == 9 && no_fruit_sanity->counts[1] == 0 &&
+               no_fruit_sanity->counts[2] == 0 && no_fruit_checks == 4,
+               "its four free filled crates are Weapon Crate checks, its unstated fruit none");
         set_fill_switch(false);
         refuse(day, "the default client refuses the Day weapon fill room");
     }

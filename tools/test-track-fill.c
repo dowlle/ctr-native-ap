@@ -44,7 +44,13 @@ const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int index)
 	return &context;
 }
 void AP_LogLine(const char *line) { fputs(line, stdout); }
-void ConvertRotToMatrix(MATRIX *m, const SVec3 *r) { (void)m; (void)r; }
+void ConvertRotToMatrix(MATRIX *m, const SVec3 *r)
+{
+	(void)r;
+	memset(m->m, 0, sizeof m->m);
+	for (int axis = 0; axis < 3; ++axis)
+		m->m[axis][axis] = 0x1000;
+}
 void MatrixRotate(MATRIX *d, MATRIX *s, MATRIX *r) { (void)d; (void)s; (void)r; }
 void PlaySound3D(u32 id, struct Instance *i) { assert(id == 0x3c); (void)i; }
 int OtherFX_Play_LowLevel(u32 id, u8 anti_spam, u32 flags)
@@ -129,6 +135,67 @@ TextureID NativeRenderer_CreateRGBATextureChecked(int w, int h, u8 *rgba)
 }
 void NativeGpu_SetTimeCrateTexture(unsigned id, int w, int h) { assert(id == 42 && w == 256 && h == 256); }
 
+// WF1b: the retail leaf tests are what the game runs over the filled crates'
+// hitboxes; here they only capture the leaf AP_TrackFillWeaponSearch passes.
+static struct BSP *captured_leaf;
+static int captured_kind;
+void COLL_FIXED_BSPLEAF_TestInstance(struct BSP *node, struct ScratchpadStruct *sps)
+{
+	(void)sps;
+	captured_leaf = node;
+	captured_kind = 1;
+}
+void COLL_FIXED_BSPLEAF_TestQuadblocks(struct BSP *node, struct ScratchpadStruct *sps) { (void)node; (void)sps; assert(0); }
+void COLL_MOVED_BSPLEAF_TestQuadblocks(struct BSP *node, struct ScratchpadStruct *sps) { (void)node; (void)sps; assert(0); }
+void PROC_PerBspLeaf_CheckInstances(struct BSP *node, struct ScratchpadStruct *sps)
+{
+	(void)sps;
+	captured_leaf = node;
+	captured_kind = 2;
+}
+static struct BSP level_bsp[2];
+// Read from Dingo Canyon's crates on the pinned disc (CTR_TEST_FILL_ASSETS run).
+static const struct BSP retail_weapon_hitbox = {.flag = 0x04c0, .data.hitbox = {.radius = 76, .unk18 = 76 * 76}};
+static struct mesh_info level_mesh;
+static struct Level level;
+
+// The filled crate's hitbox as one search sees it, or NULL.
+static struct BSP *weapon_hitbox(const struct Instance *inst, CollBspLeafCallback callback, int searchFlags, int kind)
+{
+	struct ScratchpadStruct sps;
+	memset(&sps, 0, sizeof sps);
+	sps.Union.QuadBlockColl.searchFlags = searchFlags;
+	captured_leaf = NULL;
+	captured_kind = 0;
+	AP_TrackFillWeaponSearch(level_bsp, callback, &sps);
+	if (!captured_leaf)
+		return NULL;
+	assert(captured_kind == kind && (captured_leaf->flag & BSP_NODE_FLAG_LEAF));
+	for (struct BSP *hit = captured_leaf->data.leaf.bspHitboxArray; hit->flag; ++hit)
+		if (hit->data.hitbox.instDef && hit->data.hitbox.instDef->ptrInstance == inst)
+			return hit;
+	return NULL;
+}
+
+// What RB_Hazard_CollLevInst, CollMoved_PlayerSearch_RunHitboxLInC and the
+// bot search do with a touched hitbox: skip an instance without collision
+// bits, then run the LInC of the model's metadata (8: RB_CrateWeapon_LInC).
+static int break_with(const struct Instance *inst, int modelID, struct Thread *breaker)
+{
+	struct BSP *hit = weapon_hitbox(inst, COLL_FIXED_BSPLEAF_TestInstance, 0, 1);
+	assert(hit && (hit->flag & BSP_HITBOX_COLLIDABLE));
+	struct InstDef *def = hit->data.hitbox.instDef;
+	assert(def->modelID == PU_RANDOM_CRATE && def->ptrInstance->model->id == PU_RANDOM_CRATE &&
+	       def->model == apFillWeaponModel);
+	if (!(def->ptrInstance->flags & DRAW_COLLISION_MASK))
+		return 0;
+	struct ScratchpadStruct sps;
+	memset(&sps, 0, sizeof sps);
+	sps.Input1.modelID = modelID;
+	sps.bspHitbox = hit;
+	return RB_CrateWeapon_LInC(def->ptrInstance, breaker, &sps);
+}
+
 int main(void)
 {
 	const ctr_content_fill_crate crates[] = {
@@ -141,6 +208,9 @@ int main(void)
 	tracker.numPlyrCurrGame = 1;
 	tracker.gameMode1 = RELIC_RACE;
 	tracker.drivers[0] = &driver;
+	level_mesh.bspRoot = level_bsp;
+	level.ptr_mesh_info = &level_mesh;
+	tracker.level1 = &level;
 	driver.instSelf = &kart;
 	kart.thread = &kart_thread;
 	kart_thread.object = &driver;
@@ -173,7 +243,13 @@ int main(void)
 				const struct TextureLayout *layout = apFillWeaponModel->headers[header].ptrTexLayout[i];
 				assert((layout->tpage & AP_TPAGE_SIDELOAD_MASK) == AP_TPAGE_TIME_CRATE_BITS && layout->v0 >= 128);
 			}
+		printf("retail weapon crate hitbox: flag %04x radius %d squared %d lift %d\n", apFillWeaponHitboxTemplate.flag,
+		       apFillWeaponHitboxTemplate.data.hitbox.radius, apFillWeaponHitboxTemplate.data.hitbox.unk18,
+		       apFillWeaponHitboxLift);
+		assert(apFillWeaponHitboxReady && apFillWeaponHitboxLift == 48 &&
+		       !memcmp(&apFillWeaponHitboxTemplate, &retail_weapon_hitbox, sizeof retail_weapon_hitbox));
 		puts("PASS: pinned retail texture and model import, time crates and the weapon crate");
+		puts("PASS: the weapon crate hitbox comes from Dingo Canyon's own crates, all of one shape");
 	} else {
 		models[0].id = STATIC_TIME_CRATE_01;
 		models[1].id = STATIC_TIME_CRATE_02;
@@ -182,6 +258,9 @@ int main(void)
 			apFillCrateModels[i] = &models[i];
 		weapon_model.id = PU_RANDOM_CRATE;
 		apFillWeaponModel = &weapon_model;
+		apFillWeaponHitboxTemplate = retail_weapon_hitbox;
+		apFillWeaponHitboxLift = 48;
+		apFillWeaponHitboxReady = 1;
 		apFillAssetState = 1;
 	}
 
@@ -266,30 +345,72 @@ int main(void)
 		driver.heldItemID = 0xf;
 		driver.noItemTimer = 0;
 		driver.numHeldItems = 0;
-		driver.posPrev.x = driver.posCurr.x = 5000 * 256;
-		driver.posPrev.y = driver.posCurr.y = 10 * 256;
-		AP_TrackFillWeaponCollide(&tracker);
+		// Every search of the level's BSP that tests instances, and the
+		// thread-bucket search explosions use, sees both crates with the
+		// retail weapon crate hitbox around each.
+		assert(!weapon_hitbox(&instances[0], COLL_FIXED_BSPLEAF_TestQuadblocks, 0, 1)); // terrain only
+		struct BSP *hit = weapon_hitbox(&instances[1], PROC_PerBspLeaf_CheckInstances, 0, 2);
+		assert(hit && hit->flag == apFillWeaponHitboxTemplate.flag &&
+		       hit->data.hitbox.radius == apFillWeaponHitboxTemplate.data.hitbox.radius);
+		// Upright crate (identity rotation): centre 48 above, box of radius 76.
+		for (int axis = 0; axis < 3; ++axis) {
+			const int center = instances[1].matrix.t[axis] + (axis == 1 ? 48 : 0);
+			assert(hit->data.hitbox.center.v[axis] == center);
+			assert(hit->box.min.v[axis] == center - 76 && hit->box.max.v[axis] == center + 76);
+		}
+		assert(hit->data.hitbox.unk18 == 76 * 76 && hit->data.hitbox.instDef->pos.x == 7000);
+		{
+			struct ScratchpadStruct other;
+			memset(&other, 0, sizeof other);
+			captured_leaf = NULL;
+			AP_TrackFillWeaponSearch(&level_bsp[1], COLL_FIXED_BSPLEAF_TestInstance, &other);
+			assert(!captured_leaf); // another BSP (a cutscene, a menu) is not touched
+		}
+		puts("PASS: filled crates join every instance search of the level BSP with the retail hitbox");
+		// A rocket breaks a crate and its shooter gets the weapon roll.
+		struct TrackerWeapon rocket_object = {0}, bomb_object = {0};
+		struct Thread rocket = {0}, bomb = {0};
+		rocket_object.driverParent = &driver;
+		rocket.object = &rocket_object;
+		bomb_object.driverParent = &driver;
+		bomb.object = &bomb_object;
+		assert(break_with(&instances[0], DYNAMIC_ROCKET, &rocket) == 1);
 		assert(driver.heldItemID == 0x10 && instances[0].scale.x == 0 && instances[0].thread);
 		struct Thread *grow = instances[0].thread;
 		assert(grow->funcThTick == (void *)RB_CrateAny_ThTick_Grow);
 		driver.heldItemID = 0xf;
-		AP_TrackFillWeaponCollide(&tracker); // cooldown: no second reward
+		break_with(&instances[0], DYNAMIC_PLAYER, &kart_thread); // cooldown: no second reward
 		assert(driver.heldItemID == 0xf);
 		for (int frame = 0; frame < 60 && instances[0].thread; ++frame)
 			RB_CrateAny_ThTick_Grow(grow);
 		assert(instances[0].scale.x == 0x1000 && !instances[0].thread);
-		AP_TrackFillWeaponCollide(&tracker);
+		puts("PASS: a rocket breaks a filled weapon crate, its shooter rolls, the crate grows back");
+		assert(break_with(&instances[0], DYNAMIC_BOMB, &bomb) == 1);
 		assert(driver.heldItemID == 0x10 && instances[0].scale.x == 0);
-		puts("PASS: a filled weapon crate gives a weapon roll, breaks and grows back");
+		grow = instances[0].thread;
+		for (int frame = 0; frame < 60 && instances[0].thread; ++frame)
+			RB_CrateAny_ThTick_Grow(grow);
+		assert(instances[0].scale.x == 0x1000 && !instances[0].thread);
+		puts("PASS: a bomb breaks a filled weapon crate and it grows back");
+		driver.heldItemID = 0xf;
+		assert(break_with(&instances[0], DYNAMIC_PLAYER, &kart_thread) == 1);
+		assert(driver.heldItemID == 0x10 && instances[0].scale.x == 0);
+		grow = instances[0].thread;
+		for (int frame = 0; frame < 60 && instances[0].thread; ++frame)
+			RB_CrateAny_ThTick_Grow(grow);
+		puts("PASS: a kart breaks a filled weapon crate through the retail hitbox");
 		// The AP box seat clears the draw and collision bits.
 		instances[1].flags &= ~DRAW_COLLISION_MASK;
 		driver.heldItemID = 0xf;
-		driver.posPrev.x = driver.posCurr.x = 7000 * 256;
-		AP_TrackFillWeaponCollide(&tracker);
+		assert(!break_with(&instances[1], DYNAMIC_ROCKET, &rocket));
 		assert(driver.heldItemID == 0xf && instances[1].scale.x == 0x1000);
 		instances[1].flags |= DRAW_COLLISION_MASK;
-		AP_TrackFillWeaponCollide(&tracker);
+		break_with(&instances[1], DYNAMIC_PLAYER, &kart_thread);
 		assert(driver.heldItemID == 0x10 && instances[1].scale.x == 0);
+		// Outside a weapon fill race, or while loading, no hitbox is added.
+		sdata_static.Loading.stage = LOAD_IDLE + 1;
+		assert(!weapon_hitbox(&instances[0], COLL_FIXED_BSPLEAF_TestInstance, 0, 1));
+		sdata_static.Loading.stage = LOAD_IDLE;
 		puts("PASS: a seated weapon crate is out of reach until its AP box frees it");
 		// A boss race on a custom venue serving the same LEV stands the crates
 		// too; another venue does not.

@@ -142,6 +142,10 @@ typedef struct ctr_content_pad {
      * (ap_box_seat_logic.h); box_crates is the package's measured weapon
      * crate count those seats are taken from (0 when it has no boxes). */
     int box_count, box_crates;
+    /* WF1b: 1 when the package states no weapon crates but its frozen fill
+     * adds some an AP box does not take over, so the pad still routes the
+     * Itemsanity and Hit Character checks. */
+    int fill_weapon_route;
     /* Reviewed prefix of the measured crate table when seating is capped. */
     int box_reviewed_crates;
     /* Reviewed fallback exclusions carried by the world, one-based original

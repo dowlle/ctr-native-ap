@@ -96,7 +96,10 @@ void AP_TrackFillCollide(struct GameTracker *g);
 int AP_TrackFillFailed(const struct GameTracker *g);
 void AP_TrackFillAfterCheckpointRestore(struct GameTracker *g);
 void AP_TrackFillWeaponSpawn(struct GameTracker *g);
-void AP_TrackFillWeaponCollide(struct GameTracker *g);
+struct BSP;
+struct ScratchpadStruct;
+void AP_TrackFillWeaponSearch(const struct BSP *root, void (*callback)(struct BSP *, struct ScratchpadStruct *),
+                              struct ScratchpadStruct *sps);
 int AP_TrackFillWeaponCount(struct GameTracker *g);
 int AP_TrackFillWeaponRaceActive(const struct GameTracker *g);
 int AP_TrackFillBossVenueReady(int levelID, int bossID);

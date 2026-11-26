@@ -78,7 +78,15 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             const std::string source = ruling_pin(out, pkg, key,
                 [&](const std::string &pin) { return catalog.contains(pin) || reviewed_counts.contains(pin); });
             if (!inherited_ruling_history(out, pkg, key) && catalog.contains(key)) return &catalog.at(key);
-            const J &caps = pkg["capabilities"];
+            J caps = pkg["capabilities"];
+            // WF1b: a LEV measured without weapon crates whose frozen fill
+            // adds them has Weapon Crate checks also when the descriptor
+            // leaves its fruit counts out (apworld sanity._measured_inventory).
+            if (caps.value("weapon_crates", -1) == 0 && pkg.contains("fill") && pkg["fill"].is_object() &&
+                !pkg["fill"]["families"]["weapon_crates"].empty()) {
+                if (!caps.contains("fruit_crates")) caps["fruit_crates"] = 0;
+                if (!caps.contains("loose_fruit")) caps["loose_fruit"] = 0;
+            }
             if (caps.contains("weapon_crates") && caps.contains("fruit_crates") && caps.contains("loose_fruit")) {
                 const J needs = catalog.contains(source) ? catalog.at(source).at("needs") : J::object();
                 measured[key] = J{{"lev_sha256", key}, {"counts", J::array({caps["weapon_crates"], caps["fruit_crates"], caps["loose_fruit"]})}, {"needs", needs}};

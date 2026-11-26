@@ -6,7 +6,6 @@
 #include <platform/native_custom_finish.h>
 void AP_LapOnCrossing(struct GameTracker *, struct Driver *, int);
 void AP_TrackFillCollide(struct GameTracker *);
-void AP_TrackFillWeaponCollide(struct GameTracker *g) { (void)g; }
 #include "../game/PlayLevel.c"
 struct sData sdata_static;
 struct Data data;

@@ -723,6 +723,21 @@ static Model build() {
             if ((L.kind == HIT || L.kind == ITEMSANITY) && mode == "cup")
                 R.need = leg_boost(*entries.at(r["entry_id"].get<std::string>()), r.at("leg_id").get<std::string>(), false,
                                    tracks, packages, o);
+            // WF1b: a route through filled weapon crates needs the lowest rank
+            // among those no AP box takes over (apworld
+            // content_global_checks.route_crate_ranks), for the same racer.
+            if ((L.kind == HIT || L.kind == ITEMSANITY) && o.boost_mode && !R.boss) {
+                const J &entry = *entries.at(r["entry_id"].get<std::string>());
+                std::string tid;
+                if (mode == "cup") {
+                    for (const auto &leg : entry.at("legs"))
+                        if (leg.at("id") == r.at("leg_id")) tid = leg.at("track_id").get<std::string>();
+                } else if (entry.value("kind", std::string()) == "track") {
+                    tid = entry.at("track_id").get<std::string>();
+                }
+                const auto rank = content_plan::state.fill_crate_rank.find(tid);
+                if (rank != content_plan::state.fill_crate_rank.end()) R.need = std::max(R.need, rank->second);
+            }
             L.routes.push_back(R);
         }
         if (L.kind == ITEMSANITY) {
