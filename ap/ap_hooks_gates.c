@@ -539,6 +539,19 @@ int AP_BossRivalAdvert(int bossIdx, char *out, int cap)
 	return 1;
 }
 
+// 1 when garage `bossIdx` holds a boss cup (the garage block names it in its
+// title; the tracker still says it as a venue line).
+int AP_BossGarageHoldsCup(int bossIdx)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	return ctr_cfg_active() && bossIdx >= 0 && bossIdx < 4 &&
+	       ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + bossIdx) != 0;
+#else
+	(void)bossIdx;
+	return 0;
+#endif
+}
+
 int AP_BossChallengeTitle(int bossIdx, char *out, int cap)
 {
 	int c;
@@ -550,6 +563,37 @@ int AP_BossChallengeTitle(int bossIdx, char *out, int cap)
 		return 0;
 	name = c == PENTA_PENGUIN ? "Penta" : sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_long];
 	snprintf(out, (size_t)cap, "%s's Challenge", name);
+	return 1;
+}
+
+// BG1: the title of the garage block. A racer's challenge for a single boss
+// race, the racer's boss cup for a garage holding one, and for N. Oxide the
+// racer the final race drew. Returns 0 when the garage keeps its retail title.
+// The racer is the garage's drawn opponent, or the garage's own boss when a
+// boss cup runs without a drawn opponent. Penta keeps his short name.
+int AP_BossGarageTitle(int bossIdx, char *out, int cap)
+{
+	int c, cup;
+	const char *name;
+
+	if (out == 0 || cap <= 0 || !ctr_cfg_active())
+		return 0;
+	if (bossIdx == 4)
+	{
+		c = AP_BossFinalGarageOpponent();
+		cup = 0;
+	}
+	else
+	{
+		cup = AP_BossGarageHoldsCup(bossIdx);
+		c = AP_BossEncounterOpponent(&ctr_boss_encounters, bossIdx);
+		if (c < 0 && cup)
+			c = data.metaDataLEV[AP_BOSS_VENUE_GARAGE[bossIdx].homeLevel].characterID_Boss;
+	}
+	if (c < 0 || c >= 16)
+		return 0;
+	name = c == PENTA_PENGUIN ? "Penta" : sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_long];
+	snprintf(out, (size_t)cap, cup ? "%s's Boss Cup" : "%s's Challenge", name);
 	return 1;
 }
 
