@@ -225,7 +225,7 @@ CTR_STATIC_ASSERT(offsetof(struct WarpPad, levelID) == 0x6c);
 // reuse the exact birth logic. Forward-declared here because AH_WarpPad_ThTick (the
 // re-birth caller, CTR_AP) is defined before it. Declared in both builds since
 // AH_WarpPad_LInB calls it unconditionally.
-static void AH_WarpPad_BuildInstances(struct Thread *t);
+static int AH_WarpPad_BuildInstances(struct Thread *t, int rebuilding);
 #ifdef CTR_AP
 static struct Instance *AH_WarpPad_ApFilterOf(struct Thread *t);
 static void AH_WarpPad_ApRefreshCopies(struct GameTracker *gGT);
@@ -349,23 +349,21 @@ static int AH_WarpPad_LiveInstances(struct Thread *t, struct Instance **live, in
 	return valid && slots == wp->childSlots && (!hasFilter || live[WPIS_OPEN_BEAM] != NULL);
 }
 
-static int AH_WarpPad_TryRebuild(struct Thread *t)
+static int AH_WarpPad_RebuildHasRoom(struct Thread *t, int needed)
 {
 	const struct JitPool *pool = &sdata->gGT->JitPools.instance;
 	struct Instance *inst;
 	int available = pool->free.count;
-	// The largest birth needs a beam, two wisps and three prizes. The
-	// optional beam filter already checks that there is room for the prizes.
-	const int needed = WPIS_NUM_INSTANCES - WPIS_OPEN_BEAM;
-
 	for (inst = (struct Instance *)pool->taken.first; inst != NULL && available < needed; inst = inst->next)
 		if (inst->thread == t && inst != t->inst)
 			available++;
-	if (available < needed)
-		return 0;
+	return available >= needed;
+}
 
-	AH_WarpPad_ThDestroy(t);
-	AH_WarpPad_BuildInstances(t);
+static int AH_WarpPad_TryRebuild(struct Thread *t)
+{
+	if (!AH_WarpPad_BuildInstances(t, 1))
+		return 0;
 	AH_WarpPad_RecordChildSlots(t->object);
 	return 1;
 }
@@ -624,8 +622,14 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	visInstSrc = gGT->cameraDC[0].visInstSrc;
 
 #ifdef CTR_AP
-	if (!AH_WarpPad_LiveInstances(t, live, warppadObj->boolEnteredWarppad))
+	if (!AH_WarpPad_LiveInstances(t, live, 1))
 	{
+		if (live[WPIS_OPEN_BEAM] == NULL)
+		{
+			struct Instance *filter = AH_WarpPad_ApFilterOf(t);
+			if (filter != NULL)
+				filter->flags |= HIDE_MODEL;
+		}
 		if (!warppadObj->boolEnteredWarppad)
 		{
 			AH_WarpPad_TryRebuild(t);
@@ -634,12 +638,6 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		// An active warp uses the remaining live visuals and keeps its
 		// progress. Its pad was open when the warp started.
 		live[WPIS_CLOSED_1S] = NULL;
-		if (live[WPIS_OPEN_BEAM] == NULL)
-		{
-			struct Instance *filter = AH_WarpPad_ApFilterOf(t);
-			if (filter != NULL)
-				filter->flags |= HIDE_MODEL;
-		}
 	}
 
 	// AP live pad refresh: the locked/open/done look + gate instances are latched at
@@ -2553,17 +2551,40 @@ void AH_WarpPad_LInB(struct Instance *inst)
 
 	t->funcThDestroy = AH_WarpPad_ThDestroy;
 
-	AH_WarpPad_BuildInstances(t);
+	AH_WarpPad_BuildInstances(t, 0);
 #ifdef CTR_AP
 	AH_WarpPad_RecordChildSlots(t->object);
 #endif
 }
 
-// Build (or REBUILD) all of a warp pad's child instances for its CURRENT state.
-// Pure relocation of the original AH_WarpPad_LInB birth body -- the caller has set
-// up the thread already (LInB via a fresh thread; the ThTick re-birth path after
-// AH_WarpPad_ThDestroy) -- with inst / object recovered from the thread.
-static void AH_WarpPad_BuildInstances(struct Thread *t)
+// Check capacity before touching the old pad so a deferred refresh can retry.
+static int AH_WarpPad_BeginBirth(struct Thread *t, int levelID, int rebuilding, int needed)
+{
+	struct WarpPad *wp = t->object;
+#ifdef CTR_AP
+	if (rebuilding)
+	{
+		if (!AH_WarpPad_RebuildHasRoom(t, needed))
+			return 0;
+		AH_WarpPad_ThDestroy(t);
+	}
+	if (levelID >= 0 && levelID < 128)
+		s_padRebirthState[levelID] = ctr_cfg_active() ? AH_WarpPad_RebirthKey(levelID, levelID) : 0;
+#else
+	(void)rebuilding;
+	(void)needed;
+#endif
+	t->modelIndex = 0;
+	t->inst->flags |= HIDE_MODEL;
+	wp->levelID = levelID;
+	wp->boolEnteredWarppad = 0;
+	wp->framesWarping = 0;
+	memset(wp->inst, 0, sizeof(wp->inst));
+	return 1;
+}
+
+// Build the children for the current gate state with the existing birth logic.
+static int AH_WarpPad_BuildInstances(struct Thread *t, int rebuilding)
 {
 	int i;
 	int levelID;
@@ -2609,29 +2630,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 
 	gGT = sdata->gGT;
 
-	// 0 - locked
-	// 1 - open for trophy
-	// 2 - unlocked all
-	// 3 - open for relic/token
-	// 4 - purple token or SlideCol/TurboTrack
-
-	// locked
-	t->modelIndex = 0;
-
-	// make invisible
-	// this is the red triangle
-	// instance from DCxDemo's LEV Viewer
-	inst->flags |= HIDE_MODEL;
-
 	warppadObj = t->object;
-	warppadObj->levelID = 0; // this is dingo canyon
-	warppadObj->boolEnteredWarppad = 0;
-	warppadObj->framesWarping = 0;
-
-	for (i = 0; i < WPIS_NUM_INSTANCES; i++)
-	{
-		warppadObj->inst[i] = 0;
-	}
 
 	// each warppad has a name "warppad#xxx"
 	// "warppad#0" is dingo canyon, level ID 0
@@ -2645,16 +2644,6 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 	{
 		levelID = levelID * 10 + inst->name[i] - '0';
 	}
-
-	warppadObj->levelID = levelID;
-
-#ifdef CTR_AP
-	// Record the AP_PadState these instances are being built for, so ThTick re-births
-	// only on an actual state change (not on every unrelated location check). levelID
-	// = physical pad; warppadObj->levelID = destination (the AP_PadState location key).
-	if (levelID >= 0 && levelID < 128)
-		s_padRebirthState[levelID] = ctr_cfg_active() ? AH_WarpPad_RebirthKey(levelID, warppadObj->levelID) : 0;
-#endif
 
 	unlockItem_modelID = 0;
 	unlockItem_numOwned = 0;
@@ -2671,8 +2660,12 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 	// levelID = physical pad; warppadObj->levelID = destination (location key).
 	// One generator row 6: a replayable Done plan pad wears the same grey X
 	// (Rulebook, Closed and Done pads); AH_WarpPad_ThTick still takes the kart.
-	if (ctr_cfg_active() && AP_PadState(levelID, warppadObj->levelID) == 5)
+	if (ctr_cfg_active() && AP_PadState(levelID, levelID) == 5)
 	{
+		int doneBeam = AP_PadDoneBeam(AP_PadLook(levelID, levelID), AP_PadReplayable(levelID, levelID)) &&
+		               gGT->modelPtr[STATIC_BEAM] != NULL;
+		if (!AH_WarpPad_BeginBirth(t, levelID, rebuilding, 1 + doneBeam))
+			return 0;
 		warppadObj->digit1s = 0;
 		warppadObj->digit10s = 0;
 
@@ -2706,12 +2699,10 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 
 		// Replay availability is unchanged. Alpha4 makes this beam grey,
 		// matching the Done map dot and tracker, with no item glow or wisps.
-		if (AP_PadDoneBeam(AP_PadLook(levelID, warppadObj->levelID),
-		                   AP_PadReplayable(levelID, warppadObj->levelID)) &&
-		    gGT->modelPtr[STATIC_BEAM] != 0)
+		if (doneBeam)
 		{
-			struct Model *doneBeam = AH_WarpPad_ApBeamModel(gGT->modelPtr[STATIC_BEAM], AP_PAD_LOOK_DONE);
-			newInst = INSTANCE_Birth3D(doneBeam, "beam", t);
+			struct Model *doneModel = AH_WarpPad_ApBeamModel(gGT->modelPtr[STATIC_BEAM], AP_PAD_LOOK_DONE);
+			newInst = INSTANCE_Birth3D(doneModel, "beam", t);
 
 			// the pool can be full after the X: no beam then, never a crash
 			if (newInst != 0)
@@ -2730,7 +2721,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 				warppadObj->inst[WPIS_OPEN_BEAM] = newInst;
 			}
 		}
-		return;
+		return 1;
 	}
 #endif
 
@@ -2743,7 +2734,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		unlockItem_numNeeded = pad ? pad->keys : 2147483647;
 		// Which requirement the pad floats: the floor, its rule or its stage 2.
 		// The rebuild key reads the same choice (ap_pad_birth.h, A3-12).
-		int apGateLayer = ap_pad_gate_layer(pad, unlockItem_numOwned, AP_PadState(levelID, warppadObj->levelID));
+		int apGateLayer = ap_pad_gate_layer(pad, unlockItem_numOwned, AP_PadState(levelID, levelID));
 		// Manual rule (#463): once the hub Key floor is met, the pad advertises
 		// its own rule with the owned count, the same answer AP_ContentPadOpen
 		// gives the load gate.
@@ -2857,10 +2848,26 @@ ContentPad_BuildGate:
 	// if unlocked
 	if (unlockItem_numOwned >= unlockItem_numNeeded
 #ifdef CTR_AP
-	    || AP_PadReplayable(levelID, warppadObj->levelID)
+	    || AP_PadReplayable(levelID, levelID)
 #endif
 	   )
 	{
+		int needed = 0;
+#ifdef CTR_AP
+		int trial = levelID == AH_WP_SLIDE_COLISEUM || levelID == AH_WP_TURBO_TRACK;
+		int battle = ((u16)(levelID - AH_WP_NITRO_COURT)) < 2 || levelID == 21 || levelID == 23;
+		int cup = ((u16)(levelID - AH_WP_ADV_CUP)) < 5;
+		int allPrizes = ctr_cfg_active() && (trial || battle || cup);
+		int prizes = battle || cup ||
+		             (trial && !CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_SAPPHIRE_RELIC));
+		if (levelID < AH_WP_SLIDE_COLISEUM || allPrizes)
+			prizes = 3;
+		// The optional filter already leaves room for the prize births.
+		needed = (gGT->modelPtr[STATIC_BEAM] != NULL) +
+		         2 * (gGT->modelPtr[STATIC_BOTTOMRING] != NULL) + prizes;
+#endif
+		if (!AH_WarpPad_BeginBirth(t, levelID, rebuilding, needed))
+			return 0;
 		warppadObj->digit1s = 0;
 		t->modelIndex = 1;
 
@@ -2999,10 +3006,7 @@ ContentPad_BuildGate:
 		// trophy hub-arrow that modelIndex 1 would add). Races keep using their own
 		// proven branch below untouched. This also grants IDENTITY trials their
 		// Time-Trial relic glow for the first time (backlog: trial-pad reward GLOW).
-		if (ctr_cfg_active() &&
-		    (levelID == AH_WP_SLIDE_COLISEUM || levelID == AH_WP_TURBO_TRACK ||
-		     (((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || levelID == 21 || levelID == 23 ||
-		     (((u16)(levelID - AH_WP_ADV_CUP)) < 5)))
+		if (allPrizes)
 		{
 			// metaDataLEV is valid for track/trial/arena LevelIDs but NOT cup pads
 			// (100..104); a cup destination shows a gem (lightDirGem), never a token,
@@ -3061,7 +3065,7 @@ ContentPad_BuildGate:
 				rewardAngle += 0x555;
 			}
 
-			return;
+			return 1;
 		}
 #endif
 
@@ -3155,7 +3159,7 @@ ContentPad_BuildGate:
 					rewardAngle += 0x555;
 				}
 
-				return;
+				return 1;
 			}
 
 			// if relic not owned
@@ -3212,7 +3216,7 @@ ContentPad_BuildGate:
 			// if token owned
 			if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_CTR_TOKEN) != 0)
 			{
-				return;
+				return 1;
 			}
 
 			tokenGroupID = data.metaDataLEV[levelID].ctrTokenGroupID;
@@ -3255,7 +3259,7 @@ ContentPad_BuildGate:
 
 			warppadObj->inst[WPIS_OPEN_PRIZE2] = newInst;
 
-			return;
+			return 1;
 
 		SlideColTurboTrack:
 
@@ -3380,7 +3384,7 @@ ContentPad_BuildGate:
 				// beaten
 				t->modelIndex = 2;
 
-				return;
+				return 1;
 			}
 #else
 			// AP GLOW: ALWAYS birth the gem-cup prize slot (do NOT early-return on the
@@ -3414,10 +3418,13 @@ ContentPad_BuildGate:
 			goto SlideColTurboTrack;
 		}
 
-		return;
+		return 1;
 	}
 
 	// === if locked ===
+
+	if (!AH_WarpPad_BeginBirth(t, levelID, rebuilding, 3 + (unlockItem_numNeeded >= 10)))
+		return 0;
 
 #ifdef CTR_AP
 	// A5-1: a seed can ask for 20 or more; split into two real digits, capped
@@ -3649,4 +3656,5 @@ ContentPad_BuildGate:
 	}
 
 	warppadObj->inst[WPIS_CLOSED_1S] = newInst;
+	return 1;
 }

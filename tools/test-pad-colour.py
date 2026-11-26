@@ -166,14 +166,14 @@ assert 'use * AP_BEAM_PALETTES + palette' in slot and '#define AP_BEAM_PALETTES 
 assert 'look == AP_PAD_LOOK_DONE ? 2' in slot and 'AP_PAD_LOOK_STAGE2_OPEN) ? 0 : 1' in slot
 assert 'AH_WarpPad_ApCopySlot(AP_BEAM_USE_BEAM, look)' in warp and 'AH_WarpPad_ApCopySlot(AP_BEAM_USE_WISP, look)' in warp
 # The Done branch retains the replay condition and now uses a grey model.
-done_at = build.index('WPIS_CLOSED_X] = newInst;')
-done = build[done_at:build.index('\t\treturn;\n\t}', done_at)]
-assert 'AP_PadDoneBeam(AP_PadLook(levelID, warppadObj->levelID),' in done
-assert 'AP_PadReplayable(levelID, warppadObj->levelID)' in done
+done_at = build.index('int doneBeam = AP_PadDoneBeam(')
+done = build[done_at:build.index('\t\treturn 1;\n\t}', done_at)]
+assert 'AP_PadDoneBeam(AP_PadLook(levelID, levelID),' in done
+assert 'AP_PadReplayable(levelID, levelID)' in done
 assert 'AH_WarpPad_ApBeamModel(gGT->modelPtr[STATIC_BEAM], AP_PAD_LOOK_DONE)' in done
-assert 'INSTANCE_Birth3D(doneBeam, "beam", t);' in done
+assert 'INSTANCE_Birth3D(doneModel, "beam", t);' in done
 assert 'warppadObj->inst[WPIS_OPEN_BEAM] = newInst;' in done
-assert 'colorRGBA' not in done and 'ApWispModel' not in done, 'shaped grey beam, no wisps'
+assert 'colorRGBA' not in done[done.index('if (doneBeam)'):] and 'ApWispModel' not in done, 'shaped grey beam, no wisps'
 assert 'beamFilter' not in done and 'AP_PadLookBeamAlpha(AP_PAD_LOOK_DONE)' in done, 'Done strength, no filter'
 # The rebuild key follows enterability, so a Done pad that stops being enterable
 # while its state stays 5 loses the beam on the next rebuild (A2-45; the A3-12

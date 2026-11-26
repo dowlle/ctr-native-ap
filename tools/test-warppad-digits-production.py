@@ -99,17 +99,25 @@ static void INSTANCE_Death(struct Instance *inst)
 	tracker.JitPools.instance.free.count++;
 }
 
-static void AH_WarpPad_BuildInstances(struct Thread *t)
+""" + (
+    body(warp, "static int AH_WarpPad_RebuildHasRoom(")
+    + body(warp, "void AH_WarpPad_ThDestroy(struct Thread *t)\n")
+) + r"""
+
+static int AH_WarpPad_BuildInstances(struct Thread *t, int rebuilding)
 {
-	assert(tracker.JitPools.instance.free.count >= WPIS_NUM_INSTANCES - WPIS_OPEN_BEAM);
+	assert(rebuilding);
+	if (!AH_WarpPad_RebuildHasRoom(t, WPIS_NUM_INSTANCES - WPIS_OPEN_BEAM))
+		return 0;
+	AH_WarpPad_ThDestroy(t);
 	assert(t->object->childSlots == 0);
 	rebuilds++;
+	return 1;
 }
 
 """ + (
     body(warp, "static void AH_WarpPad_RecordChildSlots(")
     + body(warp, "static int AH_WarpPad_LiveInstances(")
-    + body(warp, "void AH_WarpPad_ThDestroy(struct Thread *t)\n")
     + body(warp, "static int AH_WarpPad_TryRebuild(")
 ) + r"""
 
@@ -175,6 +183,12 @@ static void verify_pad_lifetime(void)
 	for (int i = 0; i < WPIS_NUM_INSTANCES; i++)
 		assert(live[i] == NULL);
 	digit_pass(&pad);
+	tracker.JitPools.instance.free.count = 0;
+	assert(AH_WarpPad_RebuildHasRoom(&pad, 2));
+	assert(!AH_WarpPad_RebuildHasRoom(&pad, 3));
+	tracker.JitPools.instance.free.count = 1;
+	assert(AH_WarpPad_RebuildHasRoom(&pad, 3));
+	assert(!AH_WarpPad_RebuildHasRoom(&pad, 4));
 	tracker.JitPools.instance.free.count = 3;
 	assert(!AH_WarpPad_TryRebuild(&pad));
 	assert(rebuilds == 0 && reused.next == &ring);

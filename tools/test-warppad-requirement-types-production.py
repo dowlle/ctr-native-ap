@@ -95,7 +95,6 @@ static int AP_ReqTokenColour(const ctr_req *r) { return r->colour; }
 /* What the production block hands to the gate builder. */
 static void select_requirement(int levelID, int *modelOut, int *neededOut, int *openOut)
 {
-	struct { int levelID; } warppadObjS = { 0 }, *warppadObj = &warppadObjS;
 	int unlockItem_modelID = 0, unlockItem_numOwned = 0, unlockItem_numNeeded = -1;
 	int reqRelicTint = -1, reqGemColour = -1, reqTokenColour = -2;
 """ + plan_block + r"""
