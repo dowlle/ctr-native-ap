@@ -26,6 +26,7 @@ void PlayLevel_UpdateLapStats(void)
 	// Driving physics has updated the kart. Count hits before the finish
 	// line can award the Perfect bonus and end the race.
 	AP_TrackFillCollide(gGT);
+	AP_TrackFillWeaponCollide(gGT);
 #endif
 	int finishTerrain = -1;
 #ifdef CTR_CUSTOM_TRACKS

@@ -214,6 +214,14 @@ typedef struct ctr_content_fill_crate {
     int16_t pos[3];
     uint8_t type;
 } ctr_content_fill_crate;
+/* WF1: a weapon crate a track fill adds to a LEV measured without any. Its
+ * sanity ordinal follows the LEV's own crates in fill order. */
+#define AP_CONTENT_MAX_FILL_WEAPONS 80
+typedef struct ctr_content_fill_weapon {
+    int16_t pos[3];
+    int16_t rot_y;
+    uint8_t rank; /* box spot `needs` scale: 0 none, 1 boost, 2 usf */
+} ctr_content_fill_weapon;
 
 typedef struct ctr_content_package {
     char id[65], content_id[65], uuid[37], revision[65];
@@ -231,6 +239,8 @@ typedef struct ctr_content_package {
     int relic_targets[3];  /* sapphire, gold, platinum */
     int fill_crate_count;
     const ctr_content_fill_crate *fill_crates; /* owned by the parsed room */
+    int fill_weapon_count;
+    const ctr_content_fill_weapon *fill_weapons; /* owned by the parsed room */
     int super_turbo_pads;  /* AP_CONTENT_SUPER_PADS_UNSTATED, 0 none, 1 at least one */
     /* Optional measured `weapon_crates` (#133 PR 4e): how many weapon crates
      * (PU_RANDOM_CRATE instances) the LEV holds, or

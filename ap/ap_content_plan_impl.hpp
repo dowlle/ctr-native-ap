@@ -50,6 +50,7 @@ struct State {
     std::array<ctr_content_pad, 27> pads{};
     std::array<ctr_content_package, AP_CONTENT_MAX_PACKAGES> packages{};
     std::array<std::vector<ctr_content_fill_crate>, AP_CONTENT_MAX_PACKAGES> fill_crates{};
+    std::array<std::vector<ctr_content_fill_weapon>, AP_CONTENT_MAX_PACKAGES> fill_weapons{};
     // Each package's descriptor as the room sent it (#89: solo keeps it once
     // the files are verified, for its custom-track step).
     std::array<std::string, AP_CONTENT_MAX_PACKAGES> package_json{};
@@ -77,7 +78,8 @@ struct State {
     std::set<int64_t> stat_checks;
     // Hand-placed box spots (A3-14): `item_boxes.spot_sets` by track id, and
     // each spot box's number and position by location code (`spot`).
-    struct SpotSet { int pool = 0; std::vector<int> picked; std::string lev_sha256; bool used = false; };
+    // `capped` (WF1): fallback seats on filled weapon crates pick at most 15.
+    struct SpotSet { int pool = 0; std::vector<int> picked; std::string lev_sha256; bool used = false, capped = false; };
     std::map<std::string, SpotSet> spot_sets;
     struct CrateExclusions {
         std::string lev;
@@ -223,7 +225,7 @@ static void fill_position(const J &pos, int16_t (&xyz)[3]) {
 }
 
 static void fill_record(const J &fill, const J &lev, int laps, const int (&targets)[3],
-                        std::vector<ctr_content_fill_crate> &out) {
+                        std::vector<ctr_content_fill_crate> &out, std::vector<ctr_content_fill_weapon> &weapons_out) {
     fields(fill, {"schema", "lev_sha256", "generator", "donors", "families",
                   "counts", "relic_targets", "fill_sha256"});
     number(fill.at("schema"), 1, 1);
@@ -254,7 +256,7 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
     fields(counts, {"time_crates", "letters", "fruit_crates", "loose_fruit", "weapon_crates", "grid"});
     need(families.at("letters") == J::object(), "track fill letters are unsupported");
     number(counts.at("letters"), 0, 0);
-    for (const char *name : {"fruit_crates", "loose_fruit", "weapon_crates"}) {
+    for (const char *name : {"fruit_crates", "loose_fruit"}) {
         need(families.at(name) == J::array(), "unsupported track fill crate or fruit family");
         number(counts.at(name), 0, 0);
     }
@@ -270,8 +272,29 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
             number(spawn.at("rot_y"), -32768, 32767);
         }
     }
+    // WF1: weapon crates copied at their exact position and angle, each with
+    // its rank; native finds a spawned crate by position, so none repeat.
+    const auto &weapons = families.at("weapon_crates");
+    need(weapons.is_array() && weapons.size() <= AP_CONTENT_MAX_FILL_WEAPONS, "track fill weapon crate count");
+    number(counts.at("weapon_crates"), (int)weapons.size(), (int)weapons.size());
+    std::set<std::array<int16_t, 3>> weapon_positions;
+    weapons_out.reserve(weapons.size());
+    for (const auto &crate : weapons) {
+        fields(crate, {"pos", "rot_y", "rank", "rank_source"});
+        ctr_content_fill_weapon item{};
+        fill_position(crate.at("pos"), item.pos);
+        item.rot_y = (int16_t)number(crate.at("rot_y"), -32768, 32767);
+        item.rank = (uint8_t)number(crate.at("rank"), 0, 2);
+        const auto &source = crate.at("rank_source");
+        need((source == "donor_ruling" || source == "start_ground" || source == "default_usf") &&
+             (source == "start_ground") == (item.rank == 0) && (source != "default_usf" || item.rank == 2),
+             "invalid track fill weapon crate rank");
+        need(weapon_positions.insert({item.pos[0], item.pos[1], item.pos[2]}).second,
+             "track fill weapon crates repeat a position");
+        weapons_out.push_back(item);
+    }
     const auto &crates = families.at("time_crates");
-    need(crates.is_array() && !crates.empty() && crates.size() <= AP_CONTENT_MAX_FILL_CRATES,
+    need(crates.is_array() && crates.size() <= AP_CONTENT_MAX_FILL_CRATES && (!crates.empty() || !weapons.empty()),
          "track fill time crate count");
     const int count = (int)crates.size();
     number(counts.at("time_crates"), count, count);
@@ -284,12 +307,16 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
         out.push_back(item);
     }
     const auto &times = fill.at("relic_targets");
-    fields(times, {"sapphire", "gold", "platinum", "source", "laps"});
-    need(times.at("source") == "saphi" || times.at("source") == "author", "invalid track fill relic target source");
-    need(number(times.at("laps"), 1, 7) == laps, "track fill relic target laps differ from the package");
-    const char *tiers[] = {"sapphire", "gold", "platinum"};
-    for (int i = 0; i < 3; ++i)
-        number(times.at(tiers[i]), targets[i], targets[i]);
+    if (crates.empty()) {
+        need(times.is_null(), "track fill relic targets need time crates");
+    } else {
+        fields(times, {"sapphire", "gold", "platinum", "source", "laps"});
+        need(times.at("source") == "saphi" || times.at("source") == "author", "invalid track fill relic target source");
+        need(number(times.at("laps"), 1, 7) == laps, "track fill relic target laps differ from the package");
+        const char *tiers[] = {"sapphire", "gold", "platinum"};
+        for (int i = 0; i < 3; ++i)
+            number(times.at(tiers[i]), targets[i], targets[i]);
+    }
 
     const auto &pin = fill.at("fill_sha256");
     need(pin.is_string() && lower_hex(pin.get<std::string>(), 64), "invalid track fill SHA-256");
@@ -307,7 +334,8 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
 }
 
 static void package_record(const J &pkg, ctr_content_package &target,
-                           std::vector<ctr_content_fill_crate> &crates) {
+                           std::vector<ctr_content_fill_crate> &crates,
+                           std::vector<ctr_content_fill_weapon> &weapons) {
     need(pkg.is_object(), "package record is not an object");
     J base = pkg;
     const bool targets = base.contains("relic_targets");
@@ -423,11 +451,17 @@ static void package_record(const J &pkg, ctr_content_package &target,
     pin_pair(pkg["files"], hashes, target.lev_bytes, target.vrm_bytes, "package must pin exactly the LEV then the VRM");
     const J &files = pkg["files"];
     if (has_fill) {
-        need(relic && (target.capabilities & AP_CONTENT_CAP_TIME_TRIAL) && !relic_files,
+        fill_record(pkg.at("fill"), files[0].at("sha256"), target.laps, target.relic_targets, crates, weapons);
+        need(crates.empty() || (relic && (target.capabilities & AP_CONTENT_CAP_TIME_TRIAL) && !relic_files),
              "track fill requires Relic Race on the main LEV and VRM pair");
-        fill_record(pkg.at("fill"), files[0].at("sha256"), target.laps, target.relic_targets, crates);
+        // The package keeps the measured count; weapon crates fill only a
+        // LEV measured without any (WF1).
+        need(weapons.empty() || (target.weapon_crates == 0 && !relic_files),
+             "weapon crates fill only a LEV measured without weapon crates");
         target.fill_crate_count = (int)crates.size();
         target.fill_crates = crates.data();
+        target.fill_weapon_count = (int)weapons.size();
+        target.fill_weapons = weapons.data();
     }
     // `relic_files` (merged mode builds): a second LEV then VRM pair served
     // only for a Relic Race, when one build carries the crate modes and a
@@ -710,8 +744,14 @@ static void item_box_settings(const J &t, State &out) {
         spots.pool = number(set["pool"], 0, AP_BOX_SPOT_MAX_NUMBER);
         need(set["picked"].is_array(), "box spot picks must be a list");
         for (const auto &n : set["picked"]) spots.picked.push_back(number(n, 1, AP_BOX_SPOT_MAX_NUMBER));
-        need(AP_BoxSpot_PickShapeCount(spots.pool, spots.picked.data(), (int)spots.picked.size(), out.item_boxes.box_count) != 0,
-             "box spot picks disagree with box_count or the pool");
+        const bool full = AP_BoxSpot_PickShapeCount(spots.pool, spots.picked.data(), (int)spots.picked.size(),
+                                                    out.item_boxes.box_count) != 0;
+        // WF1: spots that stand on filled weapon crates are fallback seats,
+        // at most 15; checked against the fill once the positions are read.
+        spots.capped = !full && out.item_boxes.box_count > AP_BOX_SPOT_PICK && spots.pool > AP_BOX_SPOT_PICK &&
+                       AP_BoxSpot_PickShapeCount(spots.pool, spots.picked.data(), (int)spots.picked.size(),
+                                                 AP_BOX_SPOT_PICK) != 0;
+        need(full || spots.capped, "box spot picks disagree with box_count or the pool");
         if (set.contains("lev_sha256")) {
             need(set["lev_sha256"].is_string() && lower_hex(set["lev_sha256"].get<std::string>(), 64), "a box spot LEV pin is a SHA-256");
             spots.lev_sha256 = set["lev_sha256"].get<std::string>();
@@ -1527,14 +1567,16 @@ static void validate(const J &p, State &out) {
         const int idx = out.package_count++;
         package_index.emplace(id, idx);
         auto &target = out.packages[idx];
-        package_record(pkg, target, out.fill_crates[idx]);
-        if (target.fill_crate_count) {
+        package_record(pkg, target, out.fill_crates[idx], out.fill_weapons[idx]);
+        if (pkg.contains("fill")) {
             // Solo's library remembers a YAML descriptor. A frozen room's
             // derived capability and fill must never turn into YAML inputs.
             J descriptor = pkg;
             descriptor.erase("fill");
-            descriptor.erase("relic_targets");
-            descriptor["capabilities"]["relic"] = false;
+            if (target.fill_crate_count) {
+                descriptor.erase("relic_targets");
+                descriptor["capabilities"]["relic"] = false;
+            }
             out.package_json[idx] = descriptor.dump();
         } else {
             out.package_json[idx] = pkg.dump();
@@ -2218,15 +2260,20 @@ static void validate(const J &p, State &out) {
                 if (pkg.weapon_crates > 0 && has_sanity && p["sanity"].contains("exclusion_version")
                     && !inherited_ruling_history(out, descriptor, pkg.lev_sha256))
                     require_reviewed_fallback_exclusions(registry.at("sanity_exclusions"), pkg.lev_sha256, dest);
-                int limit = pkg.weapon_crates;
+                // WF1: a LEV measured without weapon crates seats its fallback
+                // boxes on the crates its frozen fill adds, at most 15.
+                const int seat_crates = pkg.weapon_crates == 0 && pkg.fill_weapon_count ? pkg.fill_weapon_count
+                                                                                         : pkg.weapon_crates;
+                int limit = seat_crates;
+                // A reviewed pickup prefix bounds the LEV's own crates only.
                 if (const auto *counts = reviewed_pickup_counts(out, descriptor, pkg.lev_sha256))
-                    limit = std::min(limit, counts->at(0).get<int>());
+                    if (seat_crates == pkg.weapon_crates) limit = std::min(limit, counts->at(0).get<int>());
                 const auto *past_prefix = std::upper_bound(dest.box_excluded,
                     dest.box_excluded + dest.box_excluded_count, limit);
                 slots = box_seats(limit - (int)(past_prefix - dest.box_excluded));
                 slots = std::min(slots, out.item_boxes.box_count);
-                dest.box_crates = slots ? pkg.weapon_crates : 0;
-                dest.box_reviewed_crates = slots && limit < pkg.weapon_crates ? limit : 0;
+                dest.box_crates = slots ? seat_crates : 0;
+                dest.box_reviewed_crates = slots && limit < seat_crates ? limit : 0;
                 for (int b = 0; b < slots; ++b)
                     dest.box_locations[b] = dest.named_block >= 0
                         ? ap_named_location_code(dest.named_block, AP_NAMED_OFF_ITEM_BOX_1 + b)
@@ -3000,11 +3047,25 @@ static void validate(const J &p, State &out) {
     for (const auto &pair : out.box_spots) need(pair.second.seen, "a box spot check carries no spot");
     for (auto &pad : out.pads) {
         if (!pad.box_spots) continue;
+        int on_fill = 0;
+        const ctr_content_package *filled = pad.package_index >= 0 ? &out.packages[pad.package_index] : nullptr;
         for (int b = 0; b < pad.box_count && b < AP_BOX_SPOT_MAX_NUMBER; ++b) {
             const auto &spot = out.box_spots.at(pad.box_locations[b]);
             pad.box_pos[b][0] = spot.x; pad.box_pos[b][1] = spot.y; pad.box_pos[b][2] = spot.z;
             pad.box_rot_y[b] = spot.rot_y;
+            for (int i = 0; filled && i < filled->fill_weapon_count; ++i) {
+                const auto &crate = filled->fill_weapons[i];
+                on_fill += crate.pos[0] == spot.x && crate.pos[1] == spot.y && crate.pos[2] == spot.z &&
+                           crate.rot_y == spot.rot_y;
+            }
         }
+        // A capped pick needs every box on a filled crate (WF1). An uncapped
+        // one over 15 may not stand all its boxes on filled crates.
+        const auto set = out.spot_sets.find(pad.track_id);
+        if (set != out.spot_sets.end())
+            need(set->second.capped ? on_fill == pad.box_count && pad.box_count > 0
+                                    : !(on_fill == pad.box_count && pad.box_count > AP_BOX_SPOT_PICK),
+                 "box spot picks disagree with box_count or the pool");
     }
     for (auto &pad : out.pads) {
         if (!pad.occupied) continue;
@@ -3712,7 +3773,8 @@ extern "C" int ap_content_track_fill_bundled(const char *assets, const char *lev
                               number(times.at("platinum"), 1, 960 * 60 * 60)};
         need(ticks[0] > ticks[1] && ticks[1] > ticks[2], "invalid bundled track fill targets");
         std::vector<ctr_content_fill_crate> parsed;
-        fill_record(fill, lev_sha, entry->laps, ticks, parsed);
+        std::vector<ctr_content_fill_weapon> weapons; // seeds only, not offline
+        fill_record(fill, lev_sha, entry->laps, ticks, parsed, weapons);
         std::copy(parsed.begin(), parsed.end(), crates);
         std::copy(ticks, ticks + 3, targets);
         return (int)parsed.size();

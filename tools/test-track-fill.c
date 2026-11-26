@@ -16,9 +16,9 @@ struct Data data;
 static struct GameTracker tracker;
 static struct Driver driver;
 static struct Instance instances[AP_CONTENT_MAX_FILL_CRATES], kart;
-static struct Thread threads[3], kart_thread;
-static struct Crate crate_objects[3];
-static struct Model models[3];
+static struct Thread threads[8], kart_thread;
+static struct Crate crate_objects[8];
+static struct Model models[3], weapon_model;
 static struct BigHeader bigfile;
 static struct CustomTrackRaceContext context;
 static ctr_content_pad pad;
@@ -50,6 +50,11 @@ void RB_Fruit_GetScreenCoords(struct PushBuffer *pb, struct Instance *i, s16 *xy
 	(void)pb; (void)i;
 	xy[0] = xy[1] = 0;
 }
+static int sanity_pickups;
+int AP_SanityPickup(struct Instance *inst, struct Driver *d) { (void)inst; assert(d == &driver); return ++sanity_pickups; }
+int AP_TrapSuppressCrateReward(struct Driver *d) { (void)d; return 0; }
+void AP_TiziOnWeaponBoxHit(struct Driver *d, struct Instance *inst) { (void)d; (void)inst; }
+int OtherFX_Play(u32 id, int flags) { assert(id == 0x5d); (void)flags; return 0; }
 u16 INSTANCE_GetNumAnimFrames(struct Instance *inst, int index) { (void)inst; (void)index; return 0; }
 struct Instance *INSTANCE_BirthWithThread(int id, const char *name, int pool, int bucket,
                                         void *tick, int size, struct Thread *relative)
@@ -62,7 +67,7 @@ struct Instance *INSTANCE_BirthWithThread(int id, const char *name, int pool, in
 struct Thread *PROC_BirthWithObject(int flags, void *tick, const char *name, struct Thread *parent)
 {
 	(void)flags; (void)name; (void)parent;
-	assert(thread_count < 3);
+	assert(thread_count < 8);
 	struct Thread *t = &threads[thread_count];
 	memset(t, 0, sizeof *t);
 	t->funcThTick = tick;
@@ -71,12 +76,14 @@ struct Thread *PROC_BirthWithObject(int flags, void *tick, const char *name, str
 }
 struct Instance *INSTANCE_Birth3D(struct Model *model, const char *name, struct Thread *t)
 {
-	assert(born < AP_CONTENT_MAX_FILL_CRATES && strcmp(name, "ap-fill-crate") == 0 && t == NULL);
+	assert(born < AP_CONTENT_MAX_FILL_CRATES && t == NULL &&
+	       (strcmp(name, "ap-fill-crate") == 0 || strcmp(name, "ap-fill-weapon") == 0));
 	struct Instance *inst = &instances[born++];
 	memset(inst, 0, sizeof *inst);
 	memset(inst->matrix.m, 0x7a, sizeof inst->matrix.m);
 	inst->model = model;
 	inst->scale = (SVec3){{0x1000, 0x1000, 0x1000}};
+	inst->flags = DRAW_COLLISION_MASK;
 	inst->next = (struct Instance *)tracker.JitPools.instance.taken.first;
 	tracker.JitPools.instance.taken.first = (struct Item *)inst;
 	return inst;
@@ -88,7 +95,7 @@ void INSTANCE_Death(struct Instance *inst)
 }
 u8 *AP_RetailAsset_ReadSubfile(int entry, int dram, u8 *dst, int cap, int *size)
 {
-	assert(!dram && (entry == 6 || entry == 7));
+	assert(!dram && (entry == 0 || entry == 1 || entry == 6 || entry == 7));
 	asset_reads++;
 	if (!asset_dir)
 		return NULL;
@@ -108,11 +115,11 @@ void LOAD_RunPtrMap(char *body, int *slots, int count)
 }
 TextureID NativeRenderer_CreateRGBATextureChecked(int w, int h, u8 *rgba)
 {
-	assert(w == 256 && h == 128 && rgba[3] == 255);
+	assert(w == 256 && h == 256 && rgba[3] == 255 && rgba[4 * (128 * 256) + 3] == 255);
 	static int attempts;
 	return ++attempts == 1 ? 0 : 42;
 }
-void NativeGpu_SetTimeCrateTexture(unsigned id, int w, int h) { assert(id == 42 && w == 256 && h == 128); }
+void NativeGpu_SetTimeCrateTexture(unsigned id, int w, int h) { assert(id == 42 && w == 256 && h == 256); }
 
 int main(void)
 {
@@ -138,6 +145,7 @@ int main(void)
 
 	assert(!AP_TrackFillPrepare());
 	assert(!AP_TrackFillPrepare() && asset_reads == 2);
+	asset_reads = 0;
 	asset_dir = getenv("CTR_TEST_FILL_ASSETS");
 	if (asset_dir) {
 		assert(!AP_TrackFillPrepare()); // transient atlas upload failure
@@ -150,13 +158,21 @@ int main(void)
 				for (int i = 0; i < (header ? 2 : 20); ++i)
 					assert((apFillCrateModels[model]->headers[header].ptrTexLayout[i]->tpage &
 					        AP_TPAGE_SIDELOAD_MASK) == AP_TPAGE_TIME_CRATE_BITS);
-		puts("PASS: pinned retail texture and model import");
+		assert(apFillWeaponModel->id == PU_RANDOM_CRATE && !strcmp(apFillWeaponModel->name, "crate_question"));
+		for (int header = 0; header < 2; ++header)
+			for (int i = 0; i < (header ? 2 : 20); ++i) {
+				const struct TextureLayout *layout = apFillWeaponModel->headers[header].ptrTexLayout[i];
+				assert((layout->tpage & AP_TPAGE_SIDELOAD_MASK) == AP_TPAGE_TIME_CRATE_BITS && layout->v0 >= 128);
+			}
+		puts("PASS: pinned retail texture and model import, time crates and the weapon crate");
 	} else {
 		models[0].id = STATIC_TIME_CRATE_01;
 		models[1].id = STATIC_TIME_CRATE_02;
 		models[2].id = STATIC_TIME_CRATE_03;
 		for (int i = 0; i < 3; ++i)
 			apFillCrateModels[i] = &models[i];
+		weapon_model.id = PU_RANDOM_CRATE;
+		apFillWeaponModel = &weapon_model;
 		apFillAssetState = 1;
 	}
 
@@ -210,6 +226,66 @@ int main(void)
 	tracker.JitPools.instance.taken.first = NULL;
 	AP_TrackFillSpawn(&tracker);
 	assert(AP_TrackFillFailed(&tracker) && born == 0);
+
+	// WF1: two filled weapon crates in a Trophy Race. A hit gives a weapon
+	// roll through the retail handler, the crate regrows on its own thread,
+	// and a crate whose AP box stands is out of reach until the box frees it.
+	{
+		const ctr_content_fill_weapon weapons[] = {{{5000, 10, 0}, -2048, 0}, {{7000, 10, 0}, 1019, 2}};
+		born = 0;
+		thread_count = 0;
+		tracker.JitPools.instance.taken.first = NULL;
+		tracker.timeCratesInLEV = 0;
+		package.fill_weapons = weapons;
+		package.fill_weapon_count = 2;
+		tracker.gameMode1 = RELIC_RACE;
+		AP_TrackFillWeaponSpawn(&tracker);
+		assert(born == 0 && !AP_TrackFillWeaponCount(&tracker));
+		tracker.gameMode1 = 0;
+		context.mode = AP_CONTENT_MODE_TROPHY;
+		tracker.JitPools.instance.free.count = 1;
+		AP_TrackFillWeaponSpawn(&tracker);
+		assert(born == 0 && !tracker.JitPools.instance.taken.first); // all or nothing
+		born = 0;
+		tracker.JitPools.instance.free.count = 2;
+		AP_TrackFillWeaponSpawn(&tracker);
+		assert(born == 2 && AP_TrackFillWeaponCount(&tracker) == 2);
+		assert(AP_TrackFillWeaponOrdinal(&tracker, 0) == &instances[0] && instances[0].model == apFillWeaponModel);
+		assert(AP_TrackFillWeaponAt(&tracker, 7000, 10, 0, 1019) == &instances[1]);
+		assert(!AP_TrackFillWeaponAt(&tracker, 7000, 10, 0, 1018));
+		assert(instances[1].matrix.t[0] == 7000 && instances[1].matrix.t[1] == 10);
+		driver.heldItemID = 0xf;
+		driver.noItemTimer = 0;
+		driver.numHeldItems = 0;
+		driver.posPrev.x = driver.posCurr.x = 5000 * 256;
+		driver.posPrev.y = driver.posCurr.y = 10 * 256;
+		AP_TrackFillWeaponCollide(&tracker);
+		assert(driver.heldItemID == 0x10 && instances[0].scale.x == 0 && instances[0].thread);
+		struct Thread *grow = instances[0].thread;
+		assert(grow->funcThTick == (void *)RB_CrateAny_ThTick_Grow);
+		driver.heldItemID = 0xf;
+		AP_TrackFillWeaponCollide(&tracker); // cooldown: no second reward
+		assert(driver.heldItemID == 0xf);
+		for (int frame = 0; frame < 60 && instances[0].thread; ++frame)
+			RB_CrateAny_ThTick_Grow(grow);
+		assert(instances[0].scale.x == 0x1000 && !instances[0].thread);
+		AP_TrackFillWeaponCollide(&tracker);
+		assert(driver.heldItemID == 0x10 && instances[0].scale.x == 0);
+		puts("PASS: a filled weapon crate gives a weapon roll, breaks and grows back");
+		// The AP box seat clears the draw and collision bits.
+		instances[1].flags &= ~DRAW_COLLISION_MASK;
+		driver.heldItemID = 0xf;
+		driver.posPrev.x = driver.posCurr.x = 7000 * 256;
+		AP_TrackFillWeaponCollide(&tracker);
+		assert(driver.heldItemID == 0xf && instances[1].scale.x == 0x1000);
+		instances[1].flags |= DRAW_COLLISION_MASK;
+		AP_TrackFillWeaponCollide(&tracker);
+		assert(driver.heldItemID == 0x10 && instances[1].scale.x == 0);
+		puts("PASS: a seated weapon crate is out of reach until its AP box frees it");
+		package.fill_weapon_count = 0;
+		tracker.gameMode1 = RELIC_RACE;
+		context.mode = AP_CONTENT_MODE_RELIC;
+	}
 
 	const char *positions = getenv("CTR_TEST_FILL_POSITIONS");
 	if (positions) {

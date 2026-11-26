@@ -89,33 +89,46 @@ int AP_TrackFillOfflineTier(int race_time)
 
 #define AP_FILL_LEV_BYTES 576392
 #define AP_FILL_VRM_BYTES 458808
+#define AP_FILL_WEAPON_LEV_BYTES 551532
 #define AP_FILL_TEXTURE_W 256
-#define AP_FILL_TEXTURE_H 128
+#define AP_FILL_TEXTURE_H 256
 
 static u32 apFillRetailLev[577536 / sizeof(u32)];
 static struct Model *apFillCrateModels[3];
 static int apFillAssetState;
+// WF1: Dingo Canyon's 1P pair (BIGFILE 1 and 0) holds the retail weapon
+// crate, model 8 "crate_question", at the audited offset below.
+static u32 apFillWeaponLev[552960 / sizeof(u32)];
+static struct Model *apFillWeaponModel;
+static const unsigned apFillWeaponModelOffset = 406760;
 
-// Crash Cove's fourth LEV/VRM pair contains all three models. Check both
-// pins before relocation or reading the audited model and texture tables.
+// The relic LEV/VRM pair of track 0 (BIGFILE 7 and 6) contains all three time
+// crate models. Check both pins before relocation or reading the audited
+// model and texture tables. Texture sheet slots 8 to 10 hold the weapon crate tiles.
 static const unsigned apFillModelOffsets[] = {389876, 388628, 391124};
 static const struct {
 	u16 tpage, clut;
-	u8 u, v, size;
+	u8 u, v, size, weapon;
 } apFillTiles[] = {
-	{105, 16294,   0,   0, 64},
-	{105, 16229,  64,   0, 64},
-	{105, 16166, 128,   0, 64},
-	{105, 16230, 192,   0, 64},
-	{104, 16294, 128, 128, 64},
-	{104, 16165, 192, 128, 64},
-	{123, 31293, 196, 160, 16},
+	{105, 16294,   0,   0, 64, 0},
+	{105, 16229,  64,   0, 64, 0},
+	{105, 16166, 128,   0, 64, 0},
+	{105, 16230, 192,   0, 64, 0},
+	{104, 16294, 128, 128, 64, 0},
+	{104, 16165, 192, 128, 64, 0},
+	{123, 31293, 196, 160, 16, 0},
+	{  0,     0,   0,   0,  0, 2}, // unused slot
+	{105, 16234, 128,   0, 64, 1},
+	{120, 18425, 192, 240, 16, 1},
+	{122, 29560,  96, 224, 32, 1},
 };
 
-static int AP_TrackFillDecodeTextures(const u8 *vrm, size_t size, u8 *pixels)
+static int AP_TrackFillDecodeTextures(const u8 *vrm, size_t size, u8 *pixels, int weapon)
 {
 	for (unsigned i = 0; i < sizeof apFillTiles / sizeof apFillTiles[0]; ++i)
 	{
+		if (apFillTiles[i].weapon != weapon)
+			continue;
 		unsigned tile_x = (i % 4) * 64, tile_y = (i / 4) * 64;
 		unsigned vram_x = (apFillTiles[i].tpage & 15) * 64;
 		unsigned vram_y = (apFillTiles[i].tpage & 16) ? 256 : 0;
@@ -142,10 +155,11 @@ static int AP_TrackFillDecodeTextures(const u8 *vrm, size_t size, u8 *pixels)
 	return 1;
 }
 
-static void AP_TrackFillRemapTexture(struct TextureLayout *layout)
+static void AP_TrackFillRemapTexture(struct TextureLayout *layout, int weapon)
 {
 	for (unsigned i = 0; i < sizeof apFillTiles / sizeof apFillTiles[0]; ++i)
-		if (layout->tpage == apFillTiles[i].tpage && layout->clut == apFillTiles[i].clut)
+		if (apFillTiles[i].weapon == weapon &&
+		    layout->tpage == apFillTiles[i].tpage && layout->clut == apFillTiles[i].clut)
 		{
 			int du = (int)((i % 4) * 64) - apFillTiles[i].u;
 			int dv = (int)((i / 4) * 64) - apFillTiles[i].v;
@@ -170,13 +184,24 @@ int AP_TrackFillPrepare(void)
 	    !AP_TrialPointerMapValid(raw, size))
 		goto refused;
 
+	u8 *weaponRaw = (u8 *)apFillWeaponLev;
+	int weaponSize = 0;
+	if (!AP_RetailAsset_ReadSubfile(1, 0, weaponRaw, sizeof apFillWeaponLev, &weaponSize) ||
+	    weaponSize != AP_FILL_WEAPON_LEV_BYTES ||
+	    !AP_TrialDigest(weaponRaw, weaponSize, "e88732cbc1c776e9d4e5f20e3d4aecbfb797b5c9652eaa3fdc78cfdf1f52c9c5") ||
+	    !AP_TrialPointerMapValid(weaponRaw, weaponSize))
+		goto refused;
+
 	u8 *vrm = malloc(460800);
 	u8 *pixels = calloc(AP_FILL_TEXTURE_W * AP_FILL_TEXTURE_H, 4);
 	unsigned texture = 0;
 	if (vrm && pixels && AP_RetailAsset_ReadSubfile(6, 0, vrm, 460800, &size) &&
 	    size == AP_FILL_VRM_BYTES &&
 	    AP_TrialDigest(vrm, size, "a9509de1b16083da24a0e9b90a28511ba668a1d83677bb1e2868508e0678f84a") &&
-	    AP_TrackFillDecodeTextures(vrm, size, pixels))
+	    AP_TrackFillDecodeTextures(vrm, size, pixels, 0) &&
+	    AP_RetailAsset_ReadSubfile(0, 0, vrm, 460800, &size) && size == AP_FILL_VRM_BYTES &&
+	    AP_TrialDigest(vrm, size, "17e85a7b561fb2d5574c82152c49e0e79e7a57da09a19eb0cd94439e2382df46") &&
+	    AP_TrackFillDecodeTextures(vrm, size, pixels, 1))
 		texture = NativeRenderer_CreateRGBATextureChecked(AP_FILL_TEXTURE_W, AP_FILL_TEXTURE_H, pixels);
 	free(vrm);
 	free(pixels);
@@ -191,17 +216,25 @@ int AP_TrackFillPrepare(void)
 		struct Model *model = (struct Model *)(body + apFillModelOffsets[type]);
 		apFillCrateModels[type] = model;
 		for (int i = 0; i < 20; ++i)
-			AP_TrackFillRemapTexture(model->headers[0].ptrTexLayout[i]);
+			AP_TrackFillRemapTexture(model->headers[0].ptrTexLayout[i], 0);
 		for (int i = 0; i < 2; ++i)
-			AP_TrackFillRemapTexture(model->headers[1].ptrTexLayout[i]);
+			AP_TrackFillRemapTexture(model->headers[1].ptrTexLayout[i], 0);
 	}
+	u8 *weaponBody = weaponRaw + 4;
+	unsigned weaponMap = AP_TrialU32(weaponRaw);
+	LOAD_RunPtrMap((char *)weaponBody, (int *)(weaponBody + weaponMap + 4), AP_TrialU32(weaponBody + weaponMap) / 4);
+	apFillWeaponModel = (struct Model *)(weaponBody + apFillWeaponModelOffset);
+	for (int i = 0; i < 20; ++i)
+		AP_TrackFillRemapTexture(apFillWeaponModel->headers[0].ptrTexLayout[i], 1);
+	for (int i = 0; i < 2; ++i)
+		AP_TrackFillRemapTexture(apFillWeaponModel->headers[1].ptrTexLayout[i], 1);
 	NativeGpu_SetTimeCrateTexture(texture, AP_FILL_TEXTURE_W, AP_FILL_TEXTURE_H);
 	apFillAssetState = 1;
-	AP_LogLine("[TrackFill] three retail time crate models and textures loaded\n");
+	AP_LogLine("[TrackFill] retail time crate and weapon crate models and textures loaded\n");
 	return 1;
 
 refused:
-	AP_LogLine("[TrackFill] Relic Race unavailable: retail time crate models or textures could not be verified and loaded\n");
+	AP_LogLine("[TrackFill] track fill unavailable: retail crate models or textures could not be verified and loaded\n");
 	return 0;
 }
 
@@ -321,6 +354,141 @@ void AP_TrackFillCollide(struct GameTracker *g)
 			struct ScratchpadStruct collision = {0};
 			collision.Input1.modelID = DYNAMIC_PLAYER;
 			RB_CrateTime_LInC(inst, d->instSelf->thread, &collision);
+		}
+	}
+}
+
+// ── WF1: weapon crates ─────────────────────────────────────────────────────
+// A seed's frozen fill adds real weapon crates to a LEV measured without any:
+// the retail model from the player's disc, the retail weapon crate collision
+// handler (reward, break and regrowth), at the fill's exact position and
+// angle. They stand in every race on that LEV except Time Trial and Relic
+// Race, where retail tracks carry no weapon crates either.
+
+static const ctr_content_package *AP_TrackFillWeaponRace(const struct GameTracker *g)
+{
+	if (!g || g->numPlyrCurrGame != 1 || (g->gameMode1 & (RELIC_RACE | TIME_TRIAL | BATTLE_MODE | MAIN_MENU)))
+		return NULL;
+	const struct CustomTrackRaceContext *context = CustomTrack_StandaloneContext(g->levelID);
+	if (!context || context->retail || context->cortex || !context->seedEpoch ||
+	    context->seedEpoch != ap_content_plan_epoch())
+		return NULL;
+	const ctr_content_pad *pad = ap_content_plan_pad(context->physicalPad);
+	// A cup leg races its track's own crates; the pad of that track holds them.
+	if (pad && pad->cup)
+		pad = context->leg >= 0 && context->leg < AP_CONTENT_CUP_LEGS && pad->legs[context->leg].track_pad >= 0
+		          ? ap_content_plan_pad(pad->legs[context->leg].track_pad) : NULL;
+	const ctr_content_package *pkg = pad ? ap_content_plan_package(pad->package_index) : NULL;
+	return pkg && pkg->fill_weapon_count && !strcmp(context->levSha256, pkg->lev_sha256) ? pkg : NULL;
+}
+
+static int AP_TrackFillIsWeapon(const struct Instance *inst)
+{
+	return inst && apFillWeaponModel && inst->model == apFillWeaponModel;
+}
+
+// The spawned crate of fill ordinal `index` (0-based), found by its exact
+// position in the instance pool, which owns it across quick loads.
+static struct Instance *AP_TrackFillWeaponInstance(struct GameTracker *g, const ctr_content_fill_weapon *crate)
+{
+	for (struct Instance *inst = (struct Instance *)g->JitPools.instance.taken.first; inst; inst = inst->next)
+		if (AP_TrackFillIsWeapon(inst) && inst->matrix.t[0] == crate->pos[0] &&
+		    inst->matrix.t[1] == crate->pos[1] && inst->matrix.t[2] == crate->pos[2])
+			return inst;
+	return NULL;
+}
+
+int AP_TrackFillWeaponCount(struct GameTracker *g)
+{
+	const ctr_content_package *pkg = AP_TrackFillWeaponRace(g);
+	return pkg ? pkg->fill_weapon_count : 0;
+}
+
+struct Instance *AP_TrackFillWeaponOrdinal(struct GameTracker *g, int index)
+{
+	const ctr_content_package *pkg = AP_TrackFillWeaponRace(g);
+	if (!pkg || index < 0 || index >= pkg->fill_weapon_count)
+		return NULL;
+	return AP_TrackFillWeaponInstance(g, &pkg->fill_weapons[index]);
+}
+
+struct Instance *AP_TrackFillWeaponAt(struct GameTracker *g, int x, int y, int z, int rotY)
+{
+	const ctr_content_package *pkg = AP_TrackFillWeaponRace(g);
+	for (int i = 0; pkg && i < pkg->fill_weapon_count; ++i)
+	{
+		const ctr_content_fill_weapon *crate = &pkg->fill_weapons[i];
+		if (crate->pos[0] == x && crate->pos[1] == y && crate->pos[2] == z && crate->rot_y == rotY)
+			return AP_TrackFillWeaponInstance(g, crate);
+	}
+	return NULL;
+}
+
+void AP_TrackFillWeaponSpawn(struct GameTracker *g)
+{
+	const ctr_content_package *pkg = AP_TrackFillWeaponRace(g);
+	if (!pkg)
+		return;
+	struct Instance *spawned[AP_CONTENT_MAX_FILL_WEAPONS];
+	int count = 0;
+	if (!AP_TrackFillPrepare() || g->JitPools.instance.free.count < pkg->fill_weapon_count)
+		goto refused;
+	for (; count < pkg->fill_weapon_count; ++count)
+	{
+		const ctr_content_fill_weapon *crate = &pkg->fill_weapons[count];
+		struct Instance *inst = INSTANCE_Birth3D(apFillWeaponModel, "ap-fill-weapon", NULL);
+		if (!inst)
+			goto refused;
+		spawned[count] = inst;
+		SVec3 rot = {{0, crate->rot_y, 0}};
+		ConvertRotToMatrix(&inst->matrix, &rot);
+		for (int axis = 0; axis < 3; ++axis)
+			inst->matrix.t[axis] = crate->pos[axis];
+	}
+	char line[128];
+	snprintf(line, sizeof line, "[TrackFill] spawned %d weapon crates for %s\n", count, pkg->content_id);
+	AP_LogLine(line);
+	return;
+
+refused:
+	while (count > 0)
+		INSTANCE_Death(spawned[--count]);
+	AP_LogLine("[TrackFill] could not spawn the filled weapon crates; this race has none\n");
+}
+
+void AP_TrackFillWeaponCollide(struct GameTracker *g)
+{
+	if (apFillAssetState != 1 || !AP_TrackFillWeaponRace(g) || sdata->Loading.stage != LOAD_IDLE ||
+	    (g->gameMode1 & (PAUSE_ALL | START_OF_RACE)))
+		return;
+	for (int driver = 0; driver < 8; ++driver)
+	{
+		struct Driver *d = g->drivers[driver];
+		if (!d || !d->instSelf || !d->instSelf->thread || (d->actionsFlagSet & ACTION_RACE_FINISHED))
+			continue;
+		SVec3 prev, curr;
+		prev.x = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.x, 8), d->originToCenter.x);
+		prev.y = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.y, 8), d->originToCenter.y);
+		prev.z = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.z, 8), d->originToCenter.z);
+		curr.x = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.x, 8), d->originToCenter.x);
+		curr.y = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.y, 8), d->originToCenter.y);
+		curr.z = (s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.z, 8), d->originToCenter.z);
+		for (struct Instance *inst = (struct Instance *)g->JitPools.instance.taken.first; inst; inst = inst->next)
+		{
+			// A crate whose AP box stands has no draw or collision bits.
+			if (!AP_TrackFillIsWeapon(inst) || !(inst->flags & DRAW_COLLISION_MASK))
+				continue;
+			const int x = inst->matrix.t[0], y = inst->matrix.t[1], z = inst->matrix.t[2];
+			struct BoundingBox box = {
+				.min = {{AP_TrackFillBound(x - 92), AP_TrackFillBound(y - 44), AP_TrackFillBound(z - 92)}},
+				.max = {{AP_TrackFillBound(x + 92), AP_TrackFillBound(y + 140), AP_TrackFillBound(z + 92)}},
+			};
+			if (AP_TrialLetterHit(&prev, &curr, &box))
+			{
+				struct ScratchpadStruct collision = {0};
+				collision.Input1.modelID = DYNAMIC_PLAYER;
+				RB_CrateWeapon_LInC(inst, d->instSelf->thread, &collision);
+			}
 		}
 	}
 }

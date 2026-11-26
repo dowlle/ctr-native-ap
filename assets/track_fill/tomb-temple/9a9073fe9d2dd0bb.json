@@ -5,7 +5,7 @@
     "letters": 0,
     "loose_fruit": 0,
     "time_crates": 29,
-    "weapon_crates": 0
+    "weapon_crates": 16
   },
   "donors": [
     {
@@ -254,9 +254,170 @@
         "type": 3
       }
     ],
-    "weapon_crates": []
+    "weapon_crates": [
+      {
+        "pos": [
+          -8490,
+          -144,
+          18909
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 7
+      },
+      {
+        "pos": [
+          -8487,
+          -144,
+          19197
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 7
+      },
+      {
+        "pos": [
+          -8483,
+          -144,
+          19485
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 7
+      },
+      {
+        "pos": [
+          -8480,
+          -144,
+          19773
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 7
+      },
+      {
+        "pos": [
+          1881,
+          -144,
+          22470
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 1028
+      },
+      {
+        "pos": [
+          2169,
+          -144,
+          22469
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 1028
+      },
+      {
+        "pos": [
+          2457,
+          -144,
+          22467
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 1028
+      },
+      {
+        "pos": [
+          2745,
+          -144,
+          22466
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 1028
+      },
+      {
+        "pos": [
+          6766,
+          -144,
+          11300
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": 1226
+      },
+      {
+        "pos": [
+          7040,
+          -144,
+          11212
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": 1226
+      },
+      {
+        "pos": [
+          7314,
+          -144,
+          11124
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": 1226
+      },
+      {
+        "pos": [
+          7588,
+          -144,
+          11036
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": 1226
+      },
+      {
+        "pos": [
+          3900,
+          -741,
+          -390
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": -1885
+      },
+      {
+        "pos": [
+          3829,
+          -740,
+          -669
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": -1885
+      },
+      {
+        "pos": [
+          3757,
+          -736,
+          -949
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": -1885
+      },
+      {
+        "pos": [
+          3686,
+          -717,
+          -1228
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": -1882
+      }
+    ]
   },
-  "fill_sha256": "aaa3f1dff03af73621a725b05a5b7758bf76369201788271afc2f160cd56d62c",
+  "fill_sha256": "118c5e8d98a8efea6e709b065f4712a3711dc082d788a99fb14cf9e5a4a41240",
   "generator": {
     "name": "ctr-track-fill",
     "version": 1

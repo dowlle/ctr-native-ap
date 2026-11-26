@@ -558,7 +558,7 @@ static int AP_BoxesGeometryHere(const AP_BoxPlacement *scratch, int count, int l
 // is not read for such a track.
 static void AP_BoxesStandSpots(struct GameTracker *gGT, const ctr_content_pad *pad)
 {
-	int i, n = 0;
+	int i, n = 0, seated = 0;
 	char msg[224];
 
 	AP_BoxProbeSeedClass();
@@ -578,11 +578,31 @@ static void AP_BoxesStandSpots(struct GameTracker *gGT, const ctr_content_pad *p
 		s_live[n].rotY = pad->box_rot_y[i];
 		s_live[n].ghostTouched = 0;
 		s_live[n].seated = 0;
+		// WF1: a spot at a filled weapon crate's exact position and angle is
+		// a fallback seat on that crate (Arabian Heights Day): hide it while
+		// its AP box stands, as the crate seats below do.
+		{
+			struct Instance *crate = AP_TrackFillWeaponAt(gGT, s_live[n].x, s_live[n].y, s_live[n].z, s_live[n].rotY);
+			if (crate != 0)
+			{
+				s_live[n].seated = 1;
+				s_live[n].seatGen = AP_Spawn_Generation();
+				s_live[n].seatInst = crate;
+				s_live[n].seatFlags = crate->flags & DRAW_COLLISION_MASK;
+				crate->flags &= ~DRAW_COLLISION_MASK;
+				seated++;
+			}
+		}
 		s_liveCount++;
 		n++;
 	}
 	for (i = 0; i < n; i++)
 		AP_BoxesSpawnOne(gGT, i);
+	if (seated)
+	{
+		snprintf(msg, sizeof msg, "[AP BOX] level %d: %d of those boxes stand on filled weapon crates\n", s_level, seated);
+		AP_LogLine(msg);
+	}
 
 	snprintf(msg, sizeof msg,
 	         "[AP BOX] level %d: %d of %d Item Box(es) standing at hand-placed spots from the seed%s\n",
@@ -642,7 +662,7 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 		          ? ap_content_plan_pad(pad->legs[race->leg].track_pad) : 0;
 	struct InstDef *defs, *synth = 0;
 	long count, k, crates = 0;
-	int seats, i;
+	int seats, i, fillSeats = 0;
 	char msg[224];
 
 	if (pad == 0 || !pad->occupied || pad->box_count <= 0)
@@ -699,6 +719,36 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 		count = found;
 		snprintf(msg, sizeof msg,
 		         "[AP BOX] Relic Race on a merged package: seating on the main pair's %ld weapon crate(s)\n", found);
+		AP_LogLine(msg);
+	}
+	else if (pad->package_index >= 0 && ap_content_plan_package(pad->package_index) != 0 &&
+	         ap_content_plan_package(pad->package_index)->weapon_crates == 0 &&
+	         ap_content_plan_package(pad->package_index)->fill_weapon_count > 0)
+	{
+		// WF1: a LEV measured without weapon crates seats its boxes on the
+		// crates its seed's fill adds, in fill order. A Relic Race spawns no
+		// weapon crates, so its boxes stand at the same places and hide none.
+		const ctr_content_package *fillPkg = ap_content_plan_package(pad->package_index);
+		const int found = fillPkg->fill_weapon_count;
+		synth = (struct InstDef *)calloc((size_t)found, sizeof *synth);
+		if (synth == 0)
+		{
+			AP_LogLine("[AP BOX] WARNING: no memory for the filled weapon crates -- no Item Box seats\n");
+			return;
+		}
+		s_mainCrateModel.id = PU_RANDOM_CRATE;
+		for (k = 0; k < found; k++)
+		{
+			const ctr_content_fill_weapon *row = &fillPkg->fill_weapons[k];
+			synth[k].model = &s_mainCrateModel;
+			synth[k].ptrInstance = AP_TrackFillWeaponOrdinal(gGT, (int)k);
+			synth[k].pos.x = row->pos[0]; synth[k].pos.y = row->pos[1]; synth[k].pos.z = row->pos[2];
+			synth[k].rot.y = row->rot_y;
+		}
+		defs = synth;
+		count = found;
+		fillSeats = 1;
+		snprintf(msg, sizeof msg, "[AP BOX] seating on the %d filled weapon crate(s) of this track\n", found);
 		AP_LogLine(msg);
 	}
 	else
@@ -772,11 +822,12 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 		// A table the engine did not finish initialising leaves raw LEV values
 		// here (INSTANCE_LevInitAll returns when its pool runs out): only an
 		// instance from the pool that points back at this crate is touched.
+		// A filled crate has no LEV entry; its instance came from the pool walk.
 		if (crate != 0 &&
 		    (!AP_BoxSeat_PoolItem((uintptr_t)crate, (uintptr_t)gGT->JitPools.instance.ptrPoolData,
 		                          (long)gGT->JitPools.instance.maxItems,
 		                          (unsigned long)gGT->JitPools.instance.itemSize) ||
-		     crate->instDef != def))
+		     (!fillSeats && crate->instDef != def)))
 			crate = 0;
 		s_live[i].seatInst = crate;
 		s_live[i].seatFlags = crate != 0 ? (crate->flags & DRAW_COLLISION_MASK) : 0;

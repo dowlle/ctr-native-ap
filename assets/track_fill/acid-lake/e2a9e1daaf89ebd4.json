@@ -5,7 +5,7 @@
     "letters": 0,
     "loose_fruit": 0,
     "time_crates": 29,
-    "weapon_crates": 0
+    "weapon_crates": 12
   },
   "donors": [
     {
@@ -254,9 +254,130 @@
         "type": 3
       }
     ],
-    "weapon_crates": []
+    "weapon_crates": [
+      {
+        "pos": [
+          3619,
+          0,
+          -10124
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 2022
+      },
+      {
+        "pos": [
+          -10990,
+          1018,
+          -850
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": -1019
+      },
+      {
+        "pos": [
+          -11278,
+          1015,
+          -848
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": -1018
+      },
+      {
+        "pos": [
+          -11566,
+          1013,
+          -845
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": -1018
+      },
+      {
+        "pos": [
+          -11854,
+          1012,
+          -842
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": -1018
+      },
+      {
+        "pos": [
+          -5774,
+          0,
+          2654
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 961
+      },
+      {
+        "pos": [
+          -5487,
+          0,
+          2682
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 961
+      },
+      {
+        "pos": [
+          -5201,
+          0,
+          2709
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 961
+      },
+      {
+        "pos": [
+          -4914,
+          0,
+          2737
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 961
+      },
+      {
+        "pos": [
+          3631,
+          0,
+          -10412
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 2022
+      },
+      {
+        "pos": [
+          3642,
+          0,
+          -10700
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 2022
+      },
+      {
+        "pos": [
+          3654,
+          0,
+          -10988
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot_y": 2022
+      }
+    ]
   },
-  "fill_sha256": "c95b54564a9b75fc52afb53a7ba153cdce2489190b88334a1ba4960fb1b635c5",
+  "fill_sha256": "4699eaea7dd12ae7e98b2fccd3adeeaaa3095d24f7bf3830dc8c6e20cbc736cb",
   "generator": {
     "name": "ctr-track-fill",
     "version": 1

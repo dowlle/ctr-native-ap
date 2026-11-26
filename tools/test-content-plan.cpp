@@ -155,7 +155,75 @@ int main(int argc, char **argv) {
         changed = fill;
         changed["schema_version"] = changed["ctr_options"]["schema_version"] = 18;
         refuse(changed, "a room with fill cannot use the old schema");
+
+        // WF1: Arabian Heights Day's 27 weapon crates. The 15 picked Item
+        // Box spots stand on 15 of them; sanity picks only the other 12.
+        std::ifstream day_input("tools/fixtures/content-plan/day-weapon-fill.json");
+        const J day = J::parse(day_input);
+        const bool day_loaded = parse(day) && bind_room(day);
+        expect(day_loaded && ctr_cfg.schema_version == 19, "the opted-in client accepts the Day weapon fill room");
+        const auto *day_package = day_loaded ? ap_content_plan_package(0) : nullptr;
+        const auto &weapons = day.at("content_plan").at("packages").at(0).at("fill").at("families").at("weapon_crates");
+        expect(day_package && day_package->fill_weapon_count == 27 && day_package->fill_crate_count == 0 &&
+               day_package->weapon_crates == 0 && !(day_package->capabilities & AP_CONTENT_CAP_RELIC),
+               "Day carries 27 filled weapon crates, no time crates and its measured zero");
+        for (int i = 0; day_package && i < day_package->fill_weapon_count && i < (int)weapons.size(); ++i) {
+            const auto &crate = day_package->fill_weapons[i];
+            expect(crate.pos[0] == weapons[i]["pos"][0] && crate.pos[1] == weapons[i]["pos"][1] &&
+                   crate.pos[2] == weapons[i]["pos"][2] && crate.rot_y == weapons[i]["rot_y"] &&
+                   crate.rank == weapons[i]["rank"], "the native weapon crate matches the generator");
+        }
+        const auto *day_sanity = day_loaded ? ap_content_plan_sanity("custom/arabian-heights-day/1.0.0") : nullptr;
+        expect(day_sanity && day_sanity->counts[0] == 27, "sanity counts the filled weapon crates");
+        std::set<int> picked;
+        for (const auto &spot : day["content_plan"]["item_boxes"]["spot_sets"])
+            if (spot["track_id"] == "custom/arabian-heights-day/1.0.0")
+                for (const auto &n : spot["picked"]) picked.insert(n.get<int>());
+        expect(picked.size() == 15, "the Day room picks 15 seats");
+        for (int n = 1; day_sanity && n <= 27; ++n)
+            expect((day_sanity->locations[0][n - 1] > 0) == !picked.count(n),
+                   "a weapon crate is a sanity check exactly when no AP box stands on it");
+        J day_changed;
+        for (auto &row : (day_changed = day)["content_plan"]["sanity"]["tracks"])
+            if (row["track_id"] == "custom/arabian-heights-day/1.0.0") {
+                row["weapon_crate"][0] = *picked.begin();
+                std::sort(row["weapon_crate"].begin(), row["weapon_crate"].end());
+            }
+        refuse(day_changed, "a seated weapon crate cannot be a sanity check too");
+        day_changed = day;
+        day_changed["content_plan"]["packages"][0]["fill"]["families"]["weapon_crates"][0]["rot_y"] = 0;
+        refuse(day_changed, "a changed weapon crate angle fails the fill digest");
+        day_changed = day;
+        day_changed["content_plan"]["packages"][0]["capabilities"]["weapon_crates"] = 4;
+        refuse(day_changed, "weapon crates fill only a LEV measured without weapon crates");
+        // Item Box Count 50 still seats at most 15 boxes on filled crates.
+        std::ifstream day50_input("tools/fixtures/content-plan/day-weapon-fill-50.json");
+        const J day50 = J::parse(day50_input);
+        expect(parse(day50) && bind_room(day50), "a count-50 Day fill room with 15 seats is accepted");
+        day_changed = day50;
+        day_changed["content_plan"]["packages"][0].erase("fill");
+        day_changed["content_plan"]["required_features"].erase(
+            std::find(day_changed["content_plan"]["required_features"].begin(),
+                      day_changed["content_plan"]["required_features"].end(), "track_fill_v1"));
+        day_changed["schema_version"] = day_changed["ctr_options"]["schema_version"] = 18;
+        refuse(day_changed, "without the fill a count-50 room must pick every spot");
+        // A BX3 track without AP spots seats its fallback boxes on its
+        // filled crates: Tribal Trials 1.0.0's nine, all seated.
+        std::ifstream tribal_input("tools/fixtures/content-plan/tribal-weapon-fill.json");
+        const J tribal = J::parse(tribal_input);
+        const bool tribal_loaded = parse(tribal) && bind_room(tribal);
+        expect(tribal_loaded, "the opted-in client accepts the Tribal Trials fallback fill room");
+        const ctr_content_pad *tribal_pad = nullptr;
+        for (int physical = 0; tribal_loaded && physical < 105 && !tribal_pad; ++physical) {
+            const auto *pad = ap_content_plan_pad(physical);
+            if (pad && pad->occupied && pad->package_index == 0) tribal_pad = pad;
+        }
+        expect(tribal_pad && tribal_pad->box_count == 9 && tribal_pad->box_crates == 9 && !tribal_pad->box_spots,
+               "Tribal Trials seats nine fallback boxes on its nine filled crates");
+        const auto *tribal_sanity = tribal_loaded ? ap_content_plan_sanity("custom/tribal-trials/1.0.0") : nullptr;
+        expect(tribal_sanity && tribal_sanity->counts[0] == 9, "sanity counts Tribal Trials' filled crates");
         set_fill_switch(false);
+        refuse(day, "the default client refuses the Day weapon fill room");
     }
     {
         std::ifstream fixture("tools/fixtures/content-plan/oxide-pickups.jsonl");

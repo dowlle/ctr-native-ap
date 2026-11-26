@@ -1,0 +1,155 @@
+{
+  "counts": {
+    "fruit_crates": 0,
+    "grid": 0,
+    "letters": 0,
+    "loose_fruit": 0,
+    "time_crates": 0,
+    "weapon_crates": 12
+  },
+  "donors": [
+    {
+      "kind": "similar>=0.95",
+      "lev_sha256": "0c74562b10dc0566ff4f00be4ea25bcf008ae60ec791ae90214a904276cebd86",
+      "overlap": 96556,
+      "road_sha256": "a0d2a4670e11c09806d98af4d5c2a69b84fb4b1854f719dae727be2f6354e6a5"
+    }
+  ],
+  "families": {
+    "fruit_crates": [],
+    "grid": null,
+    "letters": {},
+    "loose_fruit": [],
+    "time_crates": [],
+    "weapon_crates": [
+      {
+        "pos": [
+          -4286,
+          216,
+          -2740
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": 1265
+      },
+      {
+        "pos": [
+          -4522,
+          205,
+          -2645
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": 1265
+      },
+      {
+        "pos": [
+          -4758,
+          205,
+          -2551
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": 1265
+      },
+      {
+        "pos": [
+          -4994,
+          219,
+          -2456
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": 1265
+      },
+      {
+        "pos": [
+          103,
+          -376,
+          -12938
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": -160
+      },
+      {
+        "pos": [
+          164,
+          -309,
+          -13175
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": -160
+      },
+      {
+        "pos": [
+          226,
+          -212,
+          -13413
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": -160
+      },
+      {
+        "pos": [
+          287,
+          -88,
+          -13650
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": -160
+      },
+      {
+        "pos": [
+          5695,
+          -200,
+          -3348
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": 1798
+      },
+      {
+        "pos": [
+          5600,
+          -207,
+          -3111
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": 1798
+      },
+      {
+        "pos": [
+          5504,
+          -209,
+          -2873
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": 1798
+      },
+      {
+        "pos": [
+          5408,
+          -207,
+          -2626
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot_y": 1798
+      }
+    ]
+  },
+  "fill_sha256": "7d657fa92c8a8734eb53701c3cae4d7f918dd207078b5b90b7acbd4ba1998c71",
+  "generator": {
+    "name": "ctr-track-fill",
+    "version": 1
+  },
+  "lev_sha256": "eddcd303e316e8eb41f885e8ec959a2c2d3db06e21727dfc50c61ab8a8048139",
+  "relic_targets": null,
+  "schema": 1
+}
