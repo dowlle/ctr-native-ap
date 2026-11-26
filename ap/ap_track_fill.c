@@ -176,7 +176,7 @@ int AP_TrackFillPrepare(void)
 	    size == AP_FILL_VRM_BYTES &&
 	    AP_TrialDigest(vrm, size, "a9509de1b16083da24a0e9b90a28511ba668a1d83677bb1e2868508e0678f84a") &&
 	    AP_TrackFillDecodeTextures(vrm, size, pixels))
-		texture = NativeRenderer_CreateRGBATexture(AP_FILL_TEXTURE_W, AP_FILL_TEXTURE_H, pixels);
+		texture = NativeRenderer_CreateRGBATextureChecked(AP_FILL_TEXTURE_W, AP_FILL_TEXTURE_H, pixels);
 	free(vrm);
 	free(pixels);
 	if (!texture)
@@ -204,18 +204,6 @@ refused:
 	return 0;
 }
 
-int AP_TrackFillRebaseAssetPointer(u32 saved, u32 imageDelta, u32 *rebased)
-{
-	if (!apFillAssetState || saved == 0xffffffffu || saved == 0xfffffffeu)
-		return 0;
-	const u32 address = saved + imageDelta;
-	const u32 start = (u32)(uintptr_t)apFillRetailLev;
-	if (address - start >= AP_FILL_LEV_BYTES)
-		return 0;
-	*rebased = address;
-	return 1;
-}
-
 static const ctr_content_package *AP_TrackFillRace(const struct GameTracker *g)
 {
 	if (g->numPlyrCurrGame != 1 || !(g->gameMode1 & RELIC_RACE))
@@ -231,6 +219,11 @@ static const ctr_content_package *AP_TrackFillRace(const struct GameTracker *g)
 	const ctr_content_pad *pad = ap_content_plan_pad(context->physicalPad);
 	const ctr_content_package *pkg = pad ? ap_content_plan_package(pad->package_index) : NULL;
 	return pkg && pkg->fill_crate_count && !strcmp(context->levSha256, pkg->lev_sha256) ? pkg : NULL;
+}
+
+int AP_TrackFillRaceActive(const struct GameTracker *g)
+{
+	return g && AP_TrackFillRace(g) != NULL;
 }
 
 void AP_TrackFillRegister(struct GameTracker *g)
@@ -285,7 +278,7 @@ int AP_TrackFillFailed(const struct GameTracker *g)
 
 void AP_TrackFillAfterCheckpointRestore(struct GameTracker *g)
 {
-	if (g && AP_TrackFillRace(g) && !(g->gameMode1 & END_OF_RACE))
+	if (AP_TrackFillRaceActive(g) && !((g->gameMode1 & END_OF_RACE) && (g->gameModeEnd & NEW_RELIC)))
 		AP_RelicTargetRestore(g);
 }
 

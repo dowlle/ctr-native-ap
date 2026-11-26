@@ -483,13 +483,6 @@ internal int NativeCheckpoint_RelocateAddress(const struct NativeCheckpointHeade
 	oldRange = NativeCheckpoint_FindAddressOwner(oldHeader, oldAddress, &offset);
 	if (oldRange == NULL)
 	{
-#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-		// Model tables, instances and draw caches can name retail crate data
-		// outside the checkpoint regions. It is loaded in the live fill race.
-		if (oldHeader && liveHeader && oldHeader->codeAnchor && liveHeader->codeAnchor &&
-		    AP_TrackFillRebaseAssetPointer(oldAddress, liveHeader->codeAnchor - oldHeader->codeAnchor, newAddressOut))
-			return 1;
-#endif
 		return 0;
 	}
 
@@ -2406,6 +2399,13 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	{
 		return 0;
 	}
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	if (header->codeAnchor != liveHeader.codeAnchor && AP_TrackFillRaceActive(sdata->gGT))
+	{
+		Platform_Log("[CTR State] restore refused: a fill race requires its original client session\n");
+		return 0;
+	}
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
 	s_nativeCheckpointCustomRefusalFrames = 0;
 	if (!NativeCheckpoint_CustomIdentityAllows(header, bytes))

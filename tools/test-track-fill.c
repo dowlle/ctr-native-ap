@@ -106,7 +106,7 @@ void LOAD_RunPtrMap(char *body, int *slots, int count)
 	for (int i = 0; i < count; ++i)
 		*(u32 *)(body + (slots[i] & ~3)) += (uintptr_t)body;
 }
-TextureID NativeRenderer_CreateRGBATexture(int w, int h, u8 *rgba)
+TextureID NativeRenderer_CreateRGBATextureChecked(int w, int h, u8 *rgba)
 {
 	assert(w == 256 && h == 128 && rgba[3] == 255);
 	static int attempts;
@@ -150,11 +150,6 @@ int main(void)
 				for (int i = 0; i < (header ? 2 : 20); ++i)
 					assert((apFillCrateModels[model]->headers[header].ptrTexLayout[i]->tpage &
 					        AP_TPAGE_SIDELOAD_MASK) == AP_TPAGE_TIME_CRATE_BITS);
-		const u32 delta = 0x800000;
-		const u32 model = (u32)(uintptr_t)apFillCrateModels[0];
-		u32 rebased;
-		assert(AP_TrackFillRebaseAssetPointer(model - delta, delta, &rebased) && rebased == model);
-		assert(!AP_TrackFillRebaseAssetPointer(model, delta, &rebased));
 		puts("PASS: pinned retail texture and model import");
 	} else {
 		models[0].id = STATIC_TIME_CRATE_01;

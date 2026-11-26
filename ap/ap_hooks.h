@@ -89,7 +89,7 @@ void AP_ArcadeCrystals_Spawn(struct GameTracker *g);
 void AP_ArcadeCrystals_OnFrame(struct GameTracker *g);
 #ifdef CTR_CUSTOM_TRACKS
 int AP_TrackFillPrepare(void);
-int AP_TrackFillRebaseAssetPointer(u32 saved, u32 imageDelta, u32 *rebased);
+int AP_TrackFillRaceActive(const struct GameTracker *g);
 void AP_TrackFillRegister(struct GameTracker *g);
 void AP_TrackFillSpawn(struct GameTracker *g);
 void AP_TrackFillOnFrame(struct GameTracker *g);

@@ -77,6 +77,9 @@ static int lookRebinds;
 void AP_LooksRebindDrivers(void) { lookRebinds++; }
 static int ghostLook;
 int AP_LooksGhostWearsLook(void) { return ghostLook; }
+static int fillActive;
+int AP_TrackFillRaceActive(const struct GameTracker *g) { return g == &tracker && fillActive; }
+double Platform_PerfNowMs(void) { return 742.0; }
 
 static void save(void)
 {
@@ -251,6 +254,15 @@ int main(void)
 	denyOfflinePackage = 1;
 	loadExpect("STATE NOT LOADED: OTHER TRACK");
 	denyOfflinePackage = 0;
+	tracker.gameMode1 = RELIC_RACE;
+	fillActive = 1;
+	save();
+	loadExpect(NULL);
+	s_quickFillSession += 2; // Another process opened the same filled race.
+	loadExpect("STATE NOT LOADED: OTHER SESSION");
+	save();
+	loadExpect(NULL);
+	fillActive = 0;
 
 	assert(NativeCheckpointFile_WriteSingle(NATIVE_SAVESTATE_QUICK_PATH, &oldCheckpoint,
 	                                        sizeof oldCheckpoint, 0, 0));

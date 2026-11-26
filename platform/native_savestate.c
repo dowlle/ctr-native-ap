@@ -14,6 +14,14 @@
 #ifdef CTR_AP
 #include "../ap/ap_content_plan.h"
 #include "../ap/ap_looks.h"
+#ifdef CTR_CUSTOM_TRACKS
+#include "../ap/ap_hooks.h"
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
+#endif
 #endif
 
 #include <errno.h>
@@ -47,7 +55,7 @@ struct NativeSaveStateRaceIdentity
 	s32 timeLimitTicks;
 	char entryID[65], trackID[65], revision[65];
 	char levSha256[65], vrmSha256[65];
-	char reserved[7];
+	char fillSession[7]; // zero for races without fill, preserving their file identity
 };
 CTR_STATIC_ASSERT(sizeof(struct NativeSaveStateRaceIdentity) == 416);
 
@@ -58,6 +66,26 @@ global_variable int s_quickPayloadSize;
 global_variable int s_quickRefusalFrames;
 global_variable char *s_quickRefusal;
 global_variable uint64_t s_quickBossRoomIdentity;
+
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+global_variable uint64_t s_quickFillSession;
+double Platform_PerfNowMs(void);
+
+internal void NativeSaveState_SetFillSession(struct NativeSaveStateRaceIdentity *id)
+{
+	if (!s_quickFillSession)
+	{
+#if defined(_WIN32)
+		const unsigned process = _getpid();
+#else
+		const unsigned process = getpid();
+#endif
+		const uint64_t micros = (uint64_t)(Platform_PerfNowMs() * 1000.0);
+		s_quickFillSession = (micros ^ ((uint64_t)process << 32)) | 1u;
+	}
+	memcpy(id->fillSession, &s_quickFillSession, sizeof id->fillSession);
+}
+#endif
 
 void NativeSaveState_BeginLevelLoad(void)
 {
@@ -131,6 +159,10 @@ internal int NativeSaveState_SnapshotIdentity(struct NativeSaveStateRaceIdentity
 			memcpy(id->vrmSha256, resident->vrmSha256, sizeof id->vrmSha256);
 		}
 	}
+#endif
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	if (AP_TrackFillRaceActive(gt))
+		NativeSaveState_SetFillSession(id);
 #endif
 	return 1;
 }
@@ -297,6 +329,10 @@ internal s32 NativeSaveState_LoadQuick(void)
 	memcpy(&saved, s_quickPayload + checkpointSize, sizeof saved);
 	if (saved.magic != NATIVE_SAVESTATE_RACE_MAGIC)
 		return NativeSaveState_Refuse("STATE NOT LOADED: UNREADABLE", "quick state has no recognized race identity");
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	if (AP_TrackFillRaceActive(sdata->gGT) && memcmp(saved.fillSession, live.fillSession, sizeof live.fillSession) != 0)
+		return NativeSaveState_Refuse("STATE NOT LOADED: OTHER SESSION", "a fill race requires its original client session");
+#endif
 	if (memcmp(&saved, &live, sizeof saved) != 0)
 		return NativeSaveState_Refuse("STATE NOT LOADED: OTHER RACE", "quick state belongs to a different race");
 

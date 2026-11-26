@@ -52,6 +52,7 @@ static char s_arcadeQuery[CTR_LIBRARY_QUERY_MAX + 1], s_arcadeQueryBackup[CTR_LI
 static int s_arcadePrepareBusy;
 static int s_arcadeConfirm;
 static int s_arcadePrepareMode;
+static char s_arcadeRelicVersion[24];
 static int s_arcadeMotion, s_arcadeMotionDirection;
 static struct CustomOfflineRequest *s_arcadeRequest;
 static char s_arcadeMessage[512];
@@ -75,15 +76,30 @@ static int MM_CustomTrackSelect_Enabled(void)
     return MM_CustomTrackSelect_Mode() != 0;
 }
 
-static int MM_CustomTrackSelect_RelicAvailable(const struct CustomTrackLibraryEntry *entry)
+static const struct CustomTrackLibraryEntry *MM_CustomTrackSelect_RelicRevision(const struct CustomTrackLibraryEntry *entry)
 {
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-    return entry && MM_CustomTrackSelect_Mode() == CTR_OFFLINE_MODE_ARCADE &&
-           CustomTrackLibrary_Admission(entry, 1) == CTR_ADMISSION_READY &&
-           ap_content_track_fill_available(entry->local.levSha256);
+    if (!entry || MM_CustomTrackSelect_Mode() != CTR_OFFLINE_MODE_ARCADE) return NULL;
+    const struct CustomTrackLibraryEntry *best = NULL;
+    if (CustomTrackLibrary_Admission(entry, 1) == CTR_ADMISSION_READY &&
+        ap_content_track_fill_available(entry->local.levSha256))
+        best = entry;
+    if (!entry->local.uuid[0]) return best;
+    for (size_t i = 0; i < s_contentLibrary.count; ++i)
+    {
+        const struct CustomTrackLibraryEntry *revision = &s_contentLibrary.entries[i];
+        if (strcmp(revision->local.uuid, entry->local.uuid) ||
+            CustomTrack_IsHiddenLev(revision->local.levSha256) ||
+            CustomTrackLibrary_Admission(revision, 1) != CTR_ADMISSION_READY ||
+            !ap_content_track_fill_available(revision->local.levSha256))
+            continue;
+        if (!best || CustomRevision_Compare(revision->version, best->version) > 0)
+            best = revision;
+    }
+    return best;
 #else
     (void)entry;
-    return 0;
+    return NULL;
 #endif
 }
 
@@ -100,7 +116,7 @@ static int MM_CustomTrackSelect_Eligible(const struct CustomTrackLibraryEntry *e
     {
         if (admission == CTR_ADMISSION_DISCOVERED)
             snprintf(why, whySize, "%s", entry->disabledReason[0] ? entry->disabledReason : "Not installed");
-        else if (MM_CustomTrackSelect_RelicAvailable(entry))
+        else if (MM_CustomTrackSelect_RelicRevision(entry))
             snprintf(why, whySize, "%s. Use Relic Race.", entry->local.arcadeReason);
         else if (!timeTrial && entry->local.timeTrial && MM_CUSTOM_TIME_TRIAL)
             snprintf(why, whySize, "%s. Use Time Trial.", entry->local.arcadeReason);
@@ -392,7 +408,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
             OtherFX_Play(2, 1);
         }
         entry = rows ? CustomTrackLibrary_Row(&s_arcadeLibrary, first + row) : NULL;
-        const int relic = (tapped & BTN_SQUARE) && MM_CustomTrackSelect_RelicAvailable(entry);
+        const struct CustomTrackLibraryEntry *relic = (tapped & BTN_SQUARE) ? MM_CustomTrackSelect_RelicRevision(entry) : NULL;
         if (entry && !MM_CustomLibrary_Busy() && (relic || (tapped & (BTN_CROSS_one | BTN_CIRCLE))))
         {
             char why[260];
@@ -405,7 +421,10 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
             else
             {
                 s_arcadePrepareMode = relic ? CTR_OFFLINE_MODE_RELIC : MM_CustomTrackSelect_Mode();
-                s_arcadePrepareBusy = CustomOffline_StartPrepare(NativeAssets_GetAssetDir(), entry->manifestSha256);
+                const struct CustomTrackLibraryEntry *chosen = relic ? relic : entry;
+                if (relic)
+                    snprintf(s_arcadeRelicVersion, sizeof s_arcadeRelicVersion, "%.20s", relic->version);
+                s_arcadePrepareBusy = CustomOffline_StartPrepare(NativeAssets_GetAssetDir(), chosen->manifestSha256);
                 snprintf(s_arcadeMessage, sizeof s_arcadeMessage, "%s", s_arcadePrepareBusy ?
                     "Checking selected track..." : "Could not prepare this revision.");
             }
@@ -459,7 +478,9 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
         /* 174 pixels hold 13 small glyphs: title, version, author, measured
            facts, then three lines for the state or the start prompt. */
         const char *note = AP_CustomOfflineRoomNote();
-        snprintf(line, sizeof line, "v%.20s", entry->version);
+        const char *version = s_arcadeConfirm && s_arcadePrepareMode == CTR_OFFLINE_MODE_RELIC ?
+            s_arcadeRelicVersion : entry->version;
+        snprintf(line, sizeof line, "v%.20s", version);
         DecalFont_DrawLineBox(entry->title, 309 + dx, 85 + dy, 174, FONT_SMALL,
             ORANGE, TEXT_MARQUEE, TEXT_SLOT_ARCADE_DETAIL, ot);
         MM_CustomTrackSelect_Text(line, 309 + dx, 98 + dy, 174, 1, WHITE, ot);
@@ -500,7 +521,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
             "Left/Right: Pages  Up/Down: Tracks", 256, 181, 464, 1, JUSTIFY_CENTER | WHITE, ot);
         if (!s_arcadeConfirm)
         {
-            MM_CustomText_Draw(NativeMenu_Labels(MM_CustomTrackSelect_RelicAvailable(entry) ?
+            MM_CustomText_Draw(NativeMenu_Labels(MM_CustomTrackSelect_RelicRevision(entry) ?
                 "*: Race  [: Relic Race  ^: Back" : "*: Select  ^: Characters"),
                 256, 194, 464, 1, JUSTIFY_CENTER | WHITE, ot);
             snprintf(line, sizeof line, "R2 Search: %s%s  L2 Rescan", s_arcadeQuery, s_arcadeSearching ? "_" : "");
