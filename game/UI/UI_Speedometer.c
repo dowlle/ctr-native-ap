@@ -245,12 +245,19 @@ void UI_DrawSpeedBG(void)
 // AP HUD: numeric speed readout. Shows FP8_INT(speedometerNeedleValue) -- the
 // same smoothed value the analog needle uses, so the number does not jitter
 // frame to frame. Turns green above const_AccelSpeed_ClassStat (over class top
-// speed, i.e. on fire / USF -- the state racers actually watch for). posX is the
-// right edge of the number (see ap_hud_layout.h). Unlike the
-// vanilla Triangle-toggle needle it never evicts the minimap: it is drawn near
-// the boost bar and coexists with the map.
-void UI_DrawSpeedNum(s16 posX, s16 posY, struct Driver *driver)
+// speed, i.e. on fire / USF -- the state racers actually watch for).
+void UI_DrawSpeedNum(s16 boostX, s16 boostY, struct Driver *driver)
 {
+	// Triangle switches between the analog needle and the minimap with digits.
+	if (sdata->HudAndDebugFlags & 8)
+		return;
+
+	// Use the lower-left side of the meters. Leave space for minimap sprites
+	// that extend below the map texture, including on wide custom minimaps.
+	// At the 1P anchor this puts the right edge at x=354 and the 17-row line
+	// at y=198..214 within the 512x216 draw area.
+	const int rightX = boostX - 136;
+	const int topY = boostY - 8;
 	char string[8];
 
 	int speed = FP8_INT(driver->speedometerNeedleValue);
@@ -266,6 +273,6 @@ void UI_DrawSpeedNum(s16 posX, s16 posY, struct Driver *driver)
 	}
 
 	sprintf(&string[0], "%d", speed);
-	DecalFont_DrawLine(&string[0], posX, posY, FONT_BIG, color | JUSTIFY_RIGHT);
+	DecalFont_DrawLine(string, rightX, topY, FONT_BIG, color | JUSTIFY_RIGHT);
 }
 #endif

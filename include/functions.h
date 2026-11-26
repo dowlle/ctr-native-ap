@@ -726,7 +726,7 @@ void UI_JumpMeter_Update(struct Driver *d);
 void UI_DrawSlideMeter(s16 posX, s16 posY, struct Driver *driver);
 #ifdef CTR_AP
 void UI_DrawReservesMeter(s16 posX, s16 posY, struct Driver *driver);
-void UI_DrawSpeedNum(s16 posX, s16 posY, struct Driver *driver);
+void UI_DrawSpeedNum(s16 boostX, s16 boostY, struct Driver *driver);
 #endif
 u32 UI_VsQuipReadDriver(struct Driver *driver, int offset, int size);
 void UI_VsQuipAssign(struct Driver *driver, struct QuipMeta *meta, struct Driver *bestDriver, int characterID);

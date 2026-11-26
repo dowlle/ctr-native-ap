@@ -1,5 +1,4 @@
 #include <common.h>
-#include "../../ap/ap_hud_layout.h" // VF2 speed readout placement
 
 // To do: add a header
 
@@ -197,18 +196,14 @@ void UI_RenderFrame_Racing()
 					UI_DrawSlideMeter(hudStructPtr[8].x + offset, hudStructPtr[8].y, playerStruct);
 
 #ifdef CTR_AP
-					// AP HUD: reserves bar 5px under the boost bar, plus a numeric
-					// speed readout below it (1P only). Sits inside the
+					// AP HUD: reserves bar under the boost bar, with a numeric
+					// speed readout to their left (1P only). Sits inside the
 					// not-finished / not-battle gate so it inherits the boost
 					// bar's visibility (hidden after the finish line and in battle).
 					if (ctr_cfg_active() && numPlyr == 1)
 					{
 						UI_DrawReservesMeter(hudStructPtr[8].x + offset, hudStructPtr[8].y + 5, playerStruct);
-						// The readout sits left of the bars, inside the 216 row draw
-						// area. Under the bars it was clipped away. The analog needle
-						// occupies that space, so the number shows without it.
-						if ((sdata->HudAndDebugFlags & 8) == 0)
-							UI_DrawSpeedNum(AP_HudSpeedNumRightX(hudStructPtr[8].x + offset), AP_HudSpeedNumY(hudStructPtr[8].y), playerStruct);
+						UI_DrawSpeedNum(hudStructPtr[8].x + offset, hudStructPtr[8].y, playerStruct);
 					}
 #endif
 				}
