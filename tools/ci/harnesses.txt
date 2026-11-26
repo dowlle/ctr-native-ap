@@ -206,6 +206,7 @@ tools/test-tracker-boss-node.c
 tools/test-tracker-markers.c
 tools/test-tracker-progress.c
 tools/test-tracker-checks.c
+tools/test-tracker-card-focus.c
 tools/test-tracker-node-logic.cpp
 cmd tracker-received-keys :: python3 tools/ci/tracker-received.py keys
 cmd tracker-received-second-stage :: python3 tools/ci/tracker-received.py second-stage
