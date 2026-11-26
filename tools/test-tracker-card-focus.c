@@ -61,6 +61,29 @@ static void check_room_hub(const char *const *titles, const int *order)
 		}
 }
 
+static void check_other_hubs(void)
+{
+	/* In both rooms Glacier Park and Citadel City have three cards per
+	 * column, and Gem Stone Valley has four. Use interleaved storage order. */
+	for (int room = 0; room < 2; room++)
+		for (int hub = 0; hub < 3; hub++) {
+			const int rows = hub == 0 ? 4 : 3;
+			AP_TrackerCardPosition cards[8];
+			const int left = room, right = 1 - room;
+			for (int row = 0; row < rows; row++) {
+				cards[2 * row + left] = (AP_TrackerCardPosition){0, row};
+				cards[2 * row + right] = (AP_TrackerCardPosition){1, row};
+			}
+			assert(AP_TrackerCardAt(cards, 2 * rows, 0, 0) == left);
+			for (int card = 0; card < 2 * rows; card++) {
+				check_move(cards, 2 * rows, card, UP, card < 2 ? card : card - 2);
+				check_move(cards, 2 * rows, card, DOWN, card / 2 == rows - 1 ? card : card + 2);
+				check_move(cards, 2 * rows, card, LEFT, 2 * (card / 2) + left);
+				check_move(cards, 2 * rows, card, RIGHT, 2 * (card / 2) + right);
+			}
+		}
+}
+
 int main(void)
 {
 	/* Pad storage order from TR7's original cursor laps, then permuted. */
@@ -70,6 +93,7 @@ int main(void)
 		check_room_hub(roomCards[roomHub], orders[roomHub % 2]);
 		check_room_hub(roomCards[roomHub], permuted);
 	}
+	check_other_hubs();
 
 	/* One fewer card in the right column. The left bottom card must
 	 * not jump diagonally and the right bottom card must stop at row 2. */
@@ -81,6 +105,6 @@ int main(void)
 		check_move(NULL, 0, 0, direction, 0);
 	}
 	assert(AP_TrackerCardAt(NULL, 0, 0, 0) == -1);
-	puts("tracker card focus: 203 direction checks passed");
+	puts("tracker card focus: 363 direction checks passed");
 	return 0;
 }
