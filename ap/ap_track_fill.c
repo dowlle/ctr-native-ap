@@ -608,10 +608,10 @@ static int AP_TrackFillWeaponHitboxes(const struct BoundingBox *search)
 		const ctr_content_fill_weapon *crate = &pkg->fill_weapons[row];
 		struct InstDef *def = &apFillWeaponDefs[row];
 		struct BSP *hit = &apFillWeaponHitboxes[row];
-		int near = 1;
-		for (int axis = 0; axis < 3 && near; ++axis)
-			near = crate->pos[axis] - reach <= search->max.v[axis] && search->min.v[axis] <= crate->pos[axis] + reach;
-		struct Instance *inst = near ? AP_TrackFillWeaponInstance(g, crate) : NULL;
+		int inReach = 1;
+		for (int axis = 0; axis < 3 && inReach; ++axis)
+			inReach = crate->pos[axis] - reach <= search->max.v[axis] && search->min.v[axis] <= crate->pos[axis] + reach;
+		struct Instance *inst = inReach ? AP_TrackFillWeaponInstance(g, crate) : NULL;
 		memset(hit, 0, sizeof *hit);
 		if (!inst)
 		{
