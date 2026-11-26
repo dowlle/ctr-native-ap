@@ -141,7 +141,7 @@ static void digit_pass(struct WarpPad *wp)
 {
 	// This fixture only feeds live digits. The digits production harness
 	// exercises the engine's pool membership check itself.
-#define AH_WarpPad_LiveInstances(thread, live) memcpy(live, wp->inst, sizeof(live))
+#define AH_WarpPad_LiveInstances(thread, live, hideRejected) memcpy(live, wp->inst, sizeof(live))
 	for (; wp; wp = NULL)
 	{
 		struct Instance *inst;

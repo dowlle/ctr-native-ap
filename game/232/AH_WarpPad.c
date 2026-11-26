@@ -276,9 +276,17 @@ static int AH_WarpPad_PhysOf(struct Thread *t)
 	return levelID;
 }
 
+static void AH_WarpPad_RecordChildSlots(struct WarpPad *wp)
+{
+	wp->childSlots = 0;
+	for (int i = 0; i < WPIS_NUM_INSTANCES; i++)
+		if (wp->inst[i] != NULL)
+			wp->childSlots |= 1u << i;
+}
+
 // Compare against the taken list before dereferencing a cached child. A
 // recycled slot can still have its old thread pointer while on the free list.
-static int AH_WarpPad_LiveInstances(struct Thread *t, struct Instance **live)
+static int AH_WarpPad_LiveInstances(struct Thread *t, struct Instance **live, int hideRejected)
 {
 	static const char *const names[WPIS_NUM_INSTANCES] = {
 		"reqObj", "x", "warpnum", "warpnum", "beam",
@@ -287,6 +295,7 @@ static int AH_WarpPad_LiveInstances(struct Thread *t, struct Instance **live)
 	const struct WarpPad *wp = t->object;
 	const struct JitPool *pool = &sdata->gGT->JitPools.instance;
 	struct Instance *inst;
+	unsigned slots = 0;
 	int i, valid = 1, hasFilter = 0;
 
 	for (i = 0; i < WPIS_NUM_INSTANCES; i++)
@@ -315,20 +324,29 @@ static int AH_WarpPad_LiveInstances(struct Thread *t, struct Instance **live)
 				slot = i;
 			}
 		}
+		if (slot == WPIS_CLOSED_1S || slot == WPIS_CLOSED_10S)
+		{
+			int digit = slot == WPIS_CLOSED_1S ? wp->digit1s : wp->digit10s;
+			if (inst->model == NULL || inst->model->id != ap_warppad_digit_model(digit))
+				slot = -1;
+		}
 		if (slot < 0 || strncmp(inst->name, names[slot], strlen(names[slot])) != 0)
+		{
 			valid = 0;
+			if (hideRejected)
+				inst->flags |= HIDE_MODEL;
+		}
 		else
+		{
 			live[slot] = inst;
+			slots |= 1u << slot;
+		}
 	}
 
 	for (i = 0; i < WPIS_NUM_INSTANCES; i++)
 		if (wp->inst[i] != live[i])
 			return 0;
-	if (live[WPIS_CLOSED_1S] == NULL &&
-	    (live[WPIS_CLOSED_ITEM] != NULL || live[WPIS_CLOSED_10S] != NULL ||
-	     (t->modelIndex == 0 && live[WPIS_CLOSED_X] == NULL)))
-		return 0;
-	return valid && (!hasFilter || live[WPIS_OPEN_BEAM] != NULL);
+	return valid && slots == wp->childSlots && (!hasFilter || live[WPIS_OPEN_BEAM] != NULL);
 }
 
 static int AH_WarpPad_TryRebuild(struct Thread *t)
@@ -348,6 +366,7 @@ static int AH_WarpPad_TryRebuild(struct Thread *t)
 
 	AH_WarpPad_ThDestroy(t);
 	AH_WarpPad_BuildInstances(t);
+	AH_WarpPad_RecordChildSlots(t->object);
 	return 1;
 }
 #endif
@@ -379,7 +398,7 @@ void AH_WarpPad_AllWarppadNum()
 
 			if (wp->inst[WPIS_CLOSED_1S] == NULL && wp->inst[WPIS_CLOSED_10S] == NULL)
 				continue;
-			AH_WarpPad_LiveInstances(t, live);
+			AH_WarpPad_LiveInstances(t, live, 0);
 
 			inst = live[WPIS_CLOSED_1S];
 			if ((inst != 0) && (inst->model != 0) && (inst->model->id == AP_WARPPAD_DIGIT_MODEL_1TO8))
@@ -605,7 +624,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	visInstSrc = gGT->cameraDC[0].visInstSrc;
 
 #ifdef CTR_AP
-	if (!AH_WarpPad_LiveInstances(t, live))
+	if (!AH_WarpPad_LiveInstances(t, live, warppadObj->boolEnteredWarppad))
 	{
 		if (!warppadObj->boolEnteredWarppad)
 		{
@@ -2237,6 +2256,7 @@ void AH_WarpPad_ThDestroy(struct Thread *t)
 		inst = next;
 	}
 	memset(wp->inst, 0, sizeof(wp->inst));
+	wp->childSlots = 0;
 #else
 	int i;
 	struct Instance **instArr;
@@ -2534,6 +2554,9 @@ void AH_WarpPad_LInB(struct Instance *inst)
 	t->funcThDestroy = AH_WarpPad_ThDestroy;
 
 	AH_WarpPad_BuildInstances(t);
+#ifdef CTR_AP
+	AH_WarpPad_RecordChildSlots(t->object);
+#endif
 }
 
 // Build (or REBUILD) all of a warp pad's child instances for its CURRENT state.
