@@ -268,6 +268,27 @@ int main(void) {
     expect(insts[crate_index(3, n)].flags == 0x100 && !s_live[3].seated, "after a pool reset the old crate is not written");
     g_gen--;
 
+    /* BP1: an authored fallback replacement still uses the room's existing
+       Item Box code and leaves its original weapon crate live. */
+    for (int mode = AP_CONTENT_MODE_TROPHY; mode <= AP_CONTENT_MODE_RELIC; ++mode) {
+        n = table(19); reset(19, 15);
+        race.mode = mode;
+        g_pad.box_seat_spots = 1u << 3;
+        g_pad.box_pos[3][0] = -12314;
+        g_pad.box_pos[3][1] = 1551;
+        g_pad.box_pos[3][2] = -7345;
+        g_pad.box_rot_y[3] = 512;
+        AP_BoxesSeatCustom(&gGT, &race);
+        expect(s_liveCount == 15 && s_live[3].code == 35201623 && g_spawned[3] == 1,
+               "authored fallback keeps its Item Box code and spawns once");
+        expect(s_live[3].x == -12314 && s_live[3].y == 1551 && s_live[3].z == -7345 && s_live[3].rotY == 512 &&
+               !s_live[3].seated && !s_live[3].seatInst, "authored fallback uses the room's coordinates");
+        expect(insts[crate_index(3, n)].flags == (0x7u | 0x100u), "the original weapon crate keeps all its bits");
+        expect(s_live[2].seated && s_live[2].seatInst == &insts[crate_index(2, n)],
+               "a neighboring fallback still takes its original crate seat");
+    }
+    race.mode = AP_CONTENT_MODE_TROPHY;
+
     /* 2. A checked box and a box the room lacks stand nothing; their crates stay. */
     n = table(8); reset(8, 8);
     g_checked[g_checks++] = 35201621;

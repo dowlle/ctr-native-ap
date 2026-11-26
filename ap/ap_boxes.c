@@ -792,9 +792,10 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 			AP_BoxesSpawnOne(gGT, i);
 
 	snprintf(msg, sizeof msg,
-	         "[AP BOX] level %d: custom track on pad %d, %d of %d fallback Item Box(es) standing "
+	         "[AP BOX] level %d: custom track on pad %d, %d of %d Item Box(es) standing %s "
 	         "(%ld crates)\n",
-	         s_level, race->physicalPad, s_liveCount, seats, crates);
+	         s_level, race->physicalPad, s_liveCount, seats,
+	         pad->box_seat_spots ? "at crate seats and authored spots" : "on its weapon crates", crates);
 	AP_LogLine(msg);
 	free(synth);
 }
