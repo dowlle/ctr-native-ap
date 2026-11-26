@@ -582,19 +582,29 @@ refused:
 // leaf tests then run over those hitboxes after every search of the level's
 // BSP, so every breaker reaches RB_CrateWeapon_LInC through its own retail
 // path, with the retail hitbox size.
-static int AP_TrackFillWeaponHitboxes(void)
+// The hitboxes of the filled crates whose reach overlaps `search`. The crate
+// rows are static, so a search far from every crate costs one box test per
+// row; only a near crate is looked up in the instance pool, every search, so
+// no pointer outlives a quick load, a restart or a crate's death.
+static int AP_TrackFillWeaponHitboxes(const struct BoundingBox *search)
 {
 	struct GameTracker *g = sdata->gGT;
-	if (apFillAssetState != 1 || !apFillWeaponHitboxReady || !g || sdata->Loading.stage != LOAD_IDLE ||
-	    !AP_TrackFillWeaponRace(g))
+	if (apFillAssetState != 1 || !apFillWeaponHitboxReady || !g || sdata->Loading.stage != LOAD_IDLE)
 		return 0;
+	const ctr_content_package *pkg = AP_TrackFillWeaponRace(g);
+	if (!pkg)
+		return 0;
+	const int radius = apFillWeaponHitboxTemplate.data.hitbox.radius;
+	const int reach = radius + apFillWeaponHitboxLift;
 	int count = 0;
-	// Rebuilt from the instance pool on every search, so no pointer outlives
-	// a quick load, a restart or a crate's death.
-	for (struct Instance *inst = (struct Instance *)g->JitPools.instance.taken.first;
-	     inst && count < AP_CONTENT_MAX_FILL_WEAPONS; inst = inst->next)
+	for (int row = 0; row < pkg->fill_weapon_count && count < AP_CONTENT_MAX_FILL_WEAPONS; ++row)
 	{
-		if (!AP_TrackFillIsWeapon(inst))
+		const ctr_content_fill_weapon *crate = &pkg->fill_weapons[row];
+		int near = 1;
+		for (int axis = 0; axis < 3 && near; ++axis)
+			near = crate->pos[axis] - reach <= search->max.v[axis] && search->min.v[axis] <= crate->pos[axis] + reach;
+		struct Instance *inst = near ? AP_TrackFillWeaponInstance(g, crate) : NULL;
+		if (!inst)
 			continue;
 		struct InstDef *def = &apFillWeaponDefs[count];
 		struct BSP *hit = &apFillWeaponHitboxes[count];
@@ -604,10 +614,10 @@ static int AP_TrackFillWeaponHitboxes(void)
 		def->ptrInstance = inst;
 		def->modelID = PU_RANDOM_CRATE;
 		*hit = apFillWeaponHitboxTemplate;
-		const int radius = apFillWeaponHitboxTemplate.data.hitbox.radius;
 		for (int axis = 0; axis < 3; ++axis)
 		{
-			// The centre follows the crate's up axis, as on a tilted retail crate.
+			// The centre follows the crate's up axis, as on a tilted retail
+			// crate (within a unit of the donor's rounding).
 			const int pos = inst->matrix.t[axis];
 			const int center = pos + CTR_MipsSra(inst->matrix.m[axis][1] * apFillWeaponHitboxLift, 12);
 			def->pos.v[axis] = AP_TrackFillBound(pos);
@@ -631,9 +641,19 @@ void AP_TrackFillWeaponSearch(const struct BSP *root, void (*callback)(struct BS
 	const int instanceTest = callback == COLL_FIXED_BSPLEAF_TestInstance ||
 	    ((callback == COLL_FIXED_BSPLEAF_TestQuadblocks || callback == COLL_MOVED_BSPLEAF_TestQuadblocks) &&
 	     (sps->Union.QuadBlockColl.searchFlags & COLL_SEARCH_TEST_INSTANCES));
-	if (!instanceTest && callback != PROC_PerBspLeaf_CheckInstances)
+	// The thread-bucket search takes level hitboxes only through the burst
+	// callback (rockets and bombs exploding); TNT and Nitro hand that search a
+	// thread callback, and the potion's Teeth search ignores crates.
+	const int burst = callback == PROC_PerBspLeaf_CheckInstances &&
+	    sps->Union.ThBuckColl.funcCallback == RB_Burst_CollLevInst;
+	if (!instanceTest && !burst)
 		return;
-	if (!AP_TrackFillWeaponHitboxes())
+	// A level hitbox this search already touched keeps its claim: the filled
+	// crates are tested after every real leaf, so they never replace a door or
+	// another object the retail order would report (they meet the next probe).
+	if (instanceTest && sps->boolDidTouchHitbox)
+		return;
+	if (!AP_TrackFillWeaponHitboxes(instanceTest ? &sps->bbox : &sps->Union.ThBuckColl.bbox))
 		return;
 	memset(&apFillWeaponLeaf, 0, sizeof apFillWeaponLeaf);
 	apFillWeaponLeaf.flag = BSP_NODE_FLAG_LEAF;

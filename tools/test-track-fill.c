@@ -160,11 +160,21 @@ static struct mesh_info level_mesh;
 static struct Level level;
 
 // The filled crate's hitbox as one search sees it, or NULL.
+void RB_Burst_CollLevInst(struct ScratchpadStruct *sps, void *hit) { (void)sps; (void)hit; }
+void RB_Burst_CollThBucket(struct ScratchpadStruct *sps, void *hit) { (void)sps; (void)hit; }
+static const struct BoundingBox everywhere = {.min = {{-32768, -32768, -32768}}, .max = {{32767, 32767, 32767}}};
+
 static struct BSP *weapon_hitbox(const struct Instance *inst, CollBspLeafCallback callback, int searchFlags, int kind)
 {
 	struct ScratchpadStruct sps;
 	memset(&sps, 0, sizeof sps);
-	sps.Union.QuadBlockColl.searchFlags = searchFlags;
+	if (callback == PROC_PerBspLeaf_CheckInstances) {
+		sps.Union.ThBuckColl.funcCallback = RB_Burst_CollLevInst;
+		sps.Union.ThBuckColl.bbox = everywhere;
+	} else {
+		sps.Union.QuadBlockColl.searchFlags = searchFlags;
+		sps.bbox = everywhere;
+	}
 	captured_leaf = NULL;
 	captured_kind = 0;
 	AP_TrackFillWeaponSearch(level_bsp, callback, &sps);
@@ -365,6 +375,31 @@ int main(void)
 			captured_leaf = NULL;
 			AP_TrackFillWeaponSearch(&level_bsp[1], COLL_FIXED_BSPLEAF_TestInstance, &other);
 			assert(!captured_leaf); // another BSP (a cutscene, a menu) is not touched
+		}
+		{
+			struct ScratchpadStruct probe;
+			memset(&probe, 0, sizeof probe);
+			// A search away from every crate gets no hitbox.
+			probe.bbox = (struct BoundingBox){.min = {{-9000, -100, -100}}, .max = {{-8000, 100, 100}}};
+			captured_leaf = NULL;
+			AP_TrackFillWeaponSearch(level_bsp, COLL_FIXED_BSPLEAF_TestInstance, &probe);
+			assert(!captured_leaf);
+			// One that reaches crate 0 only gets crate 0.
+			probe.bbox = (struct BoundingBox){.min = {{4950, 0, -10}}, .max = {{5050, 20, 10}}};
+			AP_TrackFillWeaponSearch(level_bsp, COLL_FIXED_BSPLEAF_TestInstance, &probe);
+			assert(captured_leaf && captured_leaf->data.leaf.bspHitboxArray[0].data.hitbox.instDef->ptrInstance == &instances[0] &&
+			       !captured_leaf->data.leaf.bspHitboxArray[1].flag);
+			// A level hitbox the search already touched keeps its claim.
+			probe.boolDidTouchHitbox = 1;
+			captured_leaf = NULL;
+			AP_TrackFillWeaponSearch(level_bsp, COLL_FIXED_BSPLEAF_TestInstance, &probe);
+			assert(!captured_leaf);
+			// TNT and Nitro blasts hand the bucket search a thread callback.
+			memset(&probe, 0, sizeof probe);
+			probe.Union.ThBuckColl.funcCallback = RB_Burst_CollThBucket;
+			probe.Union.ThBuckColl.bbox = everywhere;
+			AP_TrackFillWeaponSearch(level_bsp, PROC_PerBspLeaf_CheckInstances, &probe);
+			assert(!captured_leaf);
 		}
 		puts("PASS: filled crates join every instance search of the level BSP with the retail hitbox");
 		// A rocket breaks a crate and its shooter gets the weapon roll.

@@ -2866,6 +2866,12 @@ static void validate(const J &p, State &out) {
             if (pad.occupied && !pad.cup && r.pad == "pad:" + std::to_string(pad.physical) && r.package_index >= 0 &&
                 out.packages[r.package_index].weapon_crates == 0)
                 pad.fill_weapon_route = 1;
+    // Boss races and boss cups on a filled venue take its rank too
+    // (content_verify), also when the venue is raced nowhere else.
+    for (const auto &track : p.at("tracks"))
+        if (track.is_object() && track.value("origin", std::string()) == "custom" && track.contains("package_id") &&
+            package_index.count(track["package_id"].get<std::string>()))
+            fill_free_rank(track.at("id").get<std::string>(), package_index.at(track["package_id"].get<std::string>()));
     cup_hit_routes.erase(std::remove_if(cup_hit_routes.begin(), cup_hit_routes.end(),
                                         [&](const CupHitRoute &r) {
                                             // A leg track with no standalone pad has no seats.

@@ -726,14 +726,18 @@ static Model build() {
             // WF1b: a route through filled weapon crates needs the lowest rank
             // among those no AP box takes over (apworld
             // content_global_checks.route_crate_ranks), for the same racer.
-            if ((L.kind == HIT || L.kind == ITEMSANITY) && o.boost_mode && !R.boss) {
+            // A boss race takes its venue's rank, a boss cup its first leg's
+            // (the boss can be hit there before any leg is won).
+            if ((L.kind == HIT || L.kind == ITEMSANITY) && o.boost_mode) {
                 const J &entry = *entries.at(r["entry_id"].get<std::string>());
                 std::string tid;
                 if (mode == "cup") {
                     for (const auto &leg : entry.at("legs"))
                         if (leg.at("id") == r.at("leg_id")) tid = leg.at("track_id").get<std::string>();
-                } else if (entry.value("kind", std::string()) == "track") {
-                    tid = entry.at("track_id").get<std::string>();
+                } else if (mode == "boss_cup") {
+                    if (entry.contains("legs") && !entry["legs"].empty()) tid = entry["legs"][0].at("track_id").get<std::string>();
+                } else if (entry.contains("track_id") && entry["track_id"].is_string()) {
+                    tid = entry["track_id"].get<std::string>();
                 }
                 const auto rank = content_plan::state.fill_crate_rank.find(tid);
                 if (rank != content_plan::state.fill_crate_rank.end()) R.need = std::max(R.need, rank->second);
@@ -858,7 +862,10 @@ struct Sweep {
         if (m.itemsanity && !AP_VerifyHitMethodOwned(dense)) return false;
         // A boss can be hit on entering the race. Winning it independently
         // requires the venue's finish rank and the entire boss cup's gates.
-        for (const auto &r : L.routes) if (r.boss && region(r.region) && mask_gate(r.mask)) return true;
+        for (const auto &r : L.routes)
+            if (r.boss && region(r.region) && mask_gate(r.mask) &&
+                (!r.need || AP_VerifyCapabilityGate(&o, dense, -1, r.need, 0)))
+                return true;
         if (L.target >= kFirstGuest && ctr_cfg.hit.valid && ctr_cfg.hit.triggers[L.target - kFirstGuest].fallback_keys) {
             if (count(kKeyItem) < ctr_cfg.hit.triggers[L.target - kFirstGuest].fallback_keys) return false;
         } else if (!L.triggers.empty()) {
