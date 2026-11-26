@@ -47,6 +47,8 @@ joined = "\n".join(rendered)
 assert "ALWAYS JUMPING TRAP - ALIENGENIE" in joined
 assert "Track by Lockheart" in joined
 assert "Music by arbee" in joined
+assert "CUBIC CIRCUIT - MISTERM" in joined
+assert "CUBIC CIRCUIT MUSIC - BOXIC" in joined
 assert "~00" in joined and "~04" in joined
 
 (out_dir / "credits-roll.txt").write_text(joined + "\n", encoding="utf-8")

@@ -228,6 +228,17 @@ int main(int argc, char **argv)
 		CHECK(!std::strcmp(credit, "Track by PanchoPew and SecondAuthor / Music by Music Writer"));
 		CustomTrackCredit_Format(credit, sizeof credit, h('a').c_str(), h('f').c_str(), 121, "Unknown", "Example Pack");
 		CHECK(!std::strcmp(credit, "From Example Pack"));
+		// MM1b: a role this client does not know is skipped, never drops the entry or its other credits.
+		credited["tracks"][0]["credits"] = json::array({
+			{{"name", "MisterM"}, {"role", "track"}},
+			{{"name", "Some Tester"}, {"role", "playtest"}},
+			{{"name", "Boxic"}, {"role", "music"}},
+		});
+		serve(true, credited.dump());
+		CHECK(ap_track_registry_refresh(nullptr) == 1);
+		CHECK(wait_done(&source) == AP_TRACK_REGISTRY_DONE);
+		CustomTrackCredit_Format(credit, sizeof credit, h('a').c_str(), h('b').c_str(), 0, "Old name", nullptr);
+		CHECK(!std::strcmp(credit, "Track by MisterM / Music by Boxic"));
 		serve(true, v1);
 		CHECK(ap_track_registry_refresh(cache.c_str()) == 1);
 		CHECK(wait_done(&source) == AP_TRACK_REGISTRY_DONE);
