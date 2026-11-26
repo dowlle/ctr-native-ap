@@ -4,6 +4,7 @@
 #include "ap_tracker.h"
 #include "ap_tracker_assets.h"
 #include "ap_tracker_boss_node_logic.h"
+#include "ap_tracker_card_focus.h"
 #include "ap_tracker_progress.h"
 #include "ap_tracker_tabs.h"
 #include "ap_tracker_checks.h"
@@ -44,6 +45,7 @@ static struct {
 	AP_TrackerHubAsset hubs[AP_TRACKER_HUBS];
 	AP_TrackerSprite glyphs[2][96];
 	AP_TrackerNode nodes[AP_TRACKER_PADS + 1];
+	AP_TrackerCardPosition cards[AP_TRACKER_PADS + 1];
 	uint32_t *canvas;
 	int map_x, map_y, map_w, map_h;
 } ap_tracker;
@@ -519,7 +521,7 @@ static void AP_TrackerProject(int kind, int wx, int wz, int *x, int *y)
 	*x = ap_tracker.map_x + AP_TrackerScale8(mx, ap_tracker.map_w, h->width);
 	*y = ap_tracker.map_y + AP_TrackerScale8(my, ap_tracker.map_h, h->height);
 }
-static void AP_TrackerBuildNodes(void)
+static void AP_TrackerBuildNodes(int resetFocus)
 {
 	AP_TrackerHubAsset *h = &ap_tracker.hubs[ap_tracker.hub]; int i, left = 0, right = 0;
 	int order[AP_TRACKER_PADS + 1];
@@ -597,10 +599,15 @@ static void AP_TrackerBuildNodes(void)
 		/* Balance clustered pads (Gem Stone Valley has eight nodes). */
 		if (side && left >= (ap_tracker.count+1)/2) side = 0;
 		if (!side && right >= ap_tracker.count/2) side = 1;
-		n->cx = side ? 28 : 876; n->cy = 112 + (side ? left++ : right++) * 142;
+		AP_TrackerCardPosition card = {side ? 0 : 1, side ? left++ : right++};
+		ap_tracker.cards[order[i]] = card;
+		n->cx = card.column ? 876 : 28; n->cy = 112 + card.row * 142;
 		n->cw = 376; n->ch = 126;
 	}
-	if (ap_tracker.focus >= ap_tracker.count) ap_tracker.focus = 0;
+	if (resetFocus || ap_tracker.focus >= ap_tracker.count) {
+		int first = AP_TrackerCardAt(ap_tracker.cards, ap_tracker.count, 0, 0);
+		ap_tracker.focus = first >= 0 ? first : 0;
+	}
 }
 
 /* All enabled race-family checks are shown, including individual relic tiers.
@@ -1389,7 +1396,7 @@ int AP_TrackerMenuFrame(void)
 		sdata->AnyPlayerTap &= ~BTN_START; /* The successful opening frame owns it too. */
 		if(ap_tracker.hub<0 || ap_tracker.hub>=5) ap_tracker.hub=0;
 		ap_tracker.tab=ap_tracker.hub;
-		ap_tracker.focus=0; ap_tracker.pinned=0; ap_tracker.acts_open=0; ap_tracker.checks_open=0; AP_TrackerBuildNodes();
+		ap_tracker.pinned=0; ap_tracker.acts_open=0; ap_tracker.checks_open=0; AP_TrackerBuildNodes(1);
 		SDL_ShowCursor(); AP_LogLine("[AP TRACKER] enlarged hub map opened\n");
 	} else if(ap_tracker.shop_open) {
 		int pages = AP_TrackerShopPages();
@@ -1440,7 +1447,7 @@ int AP_TrackerMenuFrame(void)
 		if(step) {
 			ap_tracker.tab=AP_TrackerTabStepPure(ap_tracker.tab,step,racersOn,1);
 			if(ap_tracker.tab<AP_TRACKER_TAB_HUBS) ap_tracker.hub=ap_tracker.tab;
-			ap_tracker.focus=0; ap_tracker.pinned=0; ap_tracker.acts_open=0; AP_TrackerBuildNodes();
+			ap_tracker.pinned=0; ap_tracker.acts_open=0; AP_TrackerBuildNodes(1);
 		}
 		if(ap_tracker.tab>=AP_TRACKER_TAB_HUBS) {
 			/* RACERS and ITEMS are read-only lists: no focus, pinning or map
@@ -1453,7 +1460,12 @@ int AP_TrackerMenuFrame(void)
 				ap_tracker.checks_open=1; ap_tracker.checks_page=0; ap_tracker.checks_detail=0;
 			} else {
 			if(tap&(BTN_UP|BTN_DOWN|BTN_LEFT|BTN_RIGHT)) {
-				ap_tracker.focus=(ap_tracker.focus+((tap&(BTN_UP|BTN_LEFT))?ap_tracker.count-1:1))%ap_tracker.count; ap_tracker.pinned=0;
+				int dx=0, dy=0;
+				if(tap&BTN_UP) dy=-1;
+				else if(tap&BTN_DOWN) dy=1;
+				else dx=(tap&BTN_LEFT)?-1:1;
+				AP_TrackerCardMove(ap_tracker.cards, ap_tracker.count, dx, dy,
+				                   &ap_tracker.focus, &ap_tracker.pinned);
 			}
 			if((tap&(BTN_CROSS|BTN_CIRCLE)) && AP_TrackerLaunchEnabled() && ap_tracker.count) {
 				/* #375: open the focused node's activities; the summary line
@@ -1480,7 +1492,7 @@ int AP_TrackerMenuFrame(void)
 		}
 	}
 	ap_tracker.mouse_x=mx; ap_tracker.mouse_y=my; ap_tracker.mouse_buttons=buttons;
-	AP_TrackerBuildNodes();
+	AP_TrackerBuildNodes(0);
 	/* A room refresh can replace the focused cup while rebuilding nodes. */
 	if (ap_tracker.checks_open && ap_tracker.count) {
 		ap_tracker.checks_page%=AP_TrackerChecksPages(&ap_tracker.nodes[ap_tracker.focus]);
