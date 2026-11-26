@@ -33,7 +33,8 @@ def table(name):
 
 
 NAMES = ["CRASH BANDICOOT", "NEO CORTEX", "TINY TIGER", "COCO BANDICOOT", "N. GIN", "DINGODILE", "POLAR",
-         "PURA", "PINSTRIPE", "PAPU PAPU", "RIPPER ROO", "KOMODO JOE", "N. TROPY", "Penta", "FAKE CRASH"]
+         "PURA", "PINSTRIPE", "PAPU PAPU", "RIPPER ROO", "KOMODO JOE", "N. TROPY", "Penta", "FAKE CRASH",
+         "DR. NEO CORTEX", "DR. N. TROPY", "N. OXIDE"]  # the long forms and N. Oxide (oxide_in_pool)
 assert not [n for n in NAMES if n.upper().endswith("S")], "a name ending in S needs a rule"
 gates = source("ap/ap_hooks_gates.c")
 assert "\"%s's Boss Cup\" : \"%s's Challenge\"" in gates, "title formats changed"
