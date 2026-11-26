@@ -80,6 +80,7 @@ void AP_LooksRebindDrivers(void) { lookRebinds++; }
 static int ghostLook;
 int AP_LooksGhostWearsLook(void) { return ghostLook; }
 int AP_TrackFillRaceActive(const struct GameTracker *g) { return g == &tracker && fillActive; }
+int AP_TrackFillWeaponRaceActive(const struct GameTracker *g) { (void)g; return 0; }
 double Platform_PerfNowMs(void) { return 742.0; }
 
 static void save(void)
