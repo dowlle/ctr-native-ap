@@ -133,6 +133,10 @@ static const struct ApCreditLine AP_CREDITS_LINES[] = {
     {0, "LOLOTHESAMURAI"},
     {0, "PANCHOPEW"},
     {0, "COCO TEAM RACING - FROSTEDWOMBAT"},
+    // Cubic Circuit is offered through the Saphi download, not bundled. The
+    // track is by MisterM and its music by Boxic (the registry credits both).
+    {0, "CUBIC CIRCUIT - MISTERM"},
+    {0, "CUBIC CIRCUIT MUSIC - BOXIC"},
     {0, "TRACK DOWNLOADS - PROJECT SAPHI"},
     {0, ""},
     {1, "LIBRARIES"},
