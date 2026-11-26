@@ -100,7 +100,9 @@ static int AP_SanityEnsure(struct GameTracker *gt)
         ap_sanity_epoch = epoch;
         ap_sanity_ready = ap_sanity_sent_count = 0;
     }
-    if (!row || !ap_sanity_defs || ap_sanity_defs_count < 0 || ap_sanity_defs_count > 512) return 0;
+    // A LEV without instances (Arabian Heights Day) can still carry filled
+    // weapon crates (WF1), so only a nonempty table needs its pointer.
+    if (!row || (!ap_sanity_defs && ap_sanity_defs_count) || ap_sanity_defs_count < 0 || ap_sanity_defs_count > 512) return 0;
     if (ap_sanity_ready) return ap_sanity_ready > 0;
     ap_sanity_size = 0;
     for (i = 0; i < ap_sanity_defs_count; ++i) {
