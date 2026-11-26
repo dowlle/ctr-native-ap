@@ -18,17 +18,21 @@ spec.loader.exec_module(selector)
 
 class CompanionSelectionTests(unittest.TestCase):
     def select(self, response, code=0, candidates=None, required=False,
-               *, allow_pull_request=False, missing_artifact_ids=()):
+               *, allow_pull_request=False, missing_artifact_ids=(), lookup_error_ids=()):
         self.query = None
         def runs(repo, workflow, query):
             self.query = query
             return iter(candidates if candidates is not None else [
                 dict(id=1, head_branch="pair/topic", head_sha="current",
                      event="workflow_dispatch", conclusion="success")])
+        def has_artifacts(repo, run_id, names):
+            if run_id in lookup_error_ids:
+                raise subprocess.CalledProcessError(1, "gh")
+            return run_id not in missing_artifact_ids
+
         with patch.object(selector.subprocess, "run", return_value=subprocess.CompletedProcess(
                 [], code, json.dumps(response), "")), patch.object(selector, "runs", side_effect=runs), \
-                patch.object(selector, "has_artifacts", side_effect=(
-                    lambda repo, run_id, names: run_id not in missing_artifact_ids)):
+                patch.object(selector, "has_artifacts", side_effect=has_artifacts):
             return selector.choose_apworld(
                 "owner/world", "main", "pair/topic", required,
                 allow_pull_request=allow_pull_request)
@@ -70,6 +74,17 @@ class CompanionSelectionTests(unittest.TestCase):
                   head_repository={"full_name": "owner/world"})
         with self.assertRaisesRegex(RuntimeError, "no successful"):
             self.select({"object": {"sha": "current"}}, candidates=[pr], required=True)
+
+    def test_pr_rehearsal_keeps_healthy_runs_after_an_artifact_lookup_error(self):
+        first = dict(id=1, head_branch="pair/topic", head_sha="current",
+                     event="pull_request", conclusion="success",
+                     head_repository={"full_name": "owner/world"})
+        candidates = [first, dict(first, id=2), dict(first, id=3, event="push")]
+        with patch("sys.stderr") as stderr:
+            self.assertEqual(
+                self.select({"object": {"sha": "current"}}, candidates=candidates,
+                            allow_pull_request=True, lookup_error_ids=(2,)), ([1, 3], "current"))
+        stderr.write.assert_any_call("Could not look up ctr.apworld for run 2")
 
     def test_missing_companion_uses_base(self):
         base = dict(id=2, head_branch="main", head_sha="base", event="push", conclusion="success")

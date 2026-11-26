@@ -93,7 +93,14 @@ def choose_apworld(
         is_pr_run = run.get("event") == "pull_request"
         if is_pr_run and (run.get("head_repository") or {}).get("full_name") != repo:
             continue
-        if has_artifacts(repo, run["id"], {"ctr.apworld"}):
+        try:
+            available = has_artifacts(repo, run["id"], {"ctr.apworld"})
+        except subprocess.CalledProcessError:
+            if not prefer_pr:
+                raise
+            print(f"Could not look up ctr.apworld for run {run['id']}", file=sys.stderr)
+            continue
+        if available:
             if not prefer_pr:
                 return [run["id"]], run["head_sha"]
             if is_pr_run:
