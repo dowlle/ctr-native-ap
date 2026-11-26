@@ -119,7 +119,8 @@ static const struct ApCreditLine AP_CREDITS_LINES[] = {
     {1, "CORTEX VORTEX TRACK"},
     // The track's own music (the .sca) ships too and is covered by the same
     // permission (THIRD_PARTY_NOTICES.md "Cortex Vortex track").
-    {0, CTR_CORTEX_CREDIT},
+    {0, CTR_CORTEX_TRACK_CREDIT},
+    {0, CTR_CORTEX_MUSIC_CREDIT},
     {0, ""},
     // Authors who said yes (2026-11-12 and 2026-11-13) to their tracks being
     // offered through the client's Project Saphi download or importer. Names as
