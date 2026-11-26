@@ -37,9 +37,9 @@ static int MM_CustomLibrary_Busy(void) { return busy; }
 int AP_CustomOfflineLaunchAllowed(void) { return allowed; }
 #ifdef CTR_AP
 static int fillAvailable;
-int ap_content_track_fill_available(const char *levSha)
+int ap_content_track_fill_available(const char *levSha, unsigned int laps)
 {
-    return fillAvailable && !strcmp(levSha, "fill fixture");
+    return fillAvailable && laps == 3 && !strcmp(levSha, "fill fixture");
 }
 int AP_TrackFillStageOffline(const struct CustomOfflineRequest *request)
 {

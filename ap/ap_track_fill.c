@@ -19,7 +19,8 @@ static struct SpawnPosRot apFillOfflineSpawns[8];
 int AP_TrackFillStageOffline(const struct CustomOfflineRequest *request)
 {
 	struct CustomPackageManifest manifest;
-	if (!CustomOffline_GetManifest(request, &manifest))
+	unsigned int laps;
+	if (!CustomOffline_GetManifest(request, &manifest) || !CustomOffline_RequestLaps(request, &laps))
 		return 0;
 	memset(&apFillOffline, 0, sizeof apFillOffline);
 	for (unsigned i = 0; i < manifest.count; ++i)
@@ -28,7 +29,7 @@ int AP_TrackFillStageOffline(const struct CustomOfflineRequest *request)
 		if (strcmp(file->role, "lev"))
 			continue;
 		apFillOffline.fill_crate_count = ap_content_track_fill_bundled(
-		    NativeAssets_GetAssetDir(), file->sha256, apFillOfflineCrates, apFillOffline.relic_targets);
+		    NativeAssets_GetAssetDir(), file->sha256, laps, apFillOfflineCrates, apFillOffline.relic_targets);
 		if (!apFillOffline.fill_crate_count || !AP_TrackFillPrepare())
 			return 0;
 		const size_t spawn_offset = sizeof(u32) + offsetof(struct Level, DriverSpawn);

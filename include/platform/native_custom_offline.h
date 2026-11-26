@@ -118,6 +118,7 @@ void CustomOffline_Free(struct CustomOfflineRequest **request);
 int CustomOffline_GetManifest(const struct CustomOfflineRequest *request,
                               struct CustomPackageManifest *out);
 int CustomOffline_RetainPackage(const struct CustomOfflineRequest *request, struct CustomPackageOwned **out);
+int CustomOffline_RequestLaps(const struct CustomOfflineRequest *request, unsigned int *laps);
 /* Structural prerequisite only: an eight-kart Single Race requires detected
    Arcade structures and eight measured spawns; a Time Trial a lap checkpoint
    graph. Success is NOT certification. */

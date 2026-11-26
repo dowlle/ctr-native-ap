@@ -82,7 +82,7 @@ static const struct CustomTrackLibraryEntry *MM_CustomTrackSelect_RelicRevision(
     if (!entry || MM_CustomTrackSelect_Mode() != CTR_OFFLINE_MODE_ARCADE) return NULL;
     const struct CustomTrackLibraryEntry *best = NULL;
     if (CustomTrackLibrary_Admission(entry, 1) == CTR_ADMISSION_READY &&
-        ap_content_track_fill_available(entry->local.levSha256))
+        ap_content_track_fill_available(entry->local.levSha256, entry->local.laps))
         best = entry;
     if (!entry->local.uuid[0]) return best;
     for (size_t i = 0; i < s_contentLibrary.count; ++i)
@@ -91,7 +91,7 @@ static const struct CustomTrackLibraryEntry *MM_CustomTrackSelect_RelicRevision(
         if (strcmp(revision->local.uuid, entry->local.uuid) ||
             CustomTrack_IsHiddenLev(revision->local.levSha256) ||
             CustomTrackLibrary_Admission(revision, 1) != CTR_ADMISSION_READY ||
-            !ap_content_track_fill_available(revision->local.levSha256))
+            !ap_content_track_fill_available(revision->local.levSha256, revision->local.laps))
             continue;
         if (!best || CustomRevision_Compare(revision->version, best->version) > 0)
             best = revision;

@@ -10,7 +10,7 @@
   "donors": [
     {
       "kind": "identical",
-      "lev_sha256": "29e821ce632c9f483d3e0711e41cc077ab087a8a6044b7a70db826b7b40e71d0",
+      "lev_sha256": "f9dd02599eee3941a6cf8d2151e3b9530f18643ca8542bef175566aeb7751865",
       "overlap": 100000,
       "road_sha256": "6da80fe80046a1d08a8681a6a157f0b169332e63e584f79389d20341abbe033f"
     }
@@ -175,9 +175,9 @@
       },
       {
         "pos": [
-          2663,
+          2604,
           -1095,
-          -8639
+          -8960
         ],
         "type": 2
       },
@@ -367,9 +367,9 @@
       },
       {
         "pos": [
-          2656,
-          -1095,
-          -9039
+          2699,
+          -654,
+          -6718
         ],
         "type": 3
       },
@@ -456,7 +456,7 @@
     ],
     "weapon_crates": []
   },
-  "fill_sha256": "84c9cc5e63822c4b103bfd63beaa11400dcab5bae3269826d61fa20c955fd3ea",
+  "fill_sha256": "ec9a8884052cf87d4ebaba11d9a7ab34d7aaf157e71449d722ea347d2d1c381d",
   "generator": {
     "name": "ctr-track-fill",
     "version": 1

@@ -153,6 +153,11 @@ int CustomOffline_PackageLaps(const struct CustomPackageOwned *package, unsigned
     return 1;
 }
 
+int CustomOffline_RequestLaps(const struct CustomOfflineRequest *request, unsigned int *laps)
+{
+    return request && CustomOffline_PackageLaps(request->package, laps, NULL, 0);
+}
+
 /* A lap count the engine cannot store refuses both modes. */
 static int package_mode_reason(const struct CustomPackageOwned *package, int mode, char *reason, size_t reasonSize)
 {

@@ -251,8 +251,8 @@ typedef struct ctr_content_package {
     char locator_sha256[65];  /* lowercase hex, "" when absent */
     char locator_name[65];    /* printable ASCII file name, "" when absent */
 } ctr_content_package;
-int ap_content_track_fill_available(const char *lev_sha);
-int ap_content_track_fill_bundled(const char *assets, const char *lev_sha,
+int ap_content_track_fill_available(const char *lev_sha, unsigned int laps);
+int ap_content_track_fill_bundled(const char *assets, const char *lev_sha, unsigned int laps,
                                  ctr_content_fill_crate *crates, int *targets);
 #define AP_CONTENT_UNSTATED (-1)
 #define AP_CONTENT_WEAPON_CRATES_UNSTATED (-1)

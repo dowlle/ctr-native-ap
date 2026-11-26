@@ -35,13 +35,13 @@ static bool fill_enabled() {
     const char *value = std::getenv("CTR_TRACK_FILL");
     return value && std::strcmp(value, "1") == 0;
 }
-struct FillIndexEntry { const char *sha, *path, *fill_sha; };
-static const FillIndexEntry *bundled_fill(const char *lev_sha) {
+struct FillIndexEntry { const char *sha, *path, *fill_sha; unsigned int laps; };
+static const FillIndexEntry *bundled_fill(const char *lev_sha, unsigned int laps) {
     static constexpr FillIndexEntry index[] = {
 #include "ap_track_fill_index.inc"
     };
     for (const auto &row : index)
-        if (std::strcmp(lev_sha, row.sha) == 0) return &row;
+        if (laps == row.laps && std::strcmp(lev_sha, row.sha) == 0) return &row;
     return nullptr;
 }
 struct State {
@@ -3687,14 +3687,14 @@ extern "C" int ap_content_plan_present(void) {
     return content_plan::state.parsed && (ctr_cfg.schema_version == 18 || ctr_cfg.schema_version == 19)
         && !ctr_cfg.seed_rejected;
 }
-extern "C" int ap_content_track_fill_available(const char *lev_sha) {
-    return lev_sha && content_plan::fill_enabled() && content_plan::bundled_fill(lev_sha);
+extern "C" int ap_content_track_fill_available(const char *lev_sha, unsigned int laps) {
+    return lev_sha && content_plan::fill_enabled() && content_plan::bundled_fill(lev_sha, laps);
 }
-extern "C" int ap_content_track_fill_bundled(const char *assets, const char *lev_sha,
+extern "C" int ap_content_track_fill_bundled(const char *assets, const char *lev_sha, unsigned int laps,
                                             ctr_content_fill_crate *crates, int *targets) {
     using namespace content_plan;
     if (!assets || !lev_sha || !crates || !targets || !fill_enabled()) return 0;
-    const auto *entry = bundled_fill(lev_sha);
+    const auto *entry = bundled_fill(lev_sha, laps);
     if (!entry) return 0;
     try {
         std::ifstream input(std::string(assets) + "/track_fill/" + entry->path, std::ios::binary | std::ios::ate);
