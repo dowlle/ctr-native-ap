@@ -5,6 +5,7 @@
 #include <common.h>
 #include <platform/native_custom_finish.h>
 void AP_LapOnCrossing(struct GameTracker *, struct Driver *, int);
+void AP_TrackFillCollide(struct GameTracker *);
 #include "../game/PlayLevel.c"
 struct sData sdata_static;
 struct Data data;
@@ -15,13 +16,22 @@ static struct Level level;
 static struct CheckpointNode node;
 static struct Instance instance;
 static struct Thread thread;
-static int terrain, nextProgress, laps, finishes, ends;
+static int terrain, nextProgress, laps, finishes, ends, fillHit;
 int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx) {(void)ctx; return terrain;}
 int MainRaceTrack_OfflineCustomLoad(void) {return 0;}
 int CustomOffline_RuntimeFinishTerrain(void) {return -1;}
 void VehLap_UpdateProgress(struct Driver *d) {d->distanceToFinish_curr = nextProgress;}
 void AP_LapOnCrossing(struct GameTracker *g, struct Driver *d, int slot)
 {assert(g == &gt && d == &driver && slot == 0); assert(d->lapIndex == 1); laps++;}
+void AP_TrackFillCollide(struct GameTracker *g)
+{
+    assert(g == &gt);
+    if (fillHit)
+    {
+        driver.numTimeCrates++;
+        fillHit = 0;
+    }
+}
 void MainRaceTrack_OfflineRaceFinished(int human) {assert(human); finishes++;}
 void UI_SaveLapTime(int n, int t, s16 id) {(void)n;(void)t;(void)id;}
 int OtherFX_Play(u32 id, int flags) {(void)id;(void)flags;return 0;}
@@ -30,7 +40,12 @@ void Voiceline_RequestPlay(u32 a, u32 b, u32 c) {(void)a;(void)b;(void)c;}
 void BOTS_Driver_Convert(struct Driver *d) {(void)d;}
 int VehPickState_NewState(struct Driver *a, int b, struct Driver *c, int d)
 {(void)a;(void)b;(void)c;(void)d;return 0;}
-void MainGameEnd_Initialize(void) {ends++;gt.gameMode1 |= END_OF_RACE;}
+void MainGameEnd_Initialize(void)
+{
+    assert(driver.numTimeCrates == gt.timeCratesInLEV);
+    ends++;
+    gt.gameMode1 |= END_OF_RACE;
+}
 static void reset(void)
 {
     memset(&gt, 0, sizeof gt); memset(&driver, 0, sizeof driver); memset(&quad, 0, sizeof quad);
@@ -38,7 +53,7 @@ static void reset(void)
     gt.drivers[0] = gt.driversInRaceOrder[0] = &driver; gt.numPlyrCurrGame = 1;
     level.ptr_restart_points = &node; node.distToFinish = 17000; gt.level1 = &level;
     driver.instSelf = &instance; instance.thread = &thread; thread.modelIndex = DYNAMIC_PLAYER;
-    gt.numLaps = 3; driver.driverRank = -1; terrain = 4; laps = finishes = ends = 0;
+    gt.numLaps = 3; driver.driverRank = -1; terrain = 4; laps = finishes = ends = fillHit = 0;
     nextProgress = 500;
 }
 int main(void)
@@ -55,6 +70,8 @@ int main(void)
     quad.terrain_type = 4; driver.underDriver = &quad;
     PlayLevel_UpdateLapStats(); assert(!laps); // Flying over the end does not finish.
     driver.currBlockTouching = &quad; driver.actionsFlagSet |= ACTION_BEHIND_START_LINE;
+    gt.timeCratesInLEV = 1;
+    fillHit = 1;
     PlayLevel_UpdateLapStats(); assert(laps == 1 && finishes == 1 && ends == 1);
     assert(driver.actionsFlagSet & ACTION_RACE_FINISHED);
     PlayLevel_UpdateLapStats(); assert(laps == 1 && finishes == 1 && ends == 1);
