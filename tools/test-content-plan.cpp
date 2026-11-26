@@ -148,6 +148,11 @@ int main(int argc, char **argv) {
         changed["content_plan"]["packages"][0]["fill"]["counts"]["time_crates"] = 65;
         refuse(changed, "the package cannot claim a count different from its fill");
         changed = fill;
+        changed["content_plan"]["packages"][0]["laps"] = 7;
+        for (auto &track : changed["content_plan"]["tracks"])
+            if (track.value("package_id", "") == "package/tv-world/1.0.0") track["laps"] = 7;
+        refuse(changed, "matching package and track laps still need to match the frozen relic targets");
+        changed = fill;
         changed["schema_version"] = changed["ctr_options"]["schema_version"] = 18;
         refuse(changed, "a room with fill cannot use the old schema");
         set_fill_switch(false);

@@ -31,7 +31,8 @@ def main():
         if relative.stem != sha[:16]:
             parser.error(f"track fill pin differs from path: {relative}")
         pin = pins[relative.parent.name][sha]
-        if pin["fill_sha256"] != fill["fill_sha256"] or type(pin["laps"]) is not int:
+        if (pin["fill_sha256"] != fill["fill_sha256"] or type(pin["laps"]) is not int
+                or pin["laps"] != fill["relic_targets"]["laps"]):
             parser.error(f"track fill differs from the generated pin: {relative}")
         values = (sha, relative.as_posix(), fill["fill_sha256"], pin["laps"])
         rows.append("    {" + ", ".join(map(json.dumps, values)) + "},\n")

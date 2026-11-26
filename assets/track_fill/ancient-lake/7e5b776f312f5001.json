@@ -216,7 +216,7 @@
     ],
     "weapon_crates": []
   },
-  "fill_sha256": "e2e4599f25854b3c862d37f70162cca3a3b31ac5a8ab37e8faa3753691f01698",
+  "fill_sha256": "d6efb94e5b6dff37f68be7c1cf38555a73002fef8bbe78bd9d1d6fe3a16fd470",
   "generator": {
     "name": "ctr-track-fill",
     "version": 1
@@ -224,6 +224,7 @@
   "lev_sha256": "7e5b776f312f500112061b3b95a1f371571fd7dfe7fbd1dc404e7b3d3a3a1e78",
   "relic_targets": {
     "gold": 24000,
+    "laps": 3,
     "platinum": 9600,
     "sapphire": 33600,
     "source": "saphi"

@@ -222,7 +222,7 @@ static void fill_position(const J &pos, int16_t (&xyz)[3]) {
         xyz[axis] = (int16_t)number(pos[axis], -32768, 32767);
 }
 
-static void fill_record(const J &fill, const J &lev, const int (&targets)[3],
+static void fill_record(const J &fill, const J &lev, int laps, const int (&targets)[3],
                         std::vector<ctr_content_fill_crate> &out) {
     fields(fill, {"schema", "lev_sha256", "generator", "donors", "families",
                   "counts", "relic_targets", "fill_sha256"});
@@ -284,8 +284,9 @@ static void fill_record(const J &fill, const J &lev, const int (&targets)[3],
         out.push_back(item);
     }
     const auto &times = fill.at("relic_targets");
-    fields(times, {"sapphire", "gold", "platinum", "source"});
+    fields(times, {"sapphire", "gold", "platinum", "source", "laps"});
     need(times.at("source") == "saphi" || times.at("source") == "author", "invalid track fill relic target source");
+    need(number(times.at("laps"), 1, 7) == laps, "track fill relic target laps differ from the package");
     const char *tiers[] = {"sapphire", "gold", "platinum"};
     for (int i = 0; i < 3; ++i)
         number(times.at(tiers[i]), targets[i], targets[i]);
@@ -424,7 +425,7 @@ static void package_record(const J &pkg, ctr_content_package &target,
     if (has_fill) {
         need(relic && (target.capabilities & AP_CONTENT_CAP_TIME_TRIAL) && !relic_files,
              "track fill requires Relic Race on the main LEV and VRM pair");
-        fill_record(pkg.at("fill"), files[0].at("sha256"), target.relic_targets, crates);
+        fill_record(pkg.at("fill"), files[0].at("sha256"), target.laps, target.relic_targets, crates);
         target.fill_crate_count = (int)crates.size();
         target.fill_crates = crates.data();
     }
@@ -3711,7 +3712,7 @@ extern "C" int ap_content_track_fill_bundled(const char *assets, const char *lev
                               number(times.at("platinum"), 1, 960 * 60 * 60)};
         need(ticks[0] > ticks[1] && ticks[1] > ticks[2], "invalid bundled track fill targets");
         std::vector<ctr_content_fill_crate> parsed;
-        fill_record(fill, lev_sha, ticks, parsed);
+        fill_record(fill, lev_sha, entry->laps, ticks, parsed);
         std::copy(parsed.begin(), parsed.end(), crates);
         std::copy(ticks, ticks + 3, targets);
         return (int)parsed.size();
