@@ -101,7 +101,7 @@ assert 'AP_DeathLinkRowValue(-1) != -1' in menu
 assert 'snprintf(buf, bufSize, "SEED: %s", Config_SeedValue(e))' in menu
 
 # Item 1, the tracker reads the pad on a plan and nothing changes without one.
-nodes = body(tracker, "static void AP_TrackerBuildNodes(void)")
+nodes = body(tracker, "static void AP_TrackerBuildNodes(")
 assert "if (ap_content_plan_active()) {" in nodes and "n->destination = physical;" in nodes
 assert "if (plan) { AP_TrackerDrawContentNode(n,x,y); return; }" in tracker
 node = body(tracker, "static void AP_TrackerDrawContentNode(")
