@@ -35,6 +35,7 @@ build = body(warp, "static void AH_WarpPad_BuildInstances(struct Thread *t)\n{")
 tick = body(warp, "void AH_WarpPad_ThTick(struct Thread *t)")
 rebirth = body(warp, "static int AH_WarpPad_RebirthKey(int physLevelID, int destLevelID)")
 phys = body(warp, "static int AH_WarpPad_PhysOf(struct Thread *t)")
+try_rebuild = body(warp, "static int AH_WarpPad_TryRebuild(struct Thread *t)")
 
 # Engine text: the birth records the key, ThTick compares it under the same
 # physical index, and the birth's requirement choice is the key's.
@@ -42,7 +43,8 @@ assert "s_padRebirthState[levelID] = ctr_cfg_active() ? AH_WarpPad_RebirthKey(le
 assert "int rbPhys = AH_WarpPad_PhysOf(t);" in tick and "ctr_cfg_warp_phys(warppadObj->levelID);\n\t\tif (rbPhys" not in tick
 assert "int rbState = AH_WarpPad_RebirthKey(rbPhys, warppadObj->levelID);" in tick
 assert "if (rbState != s_padRebirthState[rbPhys])" in tick
-assert "AH_WarpPad_ThDestroy(t);" in tick and "AH_WarpPad_BuildInstances(t);" in tick
+assert "if (AH_WarpPad_TryRebuild(t))" in tick
+assert "AH_WarpPad_ThDestroy(t);" in try_rebuild and "AH_WarpPad_BuildInstances(t);" in try_rebuild
 assert "for (i = 8; inst->name[i] != 0; i++)" in build and "for (i = 8; t->inst->name[i] != 0; i++)" in phys
 assert "counts[i] = AP_GateCount(i);" in rebirth and "ap_pad_birth_key(ap_content_plan_pad(physLevelID), counts, state," in rebirth
 assert "AP_PadLook(physLevelID, destLevelID)" in rebirth and "AP_PadReplayable(physLevelID, destLevelID));" in rebirth

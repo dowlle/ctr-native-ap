@@ -68,11 +68,15 @@ struct Instance {
 	const char *name;
 };
 struct WarpPad { struct Instance *inst[WPIS_NUM_INSTANCES]; short digit10s; short digit1s; };
-struct Thread { struct WarpPad *object; struct Instance *inst; };
-struct JitPool { struct { struct Instance *first; } taken; };
+struct Thread { struct WarpPad *object; struct Instance *inst; int modelIndex; };
+struct JitPool {
+	struct { struct Instance *first; } taken;
+	struct { int count; } free;
+};
 static struct GameTracker { struct { struct JitPool instance; } JitPools; } tracker;
 static struct { struct GameTracker *gGT; } data = { &tracker }, *sdata = &data;
 static struct Instance **taken = &tracker.JitPools.instance.taken.first;
+static int rebuilds;
 
 static void INSTANCE_Death(struct Instance *inst)
 {
@@ -84,9 +88,17 @@ static void INSTANCE_Death(struct Instance *inst)
 	}
 	*link = inst->next;
 	inst->next = NULL;
+	tracker.JitPools.instance.free.count++;
 }
 
-""" + body(warp, "static int AH_WarpPad_LiveInstances(") + body(warp, "void AH_WarpPad_ThDestroy(struct Thread *t)\n") + r"""
+static void AH_WarpPad_BuildInstances(struct Thread *t)
+{
+	assert(tracker.JitPools.instance.free.count >= WPIS_NUM_INSTANCES - WPIS_OPEN_BEAM);
+	t->modelIndex = 1;
+	rebuilds++;
+}
+
+""" + body(warp, "static int AH_WarpPad_LiveInstances(") + body(warp, "void AH_WarpPad_ThDestroy(struct Thread *t)\n") + body(warp, "static int AH_WarpPad_TryRebuild(") + r"""
 
 static struct ModelHeader g_big1Headers[8];
 static struct Model g_models[3];
@@ -125,12 +137,13 @@ static void digit_pass(struct Thread *t)
 static void verify_pad_lifetime(void)
 {
 	struct WarpPad changed = {0}, other = {0};
-	struct Thread pad = {&changed, NULL}, neighbour = {&other, NULL};
+	struct Thread pad = {&changed, NULL, 1}, neighbour = {&other, NULL, 1};
 	struct Instance mesh = {.thread = &pad, .name = "warppad#3"};
 	struct Instance filter = {.thread = &pad, .name = "beamFilter", .next = &mesh};
 	struct Instance ring = {.thread = &pad, .name = "bottomRing", .next = &filter};
 	struct Instance reused = {.thread = &neighbour, .name = "warpnum", .next = &ring};
 	struct Instance freed = {.thread = &pad, .name = "warpnum"};
+	struct Instance requirement = {.thread = &pad, .name = "reqObj", .next = &mesh};
 	struct Instance *live[WPIS_NUM_INSTANCES];
 
 	pad.inst = &mesh;
@@ -143,17 +156,31 @@ static void verify_pad_lifetime(void)
 	changed.inst[WPIS_OPEN_RING2] = &ring;
 	changed.inst[WPIS_OPEN_PRIZE1] = &filter;
 	assert(!AH_WarpPad_LiveInstances(&pad, live));
-	assert(live[WPIS_OPEN_RING1] == &ring);
 	for (int i = 0; i < WPIS_NUM_INSTANCES; i++)
-		assert(i == WPIS_OPEN_RING1 || live[i] == NULL);
+		assert(live[i] == NULL);
 	digit_pass(&pad);
-	AH_WarpPad_ThDestroy(&pad);
+	tracker.JitPools.instance.free.count = 3;
+	assert(!AH_WarpPad_TryRebuild(&pad));
+	assert(rebuilds == 0 && reused.next == &ring);
+	tracker.JitPools.instance.free.count++;
+	assert(AH_WarpPad_TryRebuild(&pad) && rebuilds == 1);
 	assert(*taken == &reused && reused.next == &mesh && mesh.next == NULL);
 	assert(AH_WarpPad_LiveInstances(&pad, live));
 	for (int i = 0; i < WPIS_NUM_INSTANCES; i++)
 		assert(live[i] == NULL);
+
+	*taken = &requirement;
+	changed.inst[WPIS_CLOSED_ITEM] = &requirement;
+	pad.modelIndex = 0;
+	assert(!AH_WarpPad_LiveInstances(&pad, live));
+	assert(live[WPIS_CLOSED_ITEM] == &requirement);
+
+	*taken = &filter;
+	changed.inst[WPIS_CLOSED_ITEM] = NULL;
+	pad.modelIndex = 1;
+	assert(!AH_WarpPad_LiveInstances(&pad, live));
 	*taken = NULL;
-	puts("warppad lifetime: draw rejects stale slots; teardown keeps the parent and the other pad's instance");
+	puts("warppad lifetime: stale slots, aliases and incomplete child sets rejected; rebuild checks pool capacity");
 }
 
 /* The digit an instance draws: its model, or its STATIC_BIG1 header. */
@@ -177,7 +204,7 @@ int main(void)
 	{
 		struct WarpPad wp;
 		struct Instance ones, tens;
-		struct Thread pad = {&wp, NULL};
+		struct Thread pad = {&wp, NULL, 0};
 		int want = n < 0 ? 0 : (n > 99 ? 99 : n), shown;
 		memset(&wp, 0, sizeof(wp));
 		memset(&ones, 0, sizeof(ones));
@@ -231,7 +258,7 @@ int main(void)
 		struct Model small = { AP_WARPPAD_DIGIT_MODEL_1TO8, 3, few };
 		struct WarpPad wp;
 		struct Instance ones;
-		struct Thread pad = {&wp, NULL};
+		struct Thread pad = {&wp, NULL, 0};
 		memset(&wp, 0, sizeof(wp));
 		memset(&ones, 0, sizeof(ones));
 		ones.model = &small;

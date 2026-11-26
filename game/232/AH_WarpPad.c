@@ -280,33 +280,75 @@ static int AH_WarpPad_PhysOf(struct Thread *t)
 // recycled slot can still have its old thread pointer while on the free list.
 static int AH_WarpPad_LiveInstances(struct Thread *t, struct Instance **live)
 {
+	static const char *const names[WPIS_NUM_INSTANCES] = {
+		"reqObj", "x", "warpnum", "warpnum", "beam",
+		"bottomRing", "bottomRing", "prize", "prize", "prize",
+	};
 	const struct WarpPad *wp = t->object;
 	const struct JitPool *pool = &sdata->gGT->JitPools.instance;
 	struct Instance *inst;
-	int i, pending = 0;
+	int i, valid = 1, hasFilter = 0;
 
 	for (i = 0; i < WPIS_NUM_INSTANCES; i++)
-	{
 		live[i] = NULL;
-		pending += wp->inst[i] != NULL;
-	}
 
-	for (inst = (struct Instance *)pool->taken.first; inst != NULL && pending != 0; inst = inst->next)
+	for (inst = (struct Instance *)pool->taken.first; inst != NULL; inst = inst->next)
 	{
-		if (inst->thread != t || inst == t->inst || strcmp(inst->name, "beamFilter") == 0)
+		int slot = -1;
+
+		if (inst->thread != t || inst == t->inst)
 			continue;
+		if (strcmp(inst->name, "beamFilter") == 0)
+		{
+			hasFilter = 1;
+			continue;
+		}
 		for (i = 0; i < WPIS_NUM_INSTANCES; i++)
 		{
 			if (wp->inst[i] == inst)
 			{
-				live[i] = inst;
-				pending--;
-				break;
+				if (slot >= 0)
+				{
+					slot = -1;
+					break;
+				}
+				slot = i;
 			}
 		}
+		if (slot < 0 || strncmp(inst->name, names[slot], strlen(names[slot])) != 0)
+			valid = 0;
+		else
+			live[slot] = inst;
 	}
 
-	return pending == 0;
+	for (i = 0; i < WPIS_NUM_INSTANCES; i++)
+		if (wp->inst[i] != live[i])
+			return 0;
+	if (live[WPIS_CLOSED_1S] == NULL &&
+	    (live[WPIS_CLOSED_ITEM] != NULL || live[WPIS_CLOSED_10S] != NULL ||
+	     (t->modelIndex == 0 && live[WPIS_CLOSED_X] == NULL)))
+		return 0;
+	return valid && (!hasFilter || live[WPIS_OPEN_BEAM] != NULL);
+}
+
+static int AH_WarpPad_TryRebuild(struct Thread *t)
+{
+	const struct JitPool *pool = &sdata->gGT->JitPools.instance;
+	struct Instance *inst;
+	int available = pool->free.count;
+	// The largest birth needs a beam, two wisps and three prizes. The
+	// optional beam filter already checks that there is room for the prizes.
+	const int needed = WPIS_NUM_INSTANCES - WPIS_OPEN_BEAM;
+
+	for (inst = (struct Instance *)pool->taken.first; inst != NULL && available < needed; inst = inst->next)
+		if (inst->thread == t && inst != t->inst)
+			available++;
+	if (available < needed)
+		return 0;
+
+	AH_WarpPad_ThDestroy(t);
+	AH_WarpPad_BuildInstances(t);
+	return 1;
 }
 #endif
 
@@ -567,13 +609,18 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	{
 		if (!warppadObj->boolEnteredWarppad)
 		{
-			AH_WarpPad_ThDestroy(t);
-			AH_WarpPad_BuildInstances(t);
+			AH_WarpPad_TryRebuild(t);
 			return;
 		}
 		// An active warp uses the remaining live visuals and keeps its
 		// progress. Its pad was open when the warp started.
 		live[WPIS_CLOSED_1S] = NULL;
+		if (live[WPIS_OPEN_BEAM] == NULL)
+		{
+			struct Instance *filter = AH_WarpPad_ApFilterOf(t);
+			if (filter != NULL)
+				filter->flags |= HIDE_MODEL;
+		}
 	}
 
 	// AP live pad refresh: the locked/open/done look + gate instances are latched at
@@ -591,13 +638,13 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			if (s_padRebirthGen[rbPhys] != rbGen)
 			{
 				int rbState = AH_WarpPad_RebirthKey(rbPhys, warppadObj->levelID);
-				s_padRebirthGen[rbPhys] = rbGen;
 				if (rbState != s_padRebirthState[rbPhys])
 				{
-					AH_WarpPad_ThDestroy(t);       // free current child instances
-					AH_WarpPad_BuildInstances(t);  // rebuild for the new state
-					return; // use the new children next tick
+					if (AH_WarpPad_TryRebuild(t))
+						s_padRebirthGen[rbPhys] = rbGen;
+					return; // retry next tick if the instance pool was full
 				}
+				s_padRebirthGen[rbPhys] = rbGen;
 			}
 		}
 	}
@@ -1712,7 +1759,10 @@ WarpPad_AnimateOpen:
 			if (apBeam->model != sdata->gGT->modelPtr[STATIC_BEAM] || apFilter != 0)
 				AH_WarpPad_ApRefreshCopies(sdata->gGT);
 			if (apFilter != 0)
+			{
+				apFilter->flags &= ~HIDE_MODEL;
 				ConvertRotToMatrix(&apFilter->matrix, &warppadObj->spinRot_Beam);
+			}
 		}
 #endif
 	}
