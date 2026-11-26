@@ -12,12 +12,19 @@ static u32 orange[4] = {0xff, 0xff, 0xff, 0xff};
 static u32 green[4] = {0xff00, 0xff00, 0xff00, 0xff00};
 
 struct Data data = {
-	.font_charPixWidth = {[FONT_BIG] = 17},
-	.font_IconGroupID = {[FONT_BIG] = 4},
+	.font_charPixWidth = {[FONT_SMALL] = 13},
+	.font_IconGroupID = {[FONT_SMALL] = 5},
 	.ptrColor = {[ORANGE] = orange, [LIGHT_GREEN] = green},
 };
 struct sData sdata_static;
 NativeConfig g_config;
+
+static int apActive = 1;
+
+int ctr_cfg_active(void)
+{
+	return apActive;
+}
 
 uint32_t NativeGpuLinks_FromHostPointer(const void *prim)
 {
@@ -48,9 +55,9 @@ static int disjoint(struct Bounds a, struct Bounds b)
 
 int main(void)
 {
-	// A measured 15x15 big digit with a 17-column advance. The font's
+	// An 11x7 small digit with a 13-column advance. The font's
 	// icon lookup uses indices 26..35 for digits in the NTSC-U build.
-	struct Icon digit = {.texLayout = {.u1 = 15, .v2 = 15}};
+	struct Icon digit = {.texLayout = {.u1 = 11, .v2 = 7}};
 	struct
 	{
 		struct IconGroup group;
@@ -66,7 +73,7 @@ int main(void)
 	uint32_t orderingTable = 0;
 	struct DB buffer = {0};
 	struct GameTracker tracker = {.backBuffer = &buffer, .numPlyrCurrGame = 1};
-	tracker.iconGroup[4] = &font.group;
+	tracker.iconGroup[5] = &font.group;
 	tracker.pushBuffer_UI.ptrOT = &orderingTable;
 	sdata->gGT = &tracker;
 
@@ -74,12 +81,13 @@ int main(void)
 	// coordinates and include the bar outlines. The dot covers the repro
 	// at (431,195), with margin on every side. A wide custom map had a
 	// marker at (366,207). The map texture ends at 195 in either case.
-	const int boostX = 490, boostY = 206;
 	const struct Bounds boost = {440, 198, 491, 207};
 	const struct Bounds reserves = {440, 207, 491, 212};
 	const struct Bounds map = {0, 0, 501, 196};
 	const struct Bounds dot = {421, 191, 444, 204};
 	const struct Bounds customDot = {366, 207, 380, 216};
+	// AP_FeedDrawRace. Up to five eight-row lines at twelve-row intervals.
+	const struct Bounds feed = {16, 152, 380, 208};
 	const struct Bounds lap = {400, 8, 485, 34};
 	// The icons, large position numeral and ordinal suffix occupy the left edge.
 	const struct Bounds position = {0, 55, 110, 216};
@@ -93,7 +101,7 @@ int main(void)
 			buffer.primMem.cursor = glyphs;
 			orderingTable = 0;
 			driver.speedometerNeedleValue = FP8(speeds[i]);
-			UI_DrawSpeedNum(boostX, boostY, &driver);
+			UI_DrawSpeedNum(&driver);
 			int count = (POLY_GT4 *)buffer.primMem.cursor - glyphs;
 			expect("expected digit count", count == i + 1);
 			for (int j = 0; j < count; j++)
@@ -104,19 +112,38 @@ int main(void)
 				expect("glyph clear of the boost and reserves bars", disjoint(glyph, boost) && disjoint(glyph, reserves));
 				expect("glyph clear of the minimap and racer dots",
 				       disjoint(glyph, map) && disjoint(glyph, dot) && disjoint(glyph, customDot));
+				expect("glyph clear of the AP race item feed", disjoint(glyph, feed));
 				expect("glyph clear of the lap and position displays", disjoint(glyph, lap) && disjoint(glyph, position));
 				expect("glyph color follows class top speed", i == 0 ? glyphs[j].r0 == 0xff : glyphs[j].g0 == 0xff);
 			}
 			if (count > 0)
-				expect("last digit keeps the same right edge", glyphs[count - 1].x1 == 352 - Widescreen_XShift(15));
+				expect("last digit keeps the same right edge", glyphs[count - 1].x1 == 352 - Widescreen_XShift(11));
 
 			sdata->HudAndDebugFlags = 8;
 			buffer.primMem.cursor = glyphs;
-			UI_DrawSpeedNum(boostX, boostY, &driver);
+			UI_DrawSpeedNum(&driver);
 			expect("analog needle suppresses the readout", buffer.primMem.cursor == glyphs);
 			sdata->HudAndDebugFlags = 0;
 		}
 	}
+
+	g_config.aspectRatio = 0;
+	apActive = 0;
+	UI_DrawSpeedNum(&driver);
+	expect("offline race hides the AP readout", buffer.primMem.cursor == glyphs);
+	apActive = 1;
+	tracker.numPlyrCurrGame = 2;
+	UI_DrawSpeedNum(&driver);
+	expect("split screen hides the AP readout", buffer.primMem.cursor == glyphs);
+	tracker.numPlyrCurrGame = 1;
+	tracker.gameMode1 = BATTLE_MODE;
+	UI_DrawSpeedNum(&driver);
+	expect("battle hides the AP readout", buffer.primMem.cursor == glyphs);
+	tracker.gameMode1 = 0;
+	driver.actionsFlagSet = ACTION_RACE_FINISHED;
+	UI_DrawSpeedNum(&driver);
+	expect("finished race hides the AP readout", buffer.primMem.cursor == glyphs);
+
 	printf("%d failure(s)\n", failures);
 	return failures != 0;
 }

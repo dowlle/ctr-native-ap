@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_AP
+#include "../../ap/ap_seedcfg.h"
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800511c0-0x800516ac.
 void UI_DrawSpeedNeedle(s16 posX, s16 posY, struct Driver *driver)
 {
@@ -246,18 +250,18 @@ void UI_DrawSpeedBG(void)
 // same smoothed value the analog needle uses, so the number does not jitter
 // frame to frame. Turns green above const_AccelSpeed_ClassStat (over class top
 // speed, i.e. on fire / USF -- the state racers actually watch for).
-void UI_DrawSpeedNum(s16 boostX, s16 boostY, struct Driver *driver)
+void UI_DrawSpeedNum(struct Driver *driver)
 {
-	// Triangle switches between the analog needle and the minimap with digits.
-	if (sdata->HudAndDebugFlags & 8)
+	const struct GameTracker *gGT = sdata->gGT;
+	if (!ctr_cfg_active() || gGT->numPlyrCurrGame != 1 ||
+	    (gGT->gameMode1 & BATTLE_MODE) || (driver->actionsFlagSet & ACTION_RACE_FINISHED) ||
+	    (sdata->HudAndDebugFlags & 8))
 		return;
 
-	// Use the lower-left side of the meters. Leave space for minimap sprites
-	// that extend below the map texture, including on wide custom minimaps.
-	// At the 1P anchor this puts the right edge at x=354 and the 17-row line
-	// at y=198..214 within the 512x216 draw area.
-	const int rightX = boostX - 136;
-	const int topY = boostY - 8;
+	// The bottom eight rows fit the small font below the newest race feed
+	// line (y=200, 8 rows). Stay left of the meters and low minimap markers.
+	const int rightX = 354;
+	const int topY = 208;
 	char string[8];
 
 	int speed = FP8_INT(driver->speedometerNeedleValue);
@@ -273,6 +277,6 @@ void UI_DrawSpeedNum(s16 boostX, s16 boostY, struct Driver *driver)
 	}
 
 	sprintf(&string[0], "%d", speed);
-	DecalFont_DrawLine(string, rightX, topY, FONT_BIG, color | JUSTIFY_RIGHT);
+	DecalFont_DrawLine(string, rightX, topY, FONT_SMALL, color | JUSTIFY_RIGHT);
 }
 #endif

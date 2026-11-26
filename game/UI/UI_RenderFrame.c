@@ -196,15 +196,9 @@ void UI_RenderFrame_Racing()
 					UI_DrawSlideMeter(hudStructPtr[8].x + offset, hudStructPtr[8].y, playerStruct);
 
 #ifdef CTR_AP
-					// AP HUD: reserves bar under the boost bar, with a numeric
-					// speed readout to their left (1P only). Sits inside the
-					// not-finished / not-battle gate so it inherits the boost
-					// bar's visibility (hidden after the finish line and in battle).
+					// The AP reserves bar follows the boost bar's visibility.
 					if (ctr_cfg_active() && numPlyr == 1)
-					{
 						UI_DrawReservesMeter(hudStructPtr[8].x + offset, hudStructPtr[8].y + 5, playerStruct);
-						UI_DrawSpeedNum(hudStructPtr[8].x + offset, hudStructPtr[8].y, playerStruct);
-					}
 #endif
 				}
 
@@ -214,6 +208,10 @@ void UI_RenderFrame_Racing()
 					UI_DrawNumWumpa(hudStructPtr[4].x, hudStructPtr[4].y, playerStruct);
 				}
 			}
+
+#ifdef CTR_AP
+			UI_DrawSpeedNum(playerStruct);
+#endif
 
 			// If you're in a Relic Race
 			if ((gameMode1 & RELIC_RACE) != 0)
