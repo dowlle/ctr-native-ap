@@ -1864,10 +1864,10 @@ static void validate(const J &p, State &out) {
             // crates with targets on a timed lap graph.
             const unsigned caps = record.capabilities;
             if (placed) {
-                const auto key = canonical_track_key(record.content_id);
+                const char *key = canonical_track_key(record.content_id);
                 need(named && (mode_bits & (1u << AP_CONTENT_MODE_CTR)) && (caps & AP_CONTENT_CAP_ARCADE) &&
                      (!dest.letter_glyphs[0] || track.at("letters") == "CNK") &&
-                     AP_PlacedLetters_Find(key.c_str(), record.lev_sha256, record.vrm_sha256),
+                     AP_PlacedLetters_Find(key, record.lev_sha256, record.vrm_sha256),
                      "invalid placed letter revision");
                 dest.placed_letters = 1;
             }
