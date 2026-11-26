@@ -47,6 +47,7 @@ class CompanionSelectionTests(unittest.TestCase):
                        head_repository={"full_name": "owner/world"})
         candidates = [
             dict(current, id=6, event="workflow_dispatch"),
+            dict(current, id=8, event="push"),
             dict(current, id=2, head_sha="stale"),
             dict(current, id=3, head_branch="elsewhere"),
             dict(current, id=4, conclusion="failure"),
@@ -55,13 +56,13 @@ class CompanionSelectionTests(unittest.TestCase):
             current,
         ]
         self.assertEqual(self.select({"object": {"sha": "current"}}, candidates=candidates,
-                                     allow_pull_request=True, missing_artifact_ids=(5,)), ([1, 6], "current"))
+                                     allow_pull_request=True, missing_artifact_ids=(5,)), ([1, 6, 8], "current"))
         self.assertIn("head_sha=current", self.query)
         self.assertEqual(self.select({"object": {"sha": "current"}}, candidates=candidates[:-1],
-                                     allow_pull_request=True, missing_artifact_ids=(5,)), ([6], "current"))
+                                     allow_pull_request=True, missing_artifact_ids=(5,)), ([6, 8], "current"))
         with self.assertRaisesRegex(RuntimeError, "no successful"):
             self.select({"object": {"sha": "current"}}, candidates=candidates,
-                        allow_pull_request=True, missing_artifact_ids=(1, 5, 6))
+                        allow_pull_request=True, missing_artifact_ids=(1, 5, 6, 8))
 
     def test_manual_rehearsal_rejects_pr_run(self):
         pr = dict(id=1, head_branch="pair/topic", head_sha="current",
@@ -108,10 +109,18 @@ class PackedApworldWorkflowTests(unittest.TestCase):
         workflow = (repo / ".github/workflows/release-assembly.yml").read_text(encoding="utf-8")
         step = workflow.split("- name: Download and verify the exact packed apworld\n", 1)[1]
         script = dedent(step.split("run: |\n", 1)[1].split("\n      - name:", 1)[0])
-        # Model GitHub's merge-tree artifact and the verifier's exact-source check.
-        commands = """
+        # Model GitHub's merge-tree artifact, a rerun, and the verifier's exact-source check.
+        commands = r"""
 git() { printf '%s\n' "$APWORLD_SOURCE_COMMIT"; }
 gh() {
+  if [[ "$2" == view ]]; then
+    case "$3" in
+      3) printf 'in_progress  %s\n' "$APWORLD_SOURCE_COMMIT" ;;
+      4) printf 'completed success stale\n' ;;
+      *) printf 'completed success %s\n' "$APWORLD_SOURCE_COMMIT" ;;
+    esac
+    return
+  fi
   mkdir -p "${9}"
   if [[ "$3" == 1 ]]; then
     printf 'synthetic merge tree' > "${9}/ctr.apworld"
@@ -123,16 +132,23 @@ python3() {
   [[ "$4" == "$APWORLD_SOURCE_COMMIT" ]] && [[ "$(cat "$2")" == "companion head" ]]
 }
 """
-        for alternates in ("2", ""):
-            with self.subTest(alternates=alternates), tempfile.TemporaryDirectory() as workspace:
+        cases = (("1", "3 4 2", True), ("3", "2", True), ("2", "", True),
+                 ("1", "", False), ("3", "", False), ("4", "", False))
+        for primary, alternates, accepted in cases:
+            with self.subTest(primary=primary, alternates=alternates), tempfile.TemporaryDirectory() as workspace:
                 result = subprocess.run(
                     ["bash", "-c", commands + script], cwd=workspace, text=True, capture_output=True,
-                    env={**os.environ, "APWORLD_RUN_ID": "1", "APWORLD_ALTERNATE_RUN_IDS": alternates,
+                    env={**os.environ, "APWORLD_RUN_ID": primary, "APWORLD_ALTERNATE_RUN_IDS": alternates,
                          "APWORLD_SOURCE_COMMIT": "a" * 40, "APWORLD_REPO": "owner/world",
                          "APWORLD_ARTIFACT_NAME": "ctr.apworld"})
                 output = Path(workspace) / "apworld-artifact" / "ctr.apworld"
-                self.assertIn("Could not verify packed apworld from run 1", result.stderr)
-                if alternates:
+                if primary == "1":
+                    self.assertIn("Could not verify packed apworld from run 1", result.stderr)
+                for rejected in ("3", "4"):
+                    if rejected in (primary, *alternates.split()):
+                        self.assertIn(f"Run {rejected} is not successful on apworld commit", result.stderr)
+                        self.assertFalse((Path(workspace) / f"apworld-candidate-{rejected}").exists())
+                if accepted:
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertIn("verified_apworld_run_id=2", result.stdout)
                     self.assertEqual(output.read_text(encoding="utf-8"), "companion head")

@@ -103,40 +103,28 @@ jobs:
           path: apworld-source
           persist-credentials: false
 
-      - name: Verify successful run identities
+      - name: Verify successful native run
         env:
           GH_TOKEN: ${{ github.token }}
           NATIVE_RUN_ID: ${{ steps.select.outputs.native_run_id }}
           NATIVE_SOURCE_COMMIT: ${{ steps.select.outputs.native_source_commit }}
-          APWORLD_RUN_ID: ${{ steps.select.outputs.apworld_run_id }}
-          APWORLD_SOURCE_COMMIT: ${{ steps.select.outputs.apworld_source_commit }}
-          APWORLD_REPO: ${{ inputs.apworld_repo }}
         run: |
           set -euo pipefail
-          check_run() {
-            local run_id="$1" repo="$2" expected="$3" mode="$4"
-            gh run view "$run_id" --repo "$repo" --json status,conclusion,headSha > run.json
-            python3 - "$expected" "$mode" run.json <<'PY'
+          gh run view "$NATIVE_RUN_ID" --repo "$GITHUB_REPOSITORY" --json status,conclusion,headSha > run.json
+          python3 - "$NATIVE_SOURCE_COMMIT" run.json <<'PY'
           import json
           import sys
-          expected, mode, path = sys.argv[1:]
+          expected, path = sys.argv[1:]
           run = json.load(open(path, encoding="utf-8"))
           if run.get("status") != "completed" or run.get("conclusion") != "success":
               raise SystemExit(f"run is not successful: {run}")
           if len(expected) != 40 or any(c not in "0123456789abcdef" for c in expected):
               raise SystemExit(f"source commit is not a full hexadecimal id: {expected}")
-          if mode == "apworld" and run.get("headSha") != expected:
-              raise SystemExit(
-                  f"apworld run head {run.get('headSha')} does not match {expected}"
-              )
           # Native pull_request runs may build GitHub's synthetic merge commit;
           # BUILD.json and the archive name are checked against the source
           # checkout by the assembler below.
-          print(f"successful {mode} run head: {run.get('headSha')}; requested source: {expected}")
+          print(f"successful native run head: {run.get('headSha')}; requested source: {expected}")
           PY
-          }
-          check_run "$NATIVE_RUN_ID" "$GITHUB_REPOSITORY" "$NATIVE_SOURCE_COMMIT" native
-          check_run "$APWORLD_RUN_ID" "$APWORLD_REPO" "$APWORLD_SOURCE_COMMIT" apworld
 
       - name: Download exact hosted native artifacts
         env:
@@ -161,6 +149,12 @@ jobs:
           # Try the next same-head run if its artifact fails exact-source verification.
           read -r -a alternates <<< "$APWORLD_ALTERNATE_RUN_IDS"
           for run_id in "$APWORLD_RUN_ID" "${alternates[@]}"; do
+            if ! gh run view "$run_id" --repo "$APWORLD_REPO" --json status,conclusion,headSha \
+                --jq '[.status, .conclusion, .headSha] | join(" ")' \
+                | grep -Fxq "completed success $APWORLD_SOURCE_COMMIT"; then
+              printf 'Run %s is not successful on apworld commit %s\n' "$run_id" "$APWORLD_SOURCE_COMMIT" >&2
+              continue
+            fi
             candidate="apworld-candidate-$run_id"
             if gh run download "$run_id" --repo "$APWORLD_REPO" \
                 --name "$APWORLD_ARTIFACT_NAME" --dir "$candidate"; then

@@ -83,7 +83,7 @@ def choose_apworld(
         events.add("pull_request")
         query["head_sha"] = expected_sha
     pr_runs = []
-    fallback = None
+    other_runs = []
     for run in runs(repo, "ctr-world.yml", urlencode(query)):
         if (run.get("event") not in events
                 or run.get("head_branch") != branch or run.get("conclusion") != "success"):
@@ -93,19 +93,15 @@ def choose_apworld(
         is_pr_run = run.get("event") == "pull_request"
         if is_pr_run and (run.get("head_repository") or {}).get("full_name") != repo:
             continue
-        if fallback is not None and not is_pr_run:
-            continue
         if has_artifacts(repo, run["id"], {"ctr.apworld"}):
             if not prefer_pr:
                 return [run["id"]], run["head_sha"]
             if is_pr_run:
                 pr_runs.append(run["id"])
             else:
-                fallback = run["id"]
-    if fallback is not None:
-        pr_runs.append(fallback)
-    if pr_runs and expected_sha:
-        return pr_runs, expected_sha
+                other_runs.append(run["id"])
+    if (pr_runs or other_runs) and expected_sha:
+        return pr_runs + other_runs, expected_sha
     raise RuntimeError(f"no successful ctr-world run with ctr.apworld on {repo}:{branch}")
 
 
