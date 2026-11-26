@@ -4,7 +4,9 @@
 #include <stddef.h>
 
 #define CTR_TRACK_CREDIT_MAX 1408
-#define CTR_CORTEX_CREDIT "Track and music by Lockheart"
+#define CTR_CORTEX_TRACK_CREDIT "Track by Lockheart"
+#define CTR_CORTEX_MUSIC_CREDIT "Music by arbee"
+#define CTR_CORTEX_CREDIT CTR_CORTEX_TRACK_CREDIT " / " CTR_CORTEX_MUSIC_CREDIT
 
 #ifdef __cplusplus
 extern "C" {

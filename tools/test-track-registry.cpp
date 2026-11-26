@@ -169,7 +169,7 @@ int main(int argc, char **argv)
 		    "cc0aaa1dacfbc6f43f1efc73989e7b7e2479ba8f81583784d507bac97f3d0a87",
 		    "e7a6a0b82cef9ec3e5c4bb5ab9ce2317b28aab198d7cb5263ef0b883c555e2e6",
 		    0, "Lockheart", nullptr);
-		CHECK(!std::strcmp(credit, CTR_CORTEX_CREDIT));
+		CHECK(!std::strcmp(credit, "Track by Lockheart / Music by arbee"));
 		CustomTrackCredit_Format(credit, sizeof credit,
 		    CTR_CFG_CORTEX_LEV_SHA256, CTR_CFG_CORTEX_VRM_SHA256, 0, nullptr, nullptr);
 		CHECK(!std::strcmp(credit, CTR_CORTEX_CREDIT));

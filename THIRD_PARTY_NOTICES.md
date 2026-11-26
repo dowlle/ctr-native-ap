@@ -280,9 +280,9 @@ Paths: `assets/tracks/cortex-vortex/CVortex Arcade All.lev`,
 `assets/tracks/cortex-vortex/CVortex Relic.vrm`,
 `assets/tracks/cortex-vortex/CVortex Arcade All.sca` (the track's music)
 
-Cortex Vortex was created by **Lockheart**. These exact files are bundled for
-use as the N. Oxide Final Challenge venue, as a randomized track and for its
-own music, with the author's permission. The track files are the author's
+Cortex Vortex was created by **Lockheart**, with music by **arbee**. These exact
+files are bundled for use as the N. Oxide Final Challenge venue, as a randomized
+track and for its own music, with the author's permission. The track files are the author's
 Project Saphi releases 1.1.5 (`CVortex Arcade All`, every mode except the
 Relic Race) and 1.1.6 (`CVortex Relic`, the Relic Race); the music is the
 author-supplied file. They are redistributed unchanged and are not relicensed
