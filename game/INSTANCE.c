@@ -1,6 +1,6 @@
 #include <common.h>
 #ifdef CTR_AP
-#include "ap_trial_letters.h"
+#include "../ap/ap_trial_letters.h"
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80030778-0x8003086c.
