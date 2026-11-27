@@ -28,6 +28,7 @@
 #include <filesystem>
 #include <fstream>
 #include <future>
+#include <map>
 #include <mutex>
 #include <set>
 #include <sstream>
@@ -1409,6 +1410,21 @@ void HideRelicOnlyDescriptor(const std::string &key, const std::string &revision
 	}
 }
 
+// MR2: a split track's race pair keeps its Relic pair when its lap count is
+// added (a pair needs laps, so a needs-laps row was written without it). The
+// kept row's relic_revision stays when it names the same Relic files.
+nlohmann::json WithModePair(nlohmann::json d, const nlohmann::json &kept)
+{
+	std::string note;
+	if (AP_SoloApplyModePair(d, AP_SoloKnownModePairs(), note) == AP_SOLO_PAIR_MERGED)
+	{
+		Log(AP_SoloJsonString(d, "id") + ": " + note);
+		if (kept.is_object() && kept.contains("relic_revision") && kept.value("relic_files", nlohmann::json()) == d["relic_files"])
+			d["relic_revision"] = kept["relic_revision"];
+	}
+	return d;
+}
+
 // The one writer behind both C entry points and the store publication: kind 1
 // is a complete descriptor for solo/tracks, kind 2 one that waits for its laps
 // in solo/needs-laps. Every refusal is logged with its file name and gives
@@ -1476,7 +1492,9 @@ bool RecordDescriptor(int kind, const char *contentId, const char *revision, con
 	// title, author or capabilities: publish those, keep the player's laps.
 	if (kept.is_object() && kept.contains("files") && !keptOther)
 	{
-		const auto merged = AP_SoloMergeNeedsLaps(kept, fresh);
+		auto merged = AP_SoloMergeNeedsLaps(kept, fresh);
+		if (!merged.is_null())
+			merged = WithModePair(merged, kept);
 		if (merged.is_null())
 			return refuse("its kept lap count is not 1 to 7; delete its file in solo/tracks",
 			              "kept laps are missing or out of range");
@@ -1575,6 +1593,7 @@ struct StorePublication
 	std::vector<Descriptor> descriptors;
 	std::vector<Descriptor> hidden; // kind 3: Relic pairs of known race pairs (MR2), never listed
 	std::vector<APSoloModePair> modePairs; // registry mode_pairs, then the built-in table
+	std::map<std::string, std::string> versionByPins; // uuid|lev|bytes|vrm|bytes -> version ("" when two differ)
 	std::set<std::string> live; // StoreSignature of every verified package
 	mutable std::set<std::string> listed; // pins whose descriptor was written
 	std::vector<std::string> notes; // log lines from the worker, written on the game thread
@@ -1588,11 +1607,21 @@ struct StorePublication
 void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 {
 	std::string StoreDescriptorKey(const CustomPackageLocalInfo &local, const char *title);
+	std::string PairPinsKey(const CustomPackageManifest &m);
 	auto &result = *static_cast<StorePublication *>(opaque);
 	if (result.cancel && result.cancel->load())
 		throw std::runtime_error("Track verification cancelled");
 	if (entry->verified)
+	{
 		result.live.insert(StoreSignature(entry->manifest));
+		const std::string pins = PairPinsKey(entry->manifest);
+		if (!pins.empty())
+		{
+			auto found = result.versionByPins.emplace(pins, entry->manifest.version);
+			if (!found.second && found.first->second != entry->manifest.version)
+				found.first->second.clear();
+		}
+	}
 	if (!result.pin.empty() && result.pin != entry->pin) return;
 	result.published++;
 	// A full scan lists the usable packages even if another install is broken.
@@ -1625,26 +1654,79 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 		}
 	}
 	else
+		result.descriptors.push_back({kind, key, revision, json,
+			entry->displayTitle[0] ? entry->displayTitle : entry->manifest.title, entry->pin});
+}
+
+// "<uuid>|<lev sha>|<bytes>|<vrm sha>|<bytes>" of an installed package, the
+// identity a room's relic_files lookup uses besides the version.
+std::string PairPinsKey(const CustomPackageManifest &m)
+{
+	const CustomPackageFile *lev = nullptr, *vrm = nullptr;
+	for (unsigned int i = 0; i < m.count; i++)
 	{
-		const std::string title = entry->displayTitle[0] ? entry->displayTitle : entry->manifest.title;
-		std::string body = json, note;
-		nlohmann::json d = nlohmann::json::parse(body, nullptr, false);
-		const int paired = d.is_object() ? AP_SoloApplyModePair(d, result.modePairs, note) : AP_SOLO_PAIR_NONE;
-		const std::string label = PackageLabel(*entry) + " " + revision + " (package " + std::string(entry->pin).substr(0, 12) + ")";
+		if (!std::strcmp(m.files[i].role, "lev")) lev = &m.files[i];
+		if (!std::strcmp(m.files[i].role, "vrm")) vrm = &m.files[i];
+	}
+	if (!lev || !vrm)
+		return std::string();
+	return std::string(m.uuid) + "|" + lev->sha256 + "|" + std::to_string(lev->bytes) + "|" + vrm->sha256 + "|" +
+	       std::to_string(vrm->bytes);
+}
+
+// solo/pairs/mode-pairs.json for the solo runtime: every known Relic pair,
+// so a Relic-only file from an older room's metadata is never offered as a
+// track's main pair either.
+std::string ModePairsFile(const std::vector<APSoloModePair> &pairs)
+{
+	nlohmann::json relic = nlohmann::json::array();
+	for (const APSoloModePair &p : pairs)
+		if (AP_SoloModePairValid(p))
+			relic.push_back({{"track_key", p.trackKey}, {"race_revision", p.raceRevision},
+			                 {"files", nlohmann::json::array({{{"role", "lev"}, {"sha256", p.relicLev}, {"bytes", p.relicLevBytes}},
+			                                                  {{"role", "vrm"}, {"sha256", p.relicVrm}, {"bytes", p.relicVrmBytes}}})}});
+	return nlohmann::json({{"schema_version", 1}, {"relic_only", relic}}).dump();
+}
+
+// Merged mode builds (MR2), after the scan and before one copy per entry is
+// kept: a race pair gets its Relic pair, a Relic pair is never a row of its
+// own. relic_revision is the installed Relic package's own version when one
+// with the same uuid is installed (a room finds the pair by version, uuid and
+// pins), else the pair's label.
+void ApplyModePairs(StorePublication &result)
+{
+	std::vector<StorePublication::Descriptor> kept;
+	for (auto &d : result.descriptors)
+	{
+		nlohmann::json body = nlohmann::json::parse(d.json, nullptr, false);
+		std::string note;
+		const int paired = body.is_object() ? AP_SoloApplyModePair(body, result.modePairs, note) : AP_SOLO_PAIR_NONE;
+		const std::string label = d.title + " " + d.revision + " (package " + d.pin.substr(0, 12) + ")";
 		if (paired == AP_SOLO_PAIR_RELIC_ONLY)
 		{
-			// A Relic-only file is never a track's main pair (MR2): its race
-			// pair carries it as relic_files. Its old row, if any, is removed.
 			result.notes.push_back("left " + label + " out of Play Solo: " + note);
-			result.hidden.push_back({3, key, revision, d["files"].dump(), title, entry->pin});
-			return;
+			result.hidden.push_back({3, d.key, d.revision, body["files"].dump(), d.title, d.pin});
+			continue;
 		}
 		if (paired == AP_SOLO_PAIR_MERGED)
-			body = d.dump();
+		{
+			const auto &r = body["relic_files"];
+			const auto installed = result.versionByPins.find(AP_SoloJsonString(body, "uuid") + "|" +
+				r[0].value("sha256", "") + "|" + std::to_string(r[0].value("bytes", 0ull)) + "|" +
+				r[1].value("sha256", "") + "|" + std::to_string(r[1].value("bytes", 0ull)));
+			if (installed != result.versionByPins.end() && !installed->second.empty() &&
+			    !AP_SoloDescriptorFileName("x", installed->second).empty())
+			{
+				body["relic_revision"] = installed->second;
+				note += "; installed as " + installed->second;
+			}
+			d.json = body.dump();
+		}
 		if (paired != AP_SOLO_PAIR_NONE)
 			result.notes.push_back(label + ": " + note);
-		result.descriptors.push_back({kind, key, revision, body, title, entry->pin});
+		kept.push_back(std::move(d));
 	}
+	result.descriptors = std::move(kept);
 }
 
 std::string StoreDescriptorKey(const CustomPackageLocalInfo &local, const char *title)
@@ -1822,11 +1904,17 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 		result.failed++;
 		result.error = "Installed package was not found in the shared store";
 	}
+	ApplyModePairs(result);
 	if (result.pin.empty())
 		KeepOneCopyPerEntry(result);
-	for (auto &d : result.hidden)
-		result.descriptors.push_back(std::move(d));
+	// Relic-only rows go first: an old row a Relic pair owns under the same
+	// file name (Sunken Sprint, Cubic Circuit) must not block its race pair.
+	for (auto &d : result.descriptors)
+		result.hidden.push_back(std::move(d));
+	result.descriptors = std::move(result.hidden);
 	result.hidden.clear();
+	if (result.pin.empty())
+		result.descriptors.push_back({4, "", "", ModePairsFile(result.modePairs), "", ""});
 	return result;
 }
 
@@ -1834,6 +1922,13 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 // says what to do (the menus show at most 170 characters of it).
 bool ApplyStoreDescriptor(const StorePublication::Descriptor &d, const StorePublication &from, std::string &message)
 {
+	if (d.kind == 4)
+	{
+		std::string why;
+		if (!KeepDescriptorFile("pairs", "mode-pairs.json", d.json, &why))
+			Log("mode pairs for the solo runtime not written: " + why);
+		return true;
+	}
 	if (d.kind == 3)
 	{
 		HideRelicOnlyDescriptor(d.key, d.revision, d.json);
@@ -2230,7 +2325,9 @@ extern "C" int AP_Solo_TrackKeepLaps(int index)
 	    nlohmann::json::parse(ReadSmallPlainFile(dir / fs::u8path(name), kDescriptorMax), nullptr, false);
 	if (!AP_SoloNeedsLapsDescriptor(d, name))
 		return 0;
-	const std::string json = AP_SoloDescriptorWithLaps(d, g_tracks[index].laps);
+	std::string json = AP_SoloDescriptorWithLaps(d, g_tracks[index].laps);
+	if (!json.empty())
+		json = WithModePair(nlohmann::json::parse(json), nlohmann::json()).dump();
 	if (json.empty() || !KeepDescriptorFile("tracks", name, json))
 		return 0;
 	DropNeedsLaps(name);
@@ -2690,4 +2787,7 @@ std::vector<APSoloModePair> AP_SoloKnownModePairs()
 	}
 	return out;
 }
+#else
+// Without the package library there are no installed packages to pair.
+std::vector<APSoloModePair> AP_SoloKnownModePairs() { return {}; }
 #endif

@@ -108,8 +108,14 @@ int main()
     // A version that cannot fit in either id remains a per-package refusal.
     const auto bad = install_metadata(assets, "bad-track", "Too Long Revision", ("1.0.0-" + std::string(54, 'a')).c_str());
     assert(!descriptor(assets, bad));
+    // Track rows only: a full scan also carries the solo runtime's mode pairs file (kind 4, MR2).
+    const auto rows = [](const StorePublication &s) {
+        size_t n = 0;
+        for (const auto &d : s.descriptors) n += d.kind == 1 || d.kind == 2;
+        return n;
+    };
     auto scan = CollectInstalledStore(assets, "");
-    assert(!scan.failed && scan.error.empty() && scan.descriptors.size() == 2);
+    assert(!scan.failed && scan.error.empty() && rows(scan) == 2 && scan.descriptors.back().kind == 4);
     bool named = false;
     for (const auto &note : scan.notes) {
         puts(note.c_str());
@@ -135,9 +141,10 @@ int main()
     assert(start("baby-t-park"));
     assert(finish(detail) == AP_CT_DOWNLOAD_SUCCEEDED);
     scan = CollectInstalledStore(downloaded, "");
-    assert(!scan.failed && scan.descriptors.size() == 2);
+    assert(!scan.failed && rows(scan) == 2);
     bool baby = false;
     for (const auto &d : scan.descriptors) {
+        if (d.kind == 4) continue;
         const auto j = nlohmann::json::parse(d.json);
         assert(j["id"].get<std::string>().size() <= 64);
         if (d.key == "baby-t-park") baby = j["id"] == "package/baby-t-park/1.0.0";

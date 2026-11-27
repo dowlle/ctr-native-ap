@@ -64,6 +64,8 @@ static std::string ap_track_registry_canonical_key(const std::string &key) {
 static bool storeBusy;
 static bool StorePublicationBusy() { return storeBusy; }
 extern "C" int AP_Solo_PublishInstalledStoreStart() { storeBusy = false; return 1; }
+static std::vector<APSoloModePair> g_pairs; // MR2: the pairs WithModePair sees
+std::vector<APSoloModePair> AP_SoloKnownModePairs() { return g_pairs; }
 namespace {
 '''
 for signature in ("bool SoloRootIsLink()", "std::string ReadSmallPlainFile(const fs::path &path, size_t limit)",
@@ -386,6 +388,30 @@ int main(int, char **argv) {
         write(std::string("tracks/") + name, other);
         assert(ApplyStoreDescriptor(entry(3, "Nina", nlohmann::json::parse(pins("ca", "cb")).dump(), "c"), scan, message));
         assert(read(std::string("tracks/") + name) == other);
+    }
+    // MR2: a race pair whose laps are kept in solo/tracks keeps its Relic pair
+    // when a reinstall republishes it as a needs-laps row.
+    {
+        clean();
+        APSoloModePair p;
+        p.trackKey = "nina"; p.raceRevision = "1.0.0"; p.relicRevision = "1.0.1";
+        p.raceLev = std::string(64, 'a'); p.raceVrm = std::string(64, 'b');
+        p.relicLev = std::string(64, 'c'); p.relicVrm = std::string(64, 'd');
+        p.raceLevBytes = 100; p.raceVrmBytes = 200; p.relicLevBytes = 300; p.relicVrmBytes = 400;
+        p.targets[0] = 3; p.targets[1] = 2; p.targets[2] = 1; p.source = "test";
+        g_pairs = {p};
+        const std::string race = pins(std::string(64, 'a').c_str(), std::string(64, 'b').c_str());
+        auto kept = nlohmann::json::parse(descriptor("Nina", race));
+        kept["capabilities"] = {{"relic", false}, {"time_trial", false}};
+        write(std::string("tracks/") + name, kept.dump());
+        auto fresh = kept; fresh.erase("laps");
+        StorePublication scan;
+        std::string message;
+        assert(ApplyStoreDescriptor(entry(2, "Nina", fresh.dump(), "a"), scan, message));
+        const auto now = nlohmann::json::parse(read(std::string("tracks/") + name));
+        assert(now["laps"] == 3 && now.contains("relic_files") && now["relic_files"][0]["sha256"] == std::string(64, 'c'));
+        assert(now["relic_revision"] == "1.0.1" && now["capabilities"]["relic"] == true);
+        g_pairs.clear();
     }
     puts("PASS: stale descriptors are replaced, live ones are named and kept, every refusal logs its file");
 }
