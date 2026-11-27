@@ -796,6 +796,26 @@ static void test_mode_pairs()
 	auto noRevision = descriptor(A, 1088620, B, 458808);
 	CHECK(AP_SoloApplyModePair(noRevision, {odd}, note) == AP_SOLO_PAIR_MERGED && !noRevision.contains("relic_revision") &&
 	      noRevision.contains("relic_files"));
+	// MR2 review 2, finding 1: relic_revision names a version the Relic files
+	// are installed under, because a room finds them by revision and pins.
+	CHECK(AP_SoloChooseRelicRevision({}, "1.1.2-relic", "") == "1.1.2-relic");           // not installed: the label
+	CHECK(AP_SoloChooseRelicRevision({"1.1.2"}, "1.1.2-relic", "") == "1.1.2");          // Saphi Library install
+	CHECK(AP_SoloChooseRelicRevision({"1.1.2", "1.1.2-relic"}, "1.1.2-relic", "1.1.2") == "1.1.2-relic");
+	CHECK(AP_SoloChooseRelicRevision({"1.0.0", "1.0.0b"}, "1.0.0-relic", "1.0.0b") == "1.0.0b"); // the kept row's
+	CHECK(AP_SoloChooseRelicRevision({"1.0.0", "1.0.0b"}, "1.0.0-relic", "2.0") == "1.0.0");     // first installed
+	CHECK(AP_SoloChooseRelicRevision({"bad version"}, "relic build", "") == "");
+	CHECK(AP_SoloChooseRelicRevision({"bad version", "1.3.1"}, "", "") == "1.3.1");
+	auto merged = descriptor(A, 1088620, B, 458808);
+	CHECK(AP_SoloApplyModePair(merged, {pair}, note) == AP_SOLO_PAIR_MERGED);
+	CHECK(AP_SoloUseInstalledRelicRevision(merged, {"1.3.1"}, "") == "; installed as 1.3.1" && merged["relic_revision"] == "1.3.1");
+	CHECK(AP_SoloUseInstalledRelicRevision(merged, {"1.3.1b"}, "").find("not 1.3.1") != std::string::npos &&
+	      merged["relic_revision"] == "1.3.1b");
+	auto unnamed = descriptor(A, 1088620, B, 458808);
+	CHECK(AP_SoloApplyModePair(unnamed, {odd}, note) == AP_SOLO_PAIR_MERGED && !unnamed.contains("relic_revision"));
+	AP_SoloUseInstalledRelicRevision(unnamed, {"1.3.1"}, "");
+	CHECK(unnamed["relic_revision"] == "1.3.1");
+	AP_SoloUseInstalledRelicRevision(noRevision, {}, "");
+	CHECK(!noRevision.contains("relic_revision"));
 }
 
 int main()

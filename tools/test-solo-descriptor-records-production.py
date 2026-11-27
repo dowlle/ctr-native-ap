@@ -66,6 +66,8 @@ static bool StorePublicationBusy() { return storeBusy; }
 extern "C" int AP_Solo_PublishInstalledStoreStart() { storeBusy = false; return 1; }
 static std::vector<APSoloModePair> g_pairs; // MR2: the pairs WithModePair sees
 std::vector<APSoloModePair> AP_SoloKnownModePairs() { return g_pairs; }
+static std::set<std::string> g_installed; // MR2: versions the Relic pins are installed under
+std::set<std::string> AP_SoloInstalledVersionsByPins(const nlohmann::json &) { return g_installed; }
 namespace {
 '''
 for signature in ("bool SoloRootIsLink()", "std::string ReadSmallPlainFile(const fs::path &path, size_t limit)",
@@ -411,7 +413,77 @@ int main(int, char **argv) {
         const auto now = nlohmann::json::parse(read(std::string("tracks/") + name));
         assert(now["laps"] == 3 && now.contains("relic_files") && now["relic_files"][0]["sha256"] == std::string(64, 'c'));
         assert(now["relic_revision"] == "1.0.1" && now["capabilities"]["relic"] == true);
+        // MR2 review 2, finding 1: a kept row whose relic_revision is a label
+        // the installed Relic files do not carry (saved laps wrote it) takes
+        // the installed version on the next scan, so a room finds the files.
+        auto stale = nlohmann::json::parse(read(std::string("tracks/") + name));
+        stale["relic_revision"] = "1.0.1-relic";
+        write(std::string("tracks/") + name, stale.dump());
+        g_installed = {"1.0.1"};
+        assert(ApplyStoreDescriptor(entry(2, "Nina", fresh.dump(), "a"), scan, message));
+        auto healed = nlohmann::json::parse(read(std::string("tracks/") + name));
+        assert(healed["laps"] == 3 && healed["relic_revision"] == "1.0.1" && healed.contains("relic_files"));
+        // Installed under another version than the label (Saphi keeps its own).
+        write(std::string("tracks/") + name, kept.dump());
+        g_installed = {"0.9"};
+        assert(ApplyStoreDescriptor(entry(2, "Nina", fresh.dump(), "a"), scan, message));
+        healed = nlohmann::json::parse(read(std::string("tracks/") + name));
+        assert(healed["relic_revision"] == "0.9" && loggedFile("installed as 0.9, not 1.0.1"));
+        g_installed.clear();
         g_pairs.clear();
+    }
+    // MR2 review 2, finding 3: laps moved to a replacement key (kind 0) keep
+    // the Relic pair; the moved row is paired like any other.
+    {
+        clean();
+        APSoloModePair p;
+        p.trackKey = "my-name"; p.raceRevision = "1.0.0"; p.relicRevision = "1.0.1";
+        p.raceLev = std::string(64, 'a'); p.raceVrm = std::string(64, 'b');
+        p.relicLev = std::string(64, 'c'); p.relicVrm = std::string(64, 'd');
+        p.raceLevBytes = 100; p.raceVrmBytes = 200; p.relicLevBytes = 300; p.relicVrmBytes = 400;
+        p.targets[0] = 3; p.targets[1] = 2; p.targets[2] = 1; p.source = "test";
+        g_pairs = {p};
+        g_installed = {"1.0.1"};
+        const std::string race = pins(std::string(64, 'a').c_str(), std::string(64, 'b').c_str());
+        auto row = [&](const char *key, const char *title, bool laps) {
+            nlohmann::json d = {{"id", std::string("package/") + key + "/1.0.0"}, {"content_id", key}, {"revision", "1.0.0"},
+                                {"display_name", title}, {"author", "A"}, {"uuid", "u1"}, {"files", nlohmann::json::parse(race)},
+                                {"capabilities", {{"relic", false}, {"time_trial", false}}}};
+            if (laps) d["laps"] = 4;
+            return d;
+        };
+        const std::string oldName = "generic-slot__1.0.0.json", newName = "my-name__1.0.0.json";
+        StorePublication::Descriptor keeper = {2, "my-name", "1.0.0", row("my-name", "My Name", false).dump(), "My Name",
+                                               std::string(64, 'n')};
+        StorePublication::Descriptor retire = {0, "generic-slot", "1.0.0", "u1", "Generic", std::string(64, 'o'),
+                                               std::string(64, 'n'), "my-name"};
+        StorePublication live;
+        live.live = {"1.0.0|lev:" + std::string(64, 'a') + ":100|vrm:" + std::string(64, 'b') + ":200"};
+        write("tracks/" + oldName, row("generic-slot", "Generic", true).dump());
+        std::string why;
+        assert(ApplyStoreDescriptor(keeper, live, why) && ApplyStoreDescriptor(retire, live, why));
+        assert(read("tracks/" + oldName).empty());
+        const auto moved = nlohmann::json::parse(read("tracks/" + newName), nullptr, false);
+        assert(moved.is_object() && moved["laps"] == 4 && moved["display_name"] == "My Name");
+        assert(moved.contains("relic_files") && moved["relic_files"][0]["sha256"] == std::string(64, 'c'));
+        assert(moved["relic_revision"] == "1.0.1" && moved["capabilities"]["relic"] == true && moved.contains("relic_targets"));
+        g_installed.clear();
+        g_pairs.clear();
+    }
+    // MR2 review 2, finding 2: the solo runtime's mode pairs file (kind 4).
+    // Without it an older room's Relic-only entry would be offered as a
+    // track, so a failed write fails the publication instead of passing.
+    {
+        clean();
+        StorePublication scan;
+        std::string message;
+        const StorePublication::Descriptor pairs = {4, "", "", "{\"schema_version\":1,\"relic_only\":[]}", "", ""};
+        assert(ApplyStoreDescriptor(pairs, scan, message) && read("pairs/mode-pairs.json") == pairs.json);
+        clean();
+        write("pairs", "not a folder");
+        assert(!ApplyStoreDescriptor(pairs, scan, message));
+        assert(message.find("mode-pairs.json") != std::string::npos && message.size() <= 170);
+        assert(loggedFile("mode pairs for the solo runtime not written"));
     }
     puts("PASS: stale descriptors are replaced, live ones are named and kept, every refusal logs its file");
 }

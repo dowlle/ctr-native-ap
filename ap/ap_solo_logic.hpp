@@ -464,6 +464,10 @@ struct APSoloModePair
 // Registry mode_pairs first, then the built-in table (ap_solo.cpp).
 std::vector<APSoloModePair> AP_SoloKnownModePairs();
 
+// Every version under which a verified installed package carries exactly
+// these LEV and VRM pins (ap_solo.cpp; empty without the package library).
+std::set<std::string> AP_SoloInstalledVersionsByPins(const nlohmann::json &files);
+
 enum APSoloModePairResult
 {
 	AP_SOLO_PAIR_NONE = 0,   // no pair names these files: written as before
@@ -555,6 +559,43 @@ static inline int AP_SoloApplyModePair(nlohmann::json &d, const std::vector<APSo
 		return AP_SOLO_PAIR_KEPT;
 	}
 	return AP_SOLO_PAIR_NONE;
+}
+
+// The relic_revision a merged entry carries. A room finds its Relic files by
+// revision and pins (CustomPackage_FindPinnedFiles), so when the Relic pair
+// is installed the entry must name an installed version: the pair's label if
+// it is installed under it, else `preferred` (a kept row's revision), else
+// the first installed one in order. Only plain revisions count. When the
+// pair is not installed the label stays: a room installs it under that name.
+// Returns "" when there is nothing to write.
+static inline std::string AP_SoloChooseRelicRevision(const std::set<std::string> &installed, const std::string &label,
+                                                     const std::string &preferred)
+{
+	const auto plain = [](const std::string &v) { return !v.empty() && !AP_SoloDescriptorFileName("x", v).empty(); };
+	if (plain(label) && installed.count(label))
+		return label;
+	if (plain(preferred) && installed.count(preferred))
+		return preferred;
+	for (const std::string &v : installed)
+		if (plain(v))
+			return v;
+	return plain(label) ? label : std::string();
+}
+
+// Sets `d`'s relic_revision as AP_SoloChooseRelicRevision says. The label is
+// the revision AP_SoloApplyModePair wrote. Returns a note for the log.
+static inline std::string AP_SoloUseInstalledRelicRevision(nlohmann::json &d, const std::set<std::string> &installed,
+                                                           const std::string &preferred)
+{
+	const std::string label = AP_SoloJsonString(d, "relic_revision");
+	const std::string chosen = AP_SoloChooseRelicRevision(installed, label, preferred);
+	if (chosen.empty())
+		d.erase("relic_revision");
+	else
+		d["relic_revision"] = chosen;
+	if (!chosen.empty() && installed.count(chosen))
+		return chosen == label ? "; installed as " + chosen : "; installed as " + chosen + ", not " + (label.empty() ? "unnamed" : label);
+	return installed.empty() ? "; Relic files not installed yet" : "; no installed Relic version is a plain revision";
 }
 
 // Stop sequence for a running server: /save and /exit on stdin, then wait,
