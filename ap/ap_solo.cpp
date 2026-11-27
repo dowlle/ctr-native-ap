@@ -879,11 +879,14 @@ extern "C" int AP_Solo_RuntimePresent(void)
 // Only listing works without ctr.apworld, so this gates opening Play Solo.
 extern "C" const char *AP_Solo_RuntimeProblem(void)
 {
-	static std::string text;
-	text = AP_SoloRuntimeProblemText(FileExists(Interpreter()), FileExists(ClientPath(kScript)),
+	static std::string text, logged;
+	std::error_code ec;
+	const bool folder = fs::is_directory(fs::u8path(ClientPath("solo-runtime")), ec);
+	text = AP_SoloRuntimeProblemText(folder, FileExists(Interpreter()), FileExists(ClientPath(kScript)),
 	                                 FileExists(ClientPath("ctr.apworld")));
-	if (!text.empty())
+	if (!text.empty() && text != logged)
 		Log("runtime check: " + text + " (looked in " + BaseDir() + ")");
+	logged = text;
 	return text.empty() ? nullptr : text.c_str();
 }
 

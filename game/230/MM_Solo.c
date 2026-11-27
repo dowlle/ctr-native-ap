@@ -310,6 +310,14 @@ static void MM_Solo_Go(int page)
 	}
 }
 
+/* Play Solo has a home page to go back to only while the runtime and the bundled
+   ctr.apworld are both there; with either gone, dismissing a message leaves
+   Play Solo (the room list was never loaded for a missing apworld) (PS1). */
+static int MM_Solo_Usable(void)
+{
+	return AP_Solo_RuntimePresent() && AP_Solo_RuntimeProblem() == NULL;
+}
+
 static void MM_Solo_Message(const char *text)
 {
 	snprintf(s_soloMsg, sizeof s_soloMsg, "%s", text);
@@ -1416,7 +1424,7 @@ static void MM_Solo_PageMessage(uint32_t *ot, struct GamepadBuffer *pad)
 				MM_Solo_Go(SOLO_TRACKS);
 		}
 		else
-			MM_Solo_Go(AP_Solo_RuntimePresent() ? SOLO_HOME : SOLO_OFF);
+			MM_Solo_Go(MM_Solo_Usable() ? SOLO_HOME : SOLO_OFF);
 		return;
 	}
 	MM_Solo_Title("Play Solo", ot);
@@ -1468,7 +1476,7 @@ static void MM_Solo_Back(void)
 		else
 			MM_Solo_Go(SOLO_NEW);
 		break;
-	case SOLO_MESSAGE: MM_Solo_Go(AP_Solo_RuntimePresent() ? SOLO_HOME : SOLO_OFF); break;
+	case SOLO_MESSAGE: MM_Solo_Go(MM_Solo_Usable() ? SOLO_HOME : SOLO_OFF); break;
 	default: break; /* Busy: Triangle/Start cancels generation. */
 	}
 }

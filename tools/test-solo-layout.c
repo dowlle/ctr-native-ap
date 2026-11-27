@@ -678,11 +678,14 @@ int main(void)
 
 	/* PS1: a missing ctr.apworld stops Play Solo at the door, in plain words
 	   that fit the message page, and the page's back returns out of Play Solo. */
-	runtimeProblem = "ctr.apworld is missing from the game folder. Put it back next to the game: copy it, do not move it.";
+	runtimeProblem = "ctr.apworld is missing from the game folder. Put it back next to the game: copy it, do not move it. Lost it? Reinstall or update the client.";
 	MM_Solo_Open();
 	CHECK(s_soloPage == SOLO_MESSAGE && !strcmp(s_soloMsg, runtimeProblem));
 	frame(0, "missing apworld");
 	CHECK(strstr(drawn, "ctr.apworld is missing") && strstr(drawn, "not move it."));
+	/* Dismissing it (OK or Back) leaves Play Solo; it never opens an unloaded home page. */
+	tap(BTN_CROSS); CHECK(s_soloPage == SOLO_OFF);
+	MM_Solo_Open(); tap(BTN_TRIANGLE); CHECK(s_soloPage == SOLO_OFF);
 	runtimeProblem = NULL;
 	MM_Solo_Open();
 	CHECK(s_soloPage != SOLO_MESSAGE);

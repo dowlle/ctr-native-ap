@@ -21,18 +21,24 @@ static int g_fail = 0;
 int main()
 {
 	const std::string apworld =
-	    "ctr.apworld is missing from the game folder. Put it back next to the game: copy it, do not move it.";
-	CHECK(AP_SoloRuntimeProblemText(true, true, true).empty());
-	CHECK(AP_SoloRuntimeProblemText(true, true, false) == apworld);
-	CHECK(AP_SoloRuntimeProblemText(false, true, true) ==
+	    "ctr.apworld is missing from the game folder. Put it back next to the game: copy it, do not move it. "
+	    "Lost it? Reinstall or update the client.";
+	const std::string folder = "The solo-runtime folder is missing from the game folder. Reinstall or update the client.";
+	CHECK(AP_SoloRuntimeProblemText(true, true, true, true).empty());
+	CHECK(AP_SoloRuntimeProblemText(true, true, true, false) == apworld);
+	CHECK(AP_SoloRuntimeProblemText(true, false, true, true) ==
 	      "Python is missing from the solo-runtime folder. Reinstall or update the client.");
-	CHECK(AP_SoloRuntimeProblemText(true, false, true) ==
+	CHECK(AP_SoloRuntimeProblemText(true, true, false, true) ==
 	      "ctr_solo.py is missing from the solo-runtime folder. Reinstall or update the client.");
-	CHECK(AP_SoloRuntimeProblemText(false, false, true) ==
-	      "The solo-runtime folder is missing from the game folder. Reinstall or update the client.");
+	CHECK(AP_SoloRuntimeProblemText(true, false, false, true) ==
+	      "Python and ctr_solo.py are missing from the solo-runtime folder. Reinstall or update the client.");
+	// No folder at all, also with a Python override that exists: the folder is the problem.
+	CHECK(AP_SoloRuntimeProblemText(false, false, false, true) == folder);
+	CHECK(AP_SoloRuntimeProblemText(false, true, false, true) == folder);
 	// The runtime itself is checked first: with it gone, the apworld hint would mislead.
-	CHECK(AP_SoloRuntimeProblemText(false, false, false) == AP_SoloRuntimeProblemText(false, false, true));
-	CHECK(AP_SoloRuntimeProblemText(false, true, false) == AP_SoloRuntimeProblemText(false, true, true));
+	CHECK(AP_SoloRuntimeProblemText(false, false, false, false) == folder);
+	CHECK(AP_SoloRuntimeProblemText(true, false, true, false) ==
+	      AP_SoloRuntimeProblemText(true, false, true, true));
 
 	// The wrapper's error after the job started (the early check missed it).
 	CHECK(AP_SoloErrorText("runtime", "ctr.apworld is missing: C:\\Games\\CTR\\ctr.apworld") == apworld);
