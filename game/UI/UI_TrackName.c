@@ -6,6 +6,7 @@
 #include <platform/native_custom_offline.h>
 #include <platform/native_track_credit.h>
 #include <text_box.h>
+#include "../../ap/ap_pad_title_wrap.h"
 #endif
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
@@ -73,6 +74,82 @@ const char *UI_TrackName(int physicalPad)
 	}
 	return level >= 0 && level < 65 ? sdata->lngStrings[data.metaDataLEV[level].name_LNG] : "?";
 }
+
+#ifdef CTR_CUSTOM_PACKAGES
+// CN2: 1 when UI_TrackName(-1) is a title from the room or an offline package,
+// which can be longer than the retail name tables allow, so the fly-in and the
+// race start banner draw it whole. Retail tracks, arenas, boss races and the
+// original Gem Cups answer 0 and keep their retail draw. A cup leg answers
+// through AP_ContentCupTrackName, which is NULL for a retail leg.
+int UI_TrackNameIsCustom(void)
+{
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	if (AP_ContentRaceDisplayName() != NULL)
+		return 1;
+#endif
+	return MainRaceTrack_OfflineCustomTitle() != NULL;
+}
+
+static int UI_RaceTitleWidth(const char *text, int len, int font)
+{
+	return DecalFont_GetLineWidthStrlen((char *)text, len, font);
+}
+
+// Draw the lines of a layout. `top` is the y of line 0; later lines follow at
+// the layout's pitch. The last line shows the rest of the name with "..." when
+// even the small font could not hold it (the roster test shows none do).
+static void UI_RaceTitleDrawLines(const char *name, const ap_pad_title_layout *layout, int x, int top, int width)
+{
+	char line[644];
+	const int glyphH = data.font_charPixHeight[layout->font];
+	const int pitch = ap_pad_title_pitch(glyphH);
+	const int total = (int)strlen(name);
+	for (int i = 0; i < layout->count; i++)
+	{
+		int len = layout->len[i];
+		if (layout->overflow && i == layout->count - 1)
+			len = total - layout->start[i];
+		if (len > (int)sizeof line - 1)
+			len = (int)sizeof line - 1;
+		memcpy(line, name + layout->start[i], (size_t)len);
+		line[len] = 0;
+		DecalFont_DrawLineBox(line, x, top + i * pitch, width, layout->font,
+		                      JUSTIFY_CENTER | ORANGE, TEXT_ELLIPSIS, TEXT_SLOT_RACE_TITLE, NULL);
+	}
+}
+
+// Fly-in (CN2): the whole name, the last line where the single line always
+// stood (`bottomY`). A long name wraps (big font, up to three lines, else the
+// small font) and grows upward. Returns how many pixels taller than one big
+// line the block is, so the caller can raise the title bar behind it.
+int UI_DrawRaceTitleUp(const char *name, int x, int bottomY, int width)
+{
+	ap_pad_title_layout layout;
+	const int bigH = data.font_charPixHeight[FONT_BIG];
+	ap_pad_title_layout_for(name, width, FONT_BIG, FONT_SMALL, UI_RaceTitleWidth, &layout);
+	const int glyphH = data.font_charPixHeight[layout.font];
+	const int lastTop = bottomY + (bigH - glyphH);
+	UI_RaceTitleDrawLines(name, &layout, x, lastTop - (layout.count - 1) * ap_pad_title_pitch(glyphH), width);
+	return ap_pad_title_extra_lift(&layout, glyphH, bigH);
+}
+
+// Race start banner (CN2): one big line when the name fits `width`, else the
+// small font wrapped at `width`, growing downward from `topY` because the
+// countdown lights sit above the banner and the minimap and the kart below it
+// leave room for three small lines only. Returns the pixels the block is
+// taller than one big line (the credit line below moves down by that).
+int UI_DrawRaceTitleDown(const char *name, int x, int topY, int width)
+{
+	ap_pad_title_layout layout;
+	const int bigH = data.font_charPixHeight[FONT_BIG];
+	ap_pad_title_fill(name, width, FONT_BIG, UI_RaceTitleWidth, 1, 0, &layout);
+	if (layout.overflow)
+		ap_pad_title_layout_for(name, width, FONT_SMALL, FONT_SMALL, UI_RaceTitleWidth, &layout);
+	UI_RaceTitleDrawLines(name, &layout, x, topY, width);
+	const int h = ap_pad_title_block_height(&layout, data.font_charPixHeight[layout.font]);
+	return h > bigH ? h - bigH : 0;
+}
+#endif
 
 #ifdef CTR_CUSTOM_PACKAGES
 #ifdef CTR_AP

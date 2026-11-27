@@ -313,7 +313,22 @@ LAB_80055930:
 		// Crash Cove, Roos Tubes, etc
 #ifdef CTR_CUSTOM_PACKAGES
 		const char *credit = UI_TrackCredit(-1);
-		if (credit)
+		// CN2: a custom name is drawn whole. A long one wraps upward from the
+		// line it always stood on, and the bottom bar grows to sit behind it.
+		int titleLift = 0;
+		if (UI_TrackNameIsCustom())
+		{
+			const RECT *view = &gGT->pushBuffer[0].rect;
+			const int center = view->x + view->w / 2;
+			const int bottom = view->y + view->h + transition;
+			titleLift = UI_DrawRaceTitleUp(UI_TrackName(-1), center, bottom - (credit ? 29 : 23), view->w - 64);
+			if (credit)
+			{
+				s_flyInCreditShown = 1;
+				UI_DrawTrackCredit(credit, center, bottom - 11, view->w - 64, TEXT_BANNER_MARQUEE);
+			}
+		}
+		else if (credit)
 		{
 			s_flyInCreditShown = 1;
 			const RECT *view = &gGT->pushBuffer[0].rect;
@@ -357,7 +372,11 @@ LAB_80055930:
 		CTR_Box_DrawSolidBox(&rect, color, ot);
 
 		// Draw tiny rectangle near big black title bar (second)
+#ifdef CTR_CUSTOM_PACKAGES
+		rect.y = gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h + windowHeight + -0x1e - titleLift;
+#else
 		rect.y = gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h + windowHeight + -0x1e;
+#endif
 		CTR_Box_DrawSolidBox(&rect, color, ot);
 
 		// 30-pixel height
@@ -371,7 +390,12 @@ LAB_80055930:
 		CTR_Box_DrawSolidBox(&rect, color, ot);
 
 		// draw big black title bar (second)
+#ifdef CTR_CUSTOM_PACKAGES
+		rect.y = gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h + windowHeight + -0x1e - titleLift;
+		rect.h = 0x1e + titleLift;
+#else
 		rect.y = gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h + windowHeight + -0x1e;
+#endif
 		CTR_Box_DrawSolidBox(&rect, color, ot);
 	}
 	return;

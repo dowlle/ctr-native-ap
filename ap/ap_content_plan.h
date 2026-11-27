@@ -378,6 +378,13 @@ static inline int ap_content_pad_custom_title(const struct ctr_content_pad *pad)
 {
     return pad && pad->occupied && (pad->cup ? !pad->gem_cup : pad->retail_id < 0);
 }
+/* CN2: 1 when the race a cup leg runs carries a title from the room, so the
+ * fly-in and the race start banner draw it whole. A retail leg (every leg of an
+ * original Gem Cup) keeps the retail name; a custom or Cortex Vortex leg does not. */
+static inline int ap_content_leg_custom_title(const struct ctr_content_leg *leg)
+{
+    return leg && leg->retail_id < 0;
+}
 /* The engine LevelID a cup leg races on (#133 PR 5). */
 static inline int ap_content_leg_host(const struct ctr_content_leg *leg)
 {

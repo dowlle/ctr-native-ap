@@ -255,3 +255,177 @@ feed = source("ap/ap_hooks_feed.c")
 floor = feed[feed.index("// CN1b: a tall custom pad title"):feed.index("// Promote a pending line into a free slot")]
 assert "warningY = AP_FEED_CONTENT_WARNING_Y;" in floor and "if (rows < visibleLimit) visibleLimit = rows;" in floor
 print("hub feed floor: ok")
+
+# ---- CN2: the same whole-name layout on the fly-in and the race start banner -----------------
+# The production draw routines (UI_DrawRaceTitleUp / UI_DrawRaceTitleDown in UI_TrackName.c) run
+# on the host with the production font widths; DecalFont_DrawLineBox is a recorder. Screen
+# geometry, in the 512 px wide HUD space both 4:3 and 16:9 draw in: the fly-in box is the view
+# width minus 64 (448) and its bar is 30 px; the banner box is 384 (1P) or 320 (2P), its name
+# starts at y 76 below the countdown lights (they end at y 64) and the minimap reaches up to
+# y 106 on the right.
+race_fixture = r'''
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+typedef short s16; typedef unsigned char u8; typedef unsigned int u32;
+#define UsaRetail 926
+#define EurRetail 1020
+#define JpnRetail 1111
+#define JpnTrial 1006
+#define BUILD UsaRetail
+#define FONT_BIG 1
+#define FONT_SMALL 2
+#define JUSTIFY_CENTER 0x1000
+#define ORANGE 0x2
+enum { TEXT_ELLIPSIS, TEXT_MARQUEE, TEXT_BANNER_MARQUEE };
+enum { TEXT_SLOT_RACE_TITLE = 11 };
+static struct { short font_charPixWidth[4], font_buttonPixWidth[4], font_puncPixWidth[4], font_charPixHeight[4]; } data = {
+    {%s}, {%s}, {%s}, {%s} };
+static struct { char text[700]; int x, y, w, font, mode, slot; } rec[16];
+static int nrec;
+void DecalFont_DrawLineBox(const char *text, int x, int y, int width, short font, int flags, int mode, int slot, unsigned int *extra)
+{
+    (void)flags; (void)extra;
+    assert(nrec < 16);
+    strncpy(rec[nrec].text, text, 699); rec[nrec].text[699] = 0;
+    rec[nrec].x = x; rec[nrec].y = y; rec[nrec].w = width; rec[nrec].font = font; rec[nrec].mode = mode; rec[nrec].slot = slot;
+    nrec++;
+}
+''' % (", ".join(map(str, table("font_charPixWidth"))), ", ".join(map(str, table("font_buttonPixWidth"))),
+       ", ".join(map(str, table("font_puncPixWidth"))), ", ".join(map(str, heights)))
+race_fixture += function("game/DecalFont.c", "int DecalFont_GetLineWidthStrlen(char *character, int len, int fontType)")
+race_fixture += '\n#include "ap/ap_pad_title_wrap.h"\n'
+for sig in ("static int UI_RaceTitleWidth(const char *text, int len, int font)",
+            "static void UI_RaceTitleDrawLines(const char *name, const ap_pad_title_layout *layout, int x, int top, int width)",
+            "int UI_DrawRaceTitleUp(const char *name, int x, int bottomY, int width)",
+            "int UI_DrawRaceTitleDown(const char *name, int x, int topY, int width)"):
+    race_fixture += function("game/UI/UI_TrackName.c", sig) + "\n"
+race_fixture += r'''
+static int measure(const char *text, int len, int font) { return DecalFont_GetLineWidthStrlen((char *)text, len, font); }
+
+/* every letter once, in order, no line wider than `width`, no cut word that fits, lines in reading order */
+static void whole(const char *name, int width)
+{
+    char plain[1024] = "", joined[1024] = "";
+    for (const char *c = name; *c; c++) if (*c != ' ') strncat(plain, c, 1);
+    int prevY = -1000;
+    for (int i = 0; i < nrec; i++) {
+        assert(rec[i].text[0]);
+        assert(rec[i].mode == TEXT_ELLIPSIS && rec[i].slot == TEXT_SLOT_RACE_TITLE && rec[i].w == width);
+        assert(measure(rec[i].text, (int)strlen(rec[i].text), rec[i].font) <= width);
+        assert(rec[i].font == rec[0].font && rec[i].y > prevY);
+        prevY = rec[i].y;
+        for (const char *c = rec[i].text; *c; c++) if (*c != ' ') strncat(joined, c, 1);
+    }
+    assert(!strcmp(plain, joined));
+}
+
+static int tall; /* names that need more than three lines on the banner */
+
+int main(int argc, char **argv)
+{
+    (void)argc;
+    FILE *f = fopen(argv[1], "r");
+    const int real = atoi(argv[2]); /* the first `real` names are roster and suffixed forms, the rest synthetic worst cases */
+    char line[512];
+    const int bigH = data.font_charPixHeight[FONT_BIG], smallH = data.font_charPixHeight[FONT_SMALL];
+    int n = 0, overReal = 0, flyWrapped = 0, flySmall = 0, bannerSmall = 0, bannerOne = 0, maxFly = 0, maxBannerBottom = 0, over3 = 0;
+    char widest[512] = "", tallest[512] = "";
+    while (fgets(line, sizeof line, f)) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (!line[0]) continue;
+        const int fits448 = measure(line, (int)strlen(line), FONT_BIG) <= 448;
+        n++;
+        /* fly-in: box 448 (credited and uncredited alike), the name ends where the single line stood */
+        for (int credited = 0; credited < 2; credited++) {
+            const int bottomY = 216 - (credited ? 29 : 23);
+            nrec = 0;
+            const int lift = UI_DrawRaceTitleUp(line, 256, bottomY, 448);
+            whole(line, 448);
+            const int glyphH = data.font_charPixHeight[rec[0].font];
+            assert(rec[nrec - 1].y == bottomY + (bigH - glyphH)); /* the last line keeps the old position */
+            assert(rec[0].y >= 40);                               /* below the 30 px top bar */
+            if (fits448) {
+                assert(nrec == 1 && rec[0].font == FONT_BIG && lift == 0 && rec[0].y == bottomY && rec[0].x == 256);
+            } else {
+                assert(lift > 0);
+                assert(lift == (nrec - 1) * (glyphH + 2) + glyphH - bigH || (nrec - 1) * (glyphH + 2) + glyphH <= bigH);
+            }
+            if (!credited) {
+                if (nrec > 1) flyWrapped++;
+                if (rec[0].font == FONT_SMALL) flySmall++;
+                if (lift > maxFly) { maxFly = lift; strcpy(widest, line); }
+            }
+        }
+        /* race start banner: 1P box 384, 2P box 320 */
+        for (int two = 0; two < 2; two++) {
+            const int width = two ? 320 : 384, x = two ? 160 : 256;
+            const int fitsOne = measure(line, (int)strlen(line), FONT_BIG) <= width;
+            nrec = 0;
+            const int lift = UI_DrawRaceTitleDown(line, x, 76, width);
+            whole(line, width);
+            assert(rec[0].y == 76 - 0 + (rec[0].font == FONT_BIG ? 0 : 0));
+            if (fitsOne) {
+                assert(nrec == 1 && rec[0].font == FONT_BIG && lift == 0 && rec[0].x == x);
+            } else {
+                assert(rec[0].font == FONT_SMALL && lift >= 0);
+            }
+            const int glyphH = data.font_charPixHeight[rec[0].font];
+            const int bottom = 76 + (nrec - 1) * (glyphH + 2) + glyphH;
+            if (!two) {
+                if (fitsOne) bannerOne++; else bannerSmall++;
+                if (nrec > 3 && n <= real) overReal++;
+                if (nrec > 3) { over3++; if (nrec > tall) { tall = nrec; strcpy(tallest, line); } }
+                else if (bottom > maxBannerBottom) maxBannerBottom = bottom;
+                /* up to three lines end above the minimap (y 106); the credit then follows at 94 + lift */
+                if (nrec <= 3) { assert(bottom <= 104); assert(94 + lift + smallH <= 114); }
+                /* the credit narrows to 198 once it would reach the minimap, so its right edge stays 16 px left of x 371 */
+                if (lift >= 5) assert(256 + 198 / 2 <= 371 - 16);
+            }
+        }
+    }
+    printf("race title: %d names. Fly-in (box 448): %d wrapped (%d in the small font), tallest lift %d px (%s).\n",
+           n, flyWrapped, flySmall, maxFly, widest);
+    printf("race title: banner (box 384): %d one big line, %d small font; %d need more than 3 lines (at most %d: %s); three lines or fewer end at y <= %d\n",
+           bannerOne, bannerSmall, over3, tall, tallest, maxBannerBottom);
+    /* the nominal cases */
+    nrec = 0; assert(UI_DrawRaceTitleUp("NINA'S NIGHTMARE", 256, 187, 448) == 0 && nrec == 1);
+    nrec = 0; assert(UI_DrawRaceTitleDown("NINA'S NIGHTMARE", 256, 76, 384) == 0 && nrec == 1 && rec[0].font == FONT_BIG);
+    nrec = 0; assert(UI_DrawRaceTitleDown("ST PATRICKS DAY HUB WORLD", 256, 76, 384) >= 0 && rec[0].font == FONT_SMALL);
+    nrec = 0; assert(UI_DrawRaceTitleUp("ST PATRICKS DAY HUB WORLD", 256, 187, 448) == 0 && nrec == 1); /* 425 px: fits the fly-in box */
+    nrec = 0; assert(UI_DrawRaceTitleUp("ST PATRICKS DAY HUB WORLD (CUSTOM, LOCKHEART)", 256, 187, 448) > 0 && nrec == 2 && rec[0].font == FONT_BIG);
+    puts("PASS: the fly-in and the race start banner draw every custom name in full");
+    printf("race title: %d roster or suffixed names need more than 3 banner lines\n", overReal);
+    return overReal == 0 ? 0 : 3;
+}
+'''
+with tempfile.TemporaryDirectory() as tmp:
+    tmp = Path(tmp)
+    (tmp / "names.txt").write_text("\n".join(roster + suffixed + worst) + "\n", encoding="utf-8")
+    (tmp / "race.c").write_text(race_fixture, encoding="utf-8")
+    subprocess.run(["cc", "-std=gnu99", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function", "-I", str(root),
+                    "-I", str(root / "include"), "-o", str(tmp / "race"), str(tmp / "race.c")], check=True)
+    done = subprocess.run([str(tmp / "race"), str(tmp / "names.txt"), str(len(roster) + len(suffixed))], capture_output=True, text=True)
+print(done.stdout, end="")
+assert done.returncode == 0, "race title layout failed (exit %d) %s" % (done.returncode, done.stderr)
+
+# ---- wiring of the two screens ---------------------------------------------------------------
+flow = source("game/UI/UI_RaceFlow.c")
+site = flow[flow.index("int titleLift = 0;"):flow.index("// same for all")]
+assert "if (UI_TrackNameIsCustom())" in site
+assert "UI_DrawRaceTitleUp(UI_TrackName(-1), center, bottom - (credit ? 29 : 23), view->w - 64)" in site
+assert "UI_DrawTrackCredit(credit, center, bottom - 11, view->w - 64, TEXT_BANNER_MARQUEE)" in site, "the fly-in credit keeps its scroll"
+# the retail and the old credited draws are the else branches, unchanged
+assert "else if (credit)" in site and "238, FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_MARQUEE, TEXT_SLOT_BANNER, NULL);" in site
+assert "- titleLift;" in flow and "rect.h = 0x1e + titleLift;" in flow
+frame = source("game/MAIN/MainFrame_RenderFrame.c")
+banner = frame[frame.index("if (UI_TrackNameIsCustom())"):frame.index("#endif\n\t\t\t\t\t}\n\n\t\t\t\t\t// if crystal challenge")]
+assert "UI_DrawRaceTitleDown(UI_TrackName(-1), x, 76, width)" in banner
+assert "UI_DrawTrackCredit(credit, x, 94 + lift, creditWidth, TEXT_BANNER_MARQUEE)" in banner, "the banner credit keeps its scroll"
+assert "DecalFont_DrawLineBox(UI_TrackName(-1), x, 76, width, FONT_BIG," in banner and "UI_DrawTrackCredit(credit, x, 94, width, TEXT_BANNER_MARQUEE);" in banner, "retail draw unchanged"
+custom = function("game/UI/UI_TrackName.c", "int UI_TrackNameIsCustom(void)")
+assert "AP_ContentRaceDisplayName() != NULL" in custom and "MainRaceTrack_OfflineCustomTitle() != NULL" in custom
+cups = function("ap/ap_hooks_content_cups.c", "const char *AP_ContentCupTrackName(void)")
+assert "!ap_content_leg_custom_title(&pad->legs[leg])" in cups
+print("race title wiring: ok")
