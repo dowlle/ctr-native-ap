@@ -75,7 +75,8 @@ longest = sorted(roster, key=len, reverse=True)[:8]
 suffixed = [fold_banner(f"{n[:40]} (Custom, {author})") for n in longest]
 suffixed += ["NINA'S NIGHTMARE (CUSTOM, LOCKHEART)", "NINA'S NIGHTMARE (CUSTOM)", "NINA'S NIGHTMARE (CUSTOM, APPIE 2)"]
 # ROOM_TITLE_MAX_BYTES: a 105 byte room title, with the widest glyphs and with many short words.
-worst = ["W" * 105, ("MM " * 35).strip(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ" * 4,
+worst = [("AMAZING " * 13).strip(), "A " + "ABCDEFGHIJKLMNOPQ " * 5 + "A", "STROODLYDOODLES CUP", "YELLOW GEM CUP",
+         "W" * 105, ("MM " * 35).strip(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ" * 4,
          "X" * 40 + " " + "Y" * 40, ("A " * 53)[:105].strip()]
 for t in suffixed + worst:
     assert len(t) <= 105, t
@@ -204,6 +205,12 @@ int main(int argc, char **argv)
     /* the box can never be wider than the box handed in, even when it is tiny: it reports overflow */
     ap_pad_title_layout_for("ABCDEFGH", 9, FONT_BIG, FONT_SMALL, measure, &l);
     assert(l.overflow);
+    /* balancing never cuts a word that fits the box */
+    ap_pad_title_layout_for("STROODLYDOODLES CUP", 274, FONT_BIG, FONT_SMALL, measure, &l);
+    assert(l.count == 2 && l.start[0] == 0 && l.len[0] == 15);
+    /* empty input leaves defined offsets */
+    ap_pad_title_layout_for("", box, FONT_BIG, FONT_SMALL, measure, &l);
+    assert(l.count == 1 && l.start[0] == 0 && l.len[0] == 0);
     puts("PASS: every custom track name is drawn in full inside the box beside the hub map");
     return 0;
 }
@@ -227,7 +234,7 @@ assert "ap_pad_title_layout_for(name, width, FONT_BIG, FONT_SMALL," in draw
 assert "TEXT_ELLIPSIS" in draw and "TEXT_MARQUEE" not in draw, "the name never scrolls"
 assert "JUSTIFY_CENTER | ORANGE" in draw
 custom = function("game/232/AH_WarpPad.c", "static int AH_WarpPad_CustomPadTitle(int levelID)")
-assert "pad->cup || pad->retail_id < 0" in custom
+assert "(pad->cup && !pad->gem_cup) || pad->retail_id < 0" in custom
 site = warp[warp.index("if (credit || AH_WarpPad_CustomPadTitle(levelID))"):warp.index("// midpoint X,")]
 assert "UI_DrawTrackCredit(credit, padX, creditY, creditWidth, TEXT_MARQUEE);" in site, "the credit keeps its scroll"
 assert "AH_WarpPad_DrawCustomTitle(warppadLNG, padX, titleY, titleWidth)" in site

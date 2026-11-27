@@ -22,6 +22,7 @@
 
 #define AP_PAD_TITLE_MAX_LINES 10
 #define AP_PAD_TITLE_BIG_LINES 3
+#define AP_PAD_TITLE_SMALL_WORD_LINES 6
 
 typedef struct
 {
@@ -39,7 +40,7 @@ typedef int (*ap_pad_title_width_fn)(const char *text, int len, int font);
 // number of lines it needed (it keeps counting past `max` without storing).
 // A single word wider than the box is cut between letters.
 static inline int ap_pad_title_wrap(const char *text, int width, int font,
-                                    ap_pad_title_width_fn fn, int max, ap_pad_title_layout *out)
+                                    ap_pad_title_width_fn fn, int max, int hard, ap_pad_title_layout *out)
 {
 	int n = 0, i = 0;
 	int total = 0;
@@ -72,7 +73,7 @@ static inline int ap_pad_title_wrap(const char *text, int width, int font,
 		{
 			// the word ended exactly at the edge
 		}
-		else if (lastBreak > i)
+		else if (!hard && lastBreak > i)
 		{
 			end = lastBreak; // break at the last space that fit
 		}
@@ -94,31 +95,52 @@ static inline int ap_pad_title_wrap(const char *text, int width, int font,
 }
 
 static inline void ap_pad_title_fill(const char *text, int width, int font,
-                                     ap_pad_title_width_fn fn, int max, ap_pad_title_layout *out)
+                                     ap_pad_title_width_fn fn, int max, int hard, ap_pad_title_layout *out)
 {
-	int lo = 1, hi = width, count, w;
+	int lo = 1, hi = width, count, w, i;
 	ap_pad_title_layout scratch;
 	out->font = font;
-	count = ap_pad_title_wrap(text, width, font, fn, max, out);
+	for (i = 0; i < AP_PAD_TITLE_MAX_LINES; i++)
+		out->start[i] = out->len[i] = 0;
+	count = ap_pad_title_wrap(text, width, font, fn, max, hard, out);
 	out->count = count < max ? count : max;
 	out->overflow = count > max;
-	if (count > 1 && count <= max)
+	if (count > 1 && count <= max && !hard)
 	{
+		// a box narrower than the widest word would cut that word: never go below it
+		{
+			int a = 0;
+			while (text[a])
+			{
+				int b;
+				while (text[a] == ' ')
+					a++;
+				b = a;
+				while (text[b] && text[b] != ' ')
+					b++;
+				if (b > a)
+				{
+					const int ww = fn(text + a, b - a, font);
+					if (ww > lo && ww <= width)
+						lo = ww;
+				}
+				a = b;
+			}
+		}
 		// balance: the narrowest box that still gives the same line count
 		while (lo < hi)
 		{
 			const int mid = (lo + hi) / 2;
-			if (ap_pad_title_wrap(text, mid, font, fn, max, &scratch) <= count)
+			if (ap_pad_title_wrap(text, mid, font, fn, max, hard, &scratch) <= count)
 				hi = mid;
 			else
 				lo = mid + 1;
 		}
 		w = hi;
-		ap_pad_title_wrap(text, w, font, fn, max, out);
+		ap_pad_title_wrap(text, w, font, fn, max, hard, out);
 	}
 	if (!out->overflow)
 	{
-		int i;
 		for (i = 0; i < out->count; i++)
 			if (fn(text + out->start[i], out->len[i], font) > width)
 				out->overflow = 1;
@@ -130,10 +152,14 @@ static inline void ap_pad_title_fill(const char *text, int width, int font,
 static inline void ap_pad_title_layout_for(const char *text, int width, int bigFont, int smallFont,
                                            ap_pad_title_width_fn fn, ap_pad_title_layout *out)
 {
-	ap_pad_title_fill(text, width, bigFont, fn, AP_PAD_TITLE_BIG_LINES, out);
+	ap_pad_title_fill(text, width, bigFont, fn, AP_PAD_TITLE_BIG_LINES, 0, out);
 	if (!out->overflow)
 		return;
-	ap_pad_title_fill(text, width, smallFont, fn, AP_PAD_TITLE_MAX_LINES, out);
+	ap_pad_title_fill(text, width, smallFont, fn, AP_PAD_TITLE_SMALL_WORD_LINES, 0, out);
+	if (!out->overflow)
+		return;
+	// words that stack one to a line (a 105 byte title can need 13): fill each line to the edge
+	ap_pad_title_fill(text, width, smallFont, fn, AP_PAD_TITLE_MAX_LINES, 1, out);
 }
 
 // Vertical pitch between wrapped lines: the glyph height and two pixels.
