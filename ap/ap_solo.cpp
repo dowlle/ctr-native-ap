@@ -1295,10 +1295,34 @@ struct DescriptorScope
 	bool fresh = false;
 };
 
-bool MayReplace(const nlohmann::json &kept, const std::string &key, const std::string &revision,
-                const DescriptorScope &scope)
+// MR2c: `kept` is the Relic pair and `fresh` the race pair of one known mode
+// pair, by exact pins. An older client listed a split track's Relic build as
+// a track of its own; when it shares the race build's key and version
+// (Sunken Sprint, Cubic Circuit) the old row holds the race row's file name.
+// A Relic pair is never a track's main pair, so the race row replaces it,
+// wherever its files are installed (a legacy loose copy has no store entry
+// for the kind 3 cleanup to find).
+bool RelicRowOfRacePair(const nlohmann::json &kept, const nlohmann::json &fresh)
+{
+	std::string keptLev, keptVrm, freshLev, freshVrm;
+	uint64_t keptLevBytes = 0, keptVrmBytes = 0, freshLevBytes = 0, freshVrmBytes = 0;
+	if (!AP_SoloDescriptorPins(kept, keptLev, keptLevBytes, keptVrm, keptVrmBytes) ||
+	    !AP_SoloDescriptorPins(fresh, freshLev, freshLevBytes, freshVrm, freshVrmBytes))
+		return false;
+	for (const APSoloModePair &p : AP_SoloKnownModePairs())
+		if (AP_SoloModePairValid(p) && p.relicLev == keptLev && p.relicLevBytes == keptLevBytes && p.relicVrm == keptVrm &&
+		    p.relicVrmBytes == keptVrmBytes && p.raceLev == freshLev && p.raceLevBytes == freshLevBytes &&
+		    p.raceVrm == freshVrm && p.raceVrmBytes == freshVrmBytes)
+			return true;
+	return false;
+}
+
+bool MayReplace(const nlohmann::json &kept, const nlohmann::json &fresh, const std::string &key,
+                const std::string &revision, const DescriptorScope &scope)
 {
 	if (scope.fresh)
+		return true;
+	if (RelicRowOfRacePair(kept, fresh))
 		return true;
 	if (!scope.live)
 		return false;
@@ -1474,12 +1498,13 @@ bool RecordDescriptor(int kind, const char *contentId, const char *revision, con
 	{
 		if (!other)
 			continue;
-		if (!MayReplace(*d, contentId, revision, scope))
+		if (!MayReplace(*d, fresh, contentId, revision, scope))
 			return refuse("another installed copy has the same name and version but other files; "
 			              "reinstall the copy you want to play",
 			              std::string(folder) + " holds other file pins of a copy that is still installed");
 		Log(std::string("replacing ") + folder + "/" + name + ": " +
 		    (scope.fresh ? "a copy with other files was just installed" :
+		     RelicRowOfRacePair(*d, fresh) ? "it is the Relic Race file of this track, which the race file carries" :
 		     HiddenTrackDescriptor(*d) ? "the previous copy is hidden" : "its files are no longer installed"));
 	}
 	// A replaced entry for other files goes first, so a file that cannot be
@@ -1935,15 +1960,8 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 	{
 		const fs::path store = fs::u8path(assets) / "tracks/packages";
 		std::error_code ec;
-		// No store (legacy loose-file installs): no rows to publish, but the
-		// solo runtime still gets the mode pairs file, so an older room's
-		// Relic-only entry is never offered as a track.
-		if (!fs::exists(store, ec) && result.pin.empty())
-		{
-			result.modePairs = AP_SoloKnownModePairs();
-			result.descriptors.push_back({4, "", "", ModePairsFile(result.modePairs), "", ""});
-			return result;
-		}
+		// The registry cache is loaded first, also without a store: its
+		// mode_pairs go into the mode pairs file with the built-in table.
 		const auto cache = (fs::u8path(assets) / "track-registry-cache.json").u8string();
 		if (cancel)
 			ap_track_registry_prepare_identity(cache.c_str(), [](const void *context) -> int {
@@ -1953,6 +1971,14 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 			ap_track_registry_refresh(cache.c_str());
 		if (cancel && cancel->load()) return result;
 		result.modePairs = AP_SoloKnownModePairs();
+		// No store (legacy loose-file installs): no rows to publish, but the
+		// solo runtime still gets the mode pairs file, so an older room's
+		// Relic-only entry is never offered as a track.
+		if (!fs::exists(store, ec) && result.pin.empty())
+		{
+			result.descriptors.push_back({4, "", "", ModePairsFile(result.modePairs), "", ""});
+			return result;
+		}
 		char scanError[256] = {};
 		// One install publishes only its own revision: no other package is
 		// read or hashed for it (A3-46). `live` is not needed then: a fresh

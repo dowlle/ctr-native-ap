@@ -822,4 +822,3 @@ std::vector<ApTrackModePairPins> ap_track_mode_pairs()
 		out.push_back(std::move(row));
 	return out;
 }
-

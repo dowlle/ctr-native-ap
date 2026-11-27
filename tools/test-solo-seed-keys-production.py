@@ -35,11 +35,15 @@ extra += between("// PinSignature of a verified store package", "// Writes one c
 extra += r'''
 extern "C" int ap_track_registry_lookup(const char *, uint32_t, const char *, uint32_t,
                                         ApTrackRegistryMatch *) { return AP_TRACK_REGISTRY_NO_INDEX; }
-extern "C" void ap_track_registry_prepare_identity(const char *, int (*)(const void *), const void *) {}
-extern "C" int ap_track_registry_status(int *, char *, int) { return AP_TRACK_REGISTRY_UNAVAILABLE; }
-extern "C" int ap_track_registry_refresh(const char *) { return 0; }
-std::string ap_track_registry_canonical_key(const std::string &key) { return key; }
 static std::vector<APSoloModePair> g_pairs; // MR2: the pairs a scan sees
+// MR2c: pairs only the registry cache knows; loading the cache adds them.
+static std::vector<APSoloModePair> g_cachePairs;
+static int g_registryStatus = AP_TRACK_REGISTRY_UNAVAILABLE;
+static void load_cache() { g_pairs.insert(g_pairs.end(), g_cachePairs.begin(), g_cachePairs.end()); g_cachePairs.clear(); }
+extern "C" void ap_track_registry_prepare_identity(const char *, int (*)(const void *), const void *) { load_cache(); }
+extern "C" int ap_track_registry_status(int *, char *, int) { return g_registryStatus; }
+extern "C" int ap_track_registry_refresh(const char *) { load_cache(); return 1; }
+std::string ap_track_registry_canonical_key(const std::string &key) { return key; }
 std::vector<APSoloModePair> AP_SoloKnownModePairs() { return g_pairs; }
 '''
 
@@ -243,6 +247,40 @@ int main()
         const auto scan = CollectInstalledStore(none, "");
         assert(!scan.failed && scan.descriptors.size() == 1 && scan.descriptors[0].kind == 4);
         assert(nlohmann::json::parse(scan.descriptors[0].json)["schema_version"] == 1);
+    }
+    // MR2 review 3, finding 3: on a cold start without a store the registry
+    // cache is loaded before the mode pairs file is built, so a pair only the
+    // registry knows is in it. Play Solo's worker (with a cancel flag) and a
+    // call without one both load it first.
+    {
+        APSoloModePair p;
+        p.trackKey = "registry-only"; p.raceRevision = "2.0.0"; p.relicRevision = "2.0.0-relic";
+        p.raceLev = std::string(64, 'a'); p.raceVrm = std::string(64, 'b');
+        p.relicLev = std::string(64, 'c'); p.relicVrm = std::string(64, 'd');
+        p.raceLevBytes = 100; p.raceVrmBytes = 200; p.relicLevBytes = 300; p.relicVrmBytes = 400;
+        p.targets[0] = 3; p.targets[1] = 2; p.targets[2] = 1; p.source = "registry";
+        const auto listed = [](const StorePublication &s) {
+            const auto file = nlohmann::json::parse(s.descriptors.back().json);
+            for (const auto &row : file["relic_only"])
+                if (row["track_key"] == "registry-only" && row["files"][0]["sha256"] == std::string(64, 'c') &&
+                    row["files"][1]["bytes"] == 400)
+                    return true;
+            return false;
+        };
+        const std::string none = fresh("solo-no-store-cold");
+        std::atomic<bool> cancel{false};
+        g_pairs.clear();
+        g_cachePairs = {p};
+        auto scan = CollectInstalledStore(none, "", &cancel);
+        assert(!scan.failed && scan.descriptors.size() == 1 && scan.descriptors[0].kind == 4 && listed(scan));
+        g_pairs.clear();
+        g_cachePairs = {p};
+        g_registryStatus = AP_TRACK_REGISTRY_IDLE;
+        scan = CollectInstalledStore(none, "");
+        assert(!scan.failed && scan.descriptors.size() == 1 && listed(scan));
+        g_registryStatus = AP_TRACK_REGISTRY_UNAVAILABLE;
+        g_pairs.clear();
+        g_cachePairs.clear();
     }
     puts("PASS: legacy dotted/versioned keys recover seed identity; new downloads preserve content_id; 64-byte boundary; bad package logged and skipped; pinned lookup still resolves");
 #endif

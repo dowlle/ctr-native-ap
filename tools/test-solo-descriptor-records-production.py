@@ -485,6 +485,61 @@ int main(int, char **argv) {
         assert(message.find("mode-pairs.json") != std::string::npos && message.size() <= 170);
         assert(loggedFile("mode pairs for the solo runtime not written"));
     }
+    // MR2 review 3, finding 2: an older client listed a split track's Relic
+    // build as a track of its own, under the race build's key and version
+    // (Sunken Sprint, Cubic Circuit), and its files are a legacy loose copy
+    // with no store entry for the kind 3 cleanup. The full scan's race row
+    // replaces that row; Play Solo never stops on it. A kept row with other
+    // pins that is not the pair's Relic build is still refused.
+    {
+        APSoloModePair p;
+        p.trackKey = "nina"; p.raceRevision = "1.0.0"; p.relicRevision = "1.0.0-relic";
+        p.raceLev = std::string(64, 'a'); p.raceVrm = std::string(64, 'b');
+        p.relicLev = std::string(64, 'c'); p.relicVrm = std::string(64, 'd');
+        p.raceLevBytes = 100; p.raceVrmBytes = 200; p.relicLevBytes = 300; p.relicVrmBytes = 400;
+        p.targets[0] = 3; p.targets[1] = 2; p.targets[2] = 1; p.source = "test";
+        const std::string a = std::string(64, 'a'), b = std::string(64, 'b'), c = std::string(64, 'c'), d = std::string(64, 'd');
+        const std::string relicRow = descriptor("Nina Relic", pins(c.c_str(), d.c_str(), 300, 400));
+        const std::string raceRow = descriptor("Nina", pins(a.c_str(), b.c_str()));
+        const std::string raceWait = descriptor("Nina", pins(a.c_str(), b.c_str()), 0);
+        const auto loose = [&] {
+            fs::create_directories(assets + "/tracks/nina/original");
+            std::ofstream(assets + "/tracks/nina/original/relic.lev") << std::string(300, 'x');
+            std::ofstream(assets + "/tracks/nina/original/relic.vrm") << std::string(400, 'x');
+        };
+        StorePublication full;
+        full.live = {"1.0.0|lev:" + a + ":100|vrm:" + b + ":200"};
+        std::string message;
+        for (int kind : {1, 2})
+        {
+            clean(); loose();
+            g_pairs = {p};
+            write(std::string("tracks/") + name, relicRow);
+            write(std::string("needs-laps/") + name, relicRow);
+            full.listed.clear();
+            assert(ApplyStoreDescriptor(entry(kind, "Nina", kind == 1 ? raceRow : raceWait, "a"), full, message));
+            assert(loggedFile("it is the Relic Race file of this track"));
+            if (kind == 1)
+                assert(nlohmann::json::parse(read(std::string("tracks/") + name))["files"][0]["sha256"] == a);
+            else
+                assert(!fs::exists(base + "/solo/tracks/" + name) && read(std::string("needs-laps/") + name) == raceWait);
+            assert(full.listed.count(std::string(64, 'a')));
+        }
+        // Without the pair the old row is an installed copy with other files: refused as before.
+        clean(); loose();
+        g_pairs.clear();
+        write(std::string("tracks/") + name, relicRow);
+        assert(!ApplyStoreDescriptor(entry(1, "Nina", raceRow, "a"), full, message));
+        assert(read(std::string("tracks/") + name) == relicRow);
+        // The pair's Relic row never replaces another race build's row.
+        clean(); loose();
+        g_pairs = {p};
+        const std::string otherRace = descriptor("Nina", pins(std::string(64, 'e').c_str(), b.c_str()));
+        write(std::string("tracks/") + name, relicRow);
+        assert(!ApplyStoreDescriptor(entry(1, "Nina", otherRace, "e"), full, message));
+        assert(read(std::string("tracks/") + name) == relicRow);
+        g_pairs.clear();
+    }
     puts("PASS: stale descriptors are replaced, live ones are named and kept, every refusal logs its file");
 }
 '''
