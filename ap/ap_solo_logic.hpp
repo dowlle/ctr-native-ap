@@ -375,6 +375,63 @@ static inline std::string AP_SoloDescriptorFileName(const std::string &key, cons
 	return key + "__" + revision + ".json";
 }
 
+// PS2: the build tag of a descriptor's file pins, the first 8 hex digits of
+// its LEV SHA-256 and then of its VRM SHA-256, or "" when the pins are not
+// one LEV and one VRM with lower-case hex hashes. Two installs of one track
+// key and version with other files (a Saphi download beside a patch import)
+// differ in it.
+static inline std::string AP_SoloBuildTag(const nlohmann::json &files)
+{
+	std::string lev, vrm;
+	if (!files.is_array() || files.size() != 2)
+		return std::string();
+	for (const auto &pin : files)
+	{
+		if (!pin.is_object())
+			return std::string();
+		const std::string role = AP_SoloJsonString(pin, "role"), sha = AP_SoloJsonString(pin, "sha256");
+		if (sha.size() != 64 || !std::all_of(sha.begin(), sha.end(), [](char c) {
+			    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+		    }))
+			return std::string();
+		if (role == "lev" && lev.empty())
+			lev = sha;
+		else if (role == "vrm" && vrm.empty())
+			vrm = sha;
+		else
+			return std::string();
+	}
+	return lev.substr(0, 8) + vrm.substr(0, 8);
+}
+
+// PS2: solo/tracks/<track key>__<revision>@<build tag>.json, where a build
+// keeps its descriptor while the plain name holds another installed build of
+// the same key and version. "@" is in neither a key nor a revision, so the
+// name never equals another track's plain name. "" for an invalid part.
+static inline std::string AP_SoloBuildDescriptorFileName(const std::string &key, const std::string &revision,
+                                                         const std::string &tag)
+{
+	const std::string plain = AP_SoloDescriptorFileName(key, revision);
+	if (plain.empty() || tag.size() != 16 ||
+	    !std::all_of(tag.begin(), tag.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); }))
+		return std::string();
+	return plain.substr(0, plain.size() - 5) + "@" + tag + ".json";
+}
+
+// The Play Solo row id of one build: the descriptor id, with "@<build tag>"
+// when another build of the same id is listed too, so a pick names one build.
+static inline std::string AP_SoloBuildRowId(const std::string &id, const std::string &tag)
+{
+	return tag.empty() ? id : id + "@" + tag;
+}
+
+// The descriptor id of a row id (the part before "@").
+static inline std::string AP_SoloRowBaseId(const std::string &rowId)
+{
+	const size_t at = rowId.find('@');
+	return at == std::string::npos ? rowId : rowId.substr(0, at);
+}
+
 // One verified store package as the Custom Tracks publication sees it: the
 // track key its Play Solo descriptor would take, the package uuid and
 // revision, the pin and when it was installed.
@@ -446,14 +503,18 @@ static inline int AP_SoloLapsStep(int laps, int direction)
 
 // A descriptor kept in solo/needs-laps: an object without "laps" whose id is
 // package/<content_id>/<revision>, with a title and an author. Its file name
-// is AP_SoloDescriptorFileName of the two; anything else is not listed.
+// is AP_SoloDescriptorFileName of the two, or for a second build of them
+// AP_SoloBuildDescriptorFileName with its own build tag (PS2); anything else
+// is not listed.
 static inline bool AP_SoloNeedsLapsDescriptor(const nlohmann::json &d, const std::string &fileName)
 {
 	if (!d.is_object() || d.contains("laps"))
 		return false;
 	const std::string key = AP_SoloJsonString(d, "content_id"), revision = AP_SoloJsonString(d, "revision");
 	const std::string name = AP_SoloDescriptorFileName(key, revision);
-	return !name.empty() && name == fileName && AP_SoloJsonString(d, "id") == "package/" + key + "/" + revision &&
+	const std::string build = AP_SoloBuildDescriptorFileName(key, revision, AP_SoloBuildTag(d.value("files", nlohmann::json())));
+	return !name.empty() && (name == fileName || (!build.empty() && build == fileName)) &&
+	       AP_SoloJsonString(d, "id") == "package/" + key + "/" + revision &&
 	       !AP_SoloJsonString(d, "display_name").empty() && !AP_SoloJsonString(d, "author").empty();
 }
 
