@@ -1922,18 +1922,20 @@ static void AP_UnlockReasonsUpdate(int mode)
 		unsigned foldedPads = 0, foldedDoors = 0, garagesRose = 0, garages;
 		int remaining = 0;
 		const int feedMode = AP_ItemFeedMode();
-		// FN1: garages first (their priority in AP_UnlockDiff), each once, and
-		// a held garage whose hub door opened while the client was away too.
+		// FN1: each garage that became enterable gets its own held line (like
+		// a door releasing held pads), once, also when its hub door opened
+		// while the client was away. Garages leave the ordinary summary.
 		for (int i = 0; i < count; ++i)
 			if (ev[i].kind == AP_UNLOCK_GARAGE)
 				garagesRose |= 1u << ev[i].index;
 		garages = AP_UnlockGarageAnnounce(&ap_unlock_garage_hold, &now, garagesRose);
 		for (int g = 0; g < AP_UNLOCK_GARAGE_COUNT; ++g)
-			if (garages & (1u << g))
+			if ((garages & (1u << g)) && feedMode != AP_ITEM_FEED_OFF)
 			{
-				keep[remaining].kind = AP_UNLOCK_GARAGE;
-				keep[remaining].index = g;
-				remaining++;
+				char line[AP_FEED_TEXT_CAP];
+				AP_UnlockReasonLine(line, sizeof line, AP_UNLOCK_GARAGE,
+				                    ap_unlock_garage_names[g], 0, 0);
+				AP_FeedEnqueueHeld(line, (int)strlen(ap_unlock_garage_names[g]), LIGHT_GREEN, 1);
 			}
 		for (int d = 0; d < AP_UNLOCK_DOOR_COUNT; ++d)
 		{

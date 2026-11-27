@@ -126,7 +126,8 @@ int main(void)
     item();
     show("then the Key");
     assert(lines("Papu Papu GARAGE OPEN") == 1);
-    assert(!strncmp(ap_feed.queue[ap_feed.qhead].text, "Papu Papu GARAGE OPEN", 21));
+    assert(!strcmp(ap_feed.queue[ap_feed.qhead].text, "Papu Papu GARAGE OPEN"));
+    assert(lines("Gem Stone Valley DOOR OPEN") == 1); // the door keeps its own summary line
     quiet(30);
     item();
     assert(lines("Papu Papu GARAGE OPEN") == 1); // never twice
@@ -152,7 +153,21 @@ int main(void)
     item();
     show("both at once");
     assert(lines("Pinstripe GARAGE OPEN") == 1);
-    assert(ap_feed.qcount == 1); // one line per item; the door rides as (+1 MORE)
+    assert(lines("Citadel City DOOR OPEN") == 1);
+    assert(ap_feed.qcount == 2);
+
+    // Review round 1, finding 1: one Key releases a held garage and completes
+    // another garage's own gate. Each garage gets its own named line.
+    fresh();
+    ap_recv_count[AP_IDX_KEY] = 2;
+    bossOwn[3] = 1;               // Pinstripe held behind the three-Key door
+    item();
+    clear_feed();
+    ap_recv_count[AP_IDX_KEY] = 3;
+    bossOwn[0] = 1;               // the same Key completes Ripper Roo's gate
+    item();
+    show("two garages on one Key");
+    assert(lines("Ripper Roo GARAGE OPEN") == 1 && lines("Pinstripe GARAGE OPEN") == 1);
 
     // Ripper Roo's garage needs no Key: its own requirement is enough.
     fresh();
@@ -240,6 +255,80 @@ int main(void)
     ap_feed_primed = 1;
     quiet(30);
     assert(ap_feed.qcount == 0);
+
+    // Review round 1, finding 2: a garage line still waiting in the queue
+    // when the connection drops survives the reconnect (held notice).
+    fresh();
+    for (int i = 0; i < 4; ++i)
+        AP_FeedLinesEnqueue(&ap_feed, "FILLER", 0, 0);
+    bossOwn[1] = 1;
+    ap_recv_count[AP_IDX_KEY] = 1;
+    item();
+    assert(lines("Papu Papu GARAGE OPEN") == 1);
+    {
+        AP_FeedLines saved = ap_feed;
+        AP_FeedLinesReconnect(&saved);   // what AP_FeedConnectReset keeps
+        ap_feed = saved;
+    }
+    show("queued line after a drop");
+    assert(lines("Papu Papu GARAGE OPEN") == 1 && lines("FILLER") == 0);
+
+    // Review round 1, finding 3: a garage that closes and reopens (N. Oxide's
+    // garage after the first challenge) is not announced again by a reconnect.
+    fresh();
+    ap_recv_count[AP_IDX_KEY] = 1;
+    oxideOwn = 1;
+    item();
+    assert(lines("Oxide GARAGE OPEN") == 1);
+    clear_feed();
+    oxideOwn = 0;                 // first challenge won, final still locked
+    quiet(5);
+    AP_UnlockReasonsConnectReset(1, 0);
+    ap_feed_primed = 0;
+    quiet(5);
+    AP_UnlockReasonsResolveReconnect(1);
+    ap_feed_primed = 1;
+    quiet(5);
+    oxideOwn = 1;                 // the last Final Challenge relic
+    item();
+    assert(lines("Oxide GARAGE OPEN") == 0);
+
+    // Review round 1, finding 4: a held garage whose own gate is briefly
+    // shut after the reconnect (venue not ready yet) is still announced once
+    // when the gate returns on a quiet frame.
+    fresh();
+    bossOwn[1] = 1;
+    item();
+    AP_UnlockReasonsConnectReset(1, 0);
+    ap_feed_primed = 0;
+    ap_recv_count[AP_IDX_KEY] = 1;
+    bossOwn[1] = 0;               // venue not ready
+    quiet(5);
+    AP_UnlockReasonsResolveReconnect(1);
+    ap_feed_primed = 1;
+    quiet(10);
+    clear_feed();
+    bossOwn[1] = 1;               // venue ready, no item involved
+    quiet(10);
+    assert(lines("Papu Papu GARAGE OPEN") == 1);
+
+    // ... and a second drop while the room check is pending keeps the hold.
+    fresh();
+    bossOwn[2] = 1;
+    ap_recv_count[AP_IDX_KEY] = 1;
+    item();
+    clear_feed();
+    AP_UnlockReasonsConnectReset(1, 0);
+    ap_feed_primed = 1;           // live again before the room check answers
+    quiet(5);
+    AP_UnlockReasonsConnectReset(1, 1);
+    ap_feed_primed = 0;
+    ap_recv_count[AP_IDX_KEY] = 2;
+    quiet(5);
+    AP_UnlockReasonsResolveReconnect(1);
+    ap_feed_primed = 1;
+    quiet(10);
+    assert(lines("Komodo Joe GARAGE OPEN") == 1);
 
     // 6. A reload (fresh client, nothing to resume) with an enterable garage
     //    adopts it silently: no repeat of a line shown in an earlier session.

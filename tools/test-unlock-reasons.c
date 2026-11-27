@@ -286,6 +286,24 @@ int main(void)
 		AP_UnlockGarageResolveReconnect(&hold, 0);
 		b.garagesOpen = 1u << 2;
 		expect("other room: nothing inherited", (int)AP_UnlockGarageAnnounce(&hold, &b, 0), 0);
+		// a held garage stays held while its own gate is briefly shut
+		memset(&hold, 0, sizeof hold);
+		memset(&b, 0, sizeof b);
+		b.garagesBehindDoor = 1u << 1;
+		AP_UnlockGarageAnnounce(&hold, &b, 0);
+		b.garagesBehindDoor = 0;
+		expect("gate shut: still held", (int)(AP_UnlockGarageAnnounce(&hold, &b, 0) == 0 && hold.held == (1u << 1)), 1);
+		b.garagesOpen = 1u << 1;
+		expect("gate back with Keys: announced on a quiet frame", (int)AP_UnlockGarageAnnounce(&hold, &b, 0), 1 << 1);
+		// announced garages stay announced across a same-room reconnect
+		AP_UnlockGarageConnectReset(&hold, 1, 0);
+		AP_UnlockGarageResolveReconnect(&hold, 1);
+		b.garagesOpen = 0;
+		AP_UnlockGarageAnnounce(&hold, &b, 0);
+		b.garagesOpen = 1u << 1;
+		expect("reopened after reconnect: no repeat", (int)AP_UnlockGarageAnnounce(&hold, &b, 1u << 1), 0);
+		AP_UnlockGarageConnectReset(&hold, 0, 0);
+		expect("new room: announced set cleared", (int)AP_UnlockGarageAnnounce(&hold, &b, 1u << 1), 1 << 1);
 	}
 
 	printf("%s unlock reasons\n", failures ? "FAIL" : "PASS");
