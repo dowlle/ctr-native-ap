@@ -211,4 +211,4 @@ title = warp.index("AP_FeedHubPadTitle(apPadFeedY)")
 draws = warp[warp.rindex("sdata->AkuAkuHintState == 0", 0, title):title]
 assert "AP_CharSwap_HubHudHidden()" in draws
 assert "DecalFont_DrawLine(warppadLNG" in draws
-assert "DecalFont_DrawLineBox(warppadLNG" in draws
+assert "AH_WarpPad_DrawCustomTitle(warppadLNG" in draws
