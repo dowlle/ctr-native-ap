@@ -190,7 +190,7 @@ int main()
     {
         const std::string split = fresh("solo-split");
         auto relicVrm = vrm;
-        relicVrm.push_back(0); // another VRM: the Relic build's own pair
+        relicVrm[20] ^= 1; // another pixel: the Relic build's own VRM, same size
         APSoloModePair p;
         p.trackKey = "cubic-circuit"; p.raceRevision = "1.1.2"; p.relicRevision = "1.1.2-relic";
         p.raceLev = sha(lev); p.raceVrm = sha(vrm); p.relicLev = sha(lev); p.relicVrm = sha(relicVrm);
