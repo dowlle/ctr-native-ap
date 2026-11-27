@@ -114,6 +114,27 @@ int ap_track_registry_parse_check(const std::vector<unsigned char> &bytes, std::
 bool ap_track_registry_credits(const std::string &track_key, std::vector<std::string> &names);
 std::string ap_track_registry_canonical_key(const std::string &key);
 
+// Merged mode builds (MR2): a track whose race modes are in one LEV/VRM pair
+// and whose Relic Race is in another, with the Relic targets its track entry
+// carries (960 ticks per second).
+struct ApTrackModePairPins
+{
+	std::string key, race_revision, relic_revision;
+	std::string race_lev, race_vrm, relic_lev, relic_vrm; // lower-case SHA-256
+	uint32_t race_lev_bytes = 0, race_vrm_bytes = 0, relic_lev_bytes = 0, relic_vrm_bytes = 0;
+	int targets[3] = {0, 0, 0}; // sapphire, gold, platinum
+	bool registry = false;      // from the registry's mode_pairs, else the built-in table
+};
+
+// The registry's mode_pairs (live or cached copy) first, then the client's
+// built-in table (include/platform/native_track_mode_pairs.inc), which covers
+// a client without a registry copy. Released clients ignore the field.
+std::vector<ApTrackModePairPins> ap_track_mode_pairs();
+std::vector<ApTrackModePairPins> ap_track_builtin_mode_pairs();
+// Harnesses: the mode pairs of registry bytes, or -1 when the bytes are not a registry.
+int ap_track_registry_parse_mode_pairs(const std::vector<unsigned char> &bytes, std::vector<ApTrackModePairPins> &pairs,
+                                       std::string &error);
+
 // Returns true when the live or cached naming table can supply a title.
 bool ap_track_registry_identity(const std::string &lev, const std::string &road,
                                 std::string &key, std::string &title);

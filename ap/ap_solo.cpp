@@ -1532,6 +1532,32 @@ std::string PackageLabel(const CustomPackageStoreEntry &entry)
 	return title;
 }
 
+// Merged mode builds (MR2): every known race pair with its Relic pair.
+std::vector<APSoloModePair> KnownModePairs()
+{
+	std::vector<APSoloModePair> out;
+	for (const ApTrackModePairPins &r : ap_track_mode_pairs())
+	{
+		APSoloModePair p;
+		p.trackKey = r.key;
+		p.raceRevision = r.race_revision;
+		p.relicRevision = r.relic_revision;
+		p.raceLev = r.race_lev;
+		p.raceVrm = r.race_vrm;
+		p.relicLev = r.relic_lev;
+		p.relicVrm = r.relic_vrm;
+		p.raceLevBytes = r.race_lev_bytes;
+		p.raceVrmBytes = r.race_vrm_bytes;
+		p.relicLevBytes = r.relic_lev_bytes;
+		p.relicVrmBytes = r.relic_vrm_bytes;
+		for (int i = 0; i < 3; i++)
+			p.targets[i] = r.targets[i];
+		p.source = r.registry ? "registry" : "built-in";
+		out.push_back(std::move(p));
+	}
+	return out;
+}
+
 struct StorePublication
 {
 	// kind 0 retires `key` (json holds the package uuid) once the copy `keeper`
@@ -1546,6 +1572,8 @@ struct StorePublication
 		      pin(std::move(pin_)), keeper(std::move(keeper_)), keeperKey(std::move(keeperKey_)) {}
 	};
 	std::vector<Descriptor> descriptors;
+	std::vector<Descriptor> hidden; // kind 3: Relic pairs of known race pairs (MR2), never listed
+	std::vector<APSoloModePair> modePairs; // registry mode_pairs, then the built-in table
 	std::set<std::string> live; // StoreSignature of every verified package
 	mutable std::set<std::string> listed; // pins whose descriptor was written
 	std::vector<std::string> notes; // log lines from the worker, written on the game thread
@@ -1596,8 +1624,26 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 		}
 	}
 	else
-		result.descriptors.push_back({kind, key, revision, json,
-			entry->displayTitle[0] ? entry->displayTitle : entry->manifest.title, entry->pin});
+	{
+		const std::string title = entry->displayTitle[0] ? entry->displayTitle : entry->manifest.title;
+		std::string body = json, note;
+		nlohmann::json d = nlohmann::json::parse(body, nullptr, false);
+		const int paired = d.is_object() ? AP_SoloApplyModePair(d, result.modePairs, note) : AP_SOLO_PAIR_NONE;
+		const std::string label = PackageLabel(*entry) + " " + revision + " (package " + std::string(entry->pin).substr(0, 12) + ")";
+		if (paired == AP_SOLO_PAIR_RELIC_ONLY)
+		{
+			// A Relic-only file is never a track's main pair (MR2): its race
+			// pair carries it as relic_files. Its old row, if any, is removed.
+			result.notes.push_back("left " + label + " out of Play Solo: " + note);
+			result.hidden.push_back({3, key, revision, d["files"].dump(), title, entry->pin});
+			return;
+		}
+		if (paired == AP_SOLO_PAIR_MERGED)
+			body = d.dump();
+		if (paired != AP_SOLO_PAIR_NONE)
+			result.notes.push_back(label + ": " + note);
+		result.descriptors.push_back({kind, key, revision, body, title, entry->pin});
+	}
 }
 
 std::string StoreDescriptorKey(const CustomPackageLocalInfo &local, const char *title)
@@ -1755,6 +1801,7 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 		else if (ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE)
 			ap_track_registry_refresh(cache.c_str());
 		if (cancel && cancel->load()) return result;
+		result.modePairs = KnownModePairs();
 		char scanError[256] = {};
 		// One install publishes only its own revision: no other package is
 		// read or hashed for it (A3-46). `live` is not needed then: a fresh
@@ -1776,13 +1823,48 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 	}
 	if (result.pin.empty())
 		KeepOneCopyPerEntry(result);
+	for (auto &d : result.hidden)
+		result.descriptors.push_back(std::move(d));
+	result.hidden.clear();
 	return result;
+}
+
+// MR2: removes our own solo/tracks or solo/needs-laps file of a Relic-only
+// package (same key, revision and file pins) that an older client listed as a
+// track of its own. Anything else in those folders is left alone.
+void HideRelicOnlyDescriptor(const std::string &key, const std::string &revision, const std::string &filesJson)
+{
+	const std::string name = AP_SoloDescriptorFileName(key, revision);
+	const nlohmann::json files = nlohmann::json::parse(filesJson, nullptr, false);
+	std::error_code ec;
+	if (name.empty() || !files.is_array() || SoloRootIsLink())
+		return;
+	for (const char *folder : {"tracks", "needs-laps"})
+	{
+		const fs::path dir = fs::u8path(SoloPath(folder));
+		if (fs::is_symlink(dir, ec))
+			continue;
+		const fs::path target = dir / fs::u8path(name);
+		const auto kept = nlohmann::json::parse(ReadSmallPlainFile(target, kDescriptorMax), nullptr, false);
+		if (!kept.is_object() || kept.value("files", nlohmann::json()) != files)
+			continue;
+		std::string detail;
+		if (RemoveDescriptorFile(target, detail))
+			Log(std::string("retired solo/") + folder + "/" + name + ": it is the Relic Race file of a split track");
+		else
+			Log(std::string("could not retire solo/") + folder + "/" + name + ": " + detail);
+	}
 }
 
 // Writes one collected descriptor. On a refusal `message` names the track and
 // says what to do (the menus show at most 170 characters of it).
 bool ApplyStoreDescriptor(const StorePublication::Descriptor &d, const StorePublication &from, std::string &message)
 {
+	if (d.kind == 3)
+	{
+		HideRelicOnlyDescriptor(d.key, d.revision, d.json);
+		return true;
+	}
 	if (d.kind == 0)
 	{
 		// Only once the copy that replaces it is listed: a failed write must not leave no row at all.
@@ -2229,6 +2311,16 @@ extern "C" int AP_Solo_ExportTrackYaml(const CustomTrackLibraryEntry *entry, int
 			return 0;
 		}
 	}
+	std::string note;
+	const int paired = AP_SoloApplyModePair(descriptor, KnownModePairs(), note);
+	if (paired == AP_SOLO_PAIR_RELIC_ONLY)
+	{
+		Log(std::string("export of ") + key + " " + revision + " refused: " + note);
+		std::snprintf(out, size, "This is a Relic Race file. Export the track's race version: it carries the Relic Race too.");
+		return 0;
+	}
+	if (paired != AP_SOLO_PAIR_NONE)
+		Log(std::string("export of ") + key + " " + revision + ": " + note);
 	descriptor["track_key"] = descriptor["content_id"];
 	descriptor.erase("content_id");
 	std::string yaml = "custom_tracks:\n  - {";

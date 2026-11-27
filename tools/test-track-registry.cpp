@@ -398,6 +398,69 @@ int main(int argc, char **argv)
 	ap_track_registry_refresh(cache.c_str());
 	CHECK(wait_done(&source) == AP_TRACK_REGISTRY_DONE && lookup('3', 913816, '4', 458808) == AP_TRACK_REGISTRY_MATCH);
 
+	// 9. MR2 mode_pairs: a race and a Relic revision of one track, by label,
+	// with targets. Unreadable pairs are skipped whole; the built-in table
+	// follows the registry's pairs and released clients ignore the field.
+	{
+		auto rev = [](const char *label, char lev, char vrm) {
+			return json{{"revision", label}, {"hash_state", "verified"},
+			            {"files", {{"lev", {{"sha256", std::string(64, lev)}, {"size", 1000}}},
+			                       {"vrm", {{"sha256", std::string(64, vrm)}, {"size", 2000}}}}}};
+		};
+		auto doc = [&](json pairs) {
+			json track = {{"track_key", "toasty-terrace"}, {"display_title", "Toasty Terrace"},
+			              {"revisions", json::array({rev("1.3.0", 'a', 'b'), rev("1.3.1", 'c', 'd'), rev("1.3.1x", 'c', 'b')})}};
+			if (!pairs.is_null()) track["mode_pairs"] = pairs;
+			const std::string text = json{{"schema_version", 1}, {"tracks", json::array({track})}}.dump();
+			return std::vector<unsigned char>(text.begin(), text.end());
+		};
+		const json targets = {{"sapphire", 86400}, {"gold", 67200}, {"platinum", 62400}};
+		std::vector<ApTrackModePairPins> pairs;
+		std::string error;
+		CHECK(ap_track_registry_parse_mode_pairs(doc(json::array({{{"race", "1.3.0"}, {"relic", "1.3.1"}, {"relic_targets", targets}}})),
+		                                         pairs, error) == 1);
+		CHECK(pairs.size() == 1 && pairs[0].key == "toasty-terrace" && pairs[0].race_revision == "1.3.0" &&
+		      pairs[0].relic_revision == "1.3.1" && pairs[0].race_lev == std::string(64, 'a') && pairs[0].race_lev_bytes == 1000 &&
+		      pairs[0].race_vrm == std::string(64, 'b') && pairs[0].relic_lev == std::string(64, 'c') &&
+		      pairs[0].relic_vrm == std::string(64, 'd') && pairs[0].relic_vrm_bytes == 2000 && pairs[0].targets[0] == 86400 &&
+		      pairs[0].targets[1] == 67200 && pairs[0].targets[2] == 62400 && pairs[0].registry);
+		CHECK(ap_track_registry_parse_mode_pairs(doc(nullptr), pairs, error) == 0);
+		const json bad[] = {
+			{{"race", "1.3.0"}, {"relic", "9.9.9"}, {"relic_targets", targets}},
+			{{"race", "1.3.0"}, {"relic", "1.3.0"}, {"relic_targets", targets}},
+			{{"race", "1.3.0"}, {"relic", "1.3.1"}},
+			{{"race", "1.3.0"}, {"relic", "1.3.1"}, {"relic_targets", {{"sapphire", 1}, {"gold", 2}, {"platinum", 3}}}},
+			{{"race", "1.3.0"}, {"relic", "1.3.1"}, {"relic_targets", {{"sapphire", 86400}, {"gold", 67200}}}},
+			{{"race", "1.3.0"}, {"relic", "1.3.1"}, {"relic_targets", {{"sapphire", 86400.5}, {"gold", 67200}, {"platinum", 1}}}},
+			{{"race", 130}, {"relic", "1.3.1"}, {"relic_targets", targets}},
+		};
+		for (const json &pair : bad)
+			CHECK(ap_track_registry_parse_mode_pairs(doc(json::array({pair})), pairs, error) == 0);
+		CHECK(ap_track_registry_parse_mode_pairs(doc(json{{"race", "1.3.0"}}), pairs, error) == 0);
+		// The rest of the registry still reads with mode_pairs present.
+		CHECK(ap_track_registry_parse_check(doc(json::array({{{"race", "1.3.0"}, {"relic", "1.3.1"}, {"relic_targets", targets}}})), error) == 0);
+		// The built-in table: six tracks, each a valid pair.
+		const auto builtin = ap_track_builtin_mode_pairs();
+		CHECK(builtin.size() == 6);
+		for (const auto &row : builtin)
+			CHECK(!row.registry && row.race_lev.size() == 64 && row.relic_lev.size() == 64 && row.race_lev != row.relic_lev &&
+			      row.targets[0] > row.targets[1] && row.targets[1] > row.targets[2] && row.targets[2] > 0);
+		bool toasty = false;
+		for (const auto &row : builtin)
+			toasty |= row.key == "toasty-terrace" && row.race_revision == "1.3.0" && row.relic_revision == "1.3.1" &&
+			          row.race_lev == "2b18c6305d3cfe591e979eabe42e7815fe475479d49f59d5b7b50b06f701ac5d" &&
+			          row.relic_lev == "db74f5ae84d1b57cef68fde1af498b799e8c0bc04262a7fefdfe47c4f5ea181e" && row.targets[2] == 62400;
+		CHECK(toasty);
+		// Live index first, then the built-in rows.
+		const auto bytes = doc(json::array({{{"race", "1.3.0"}, {"relic", "1.3.1"}, {"relic_targets", targets}}}));
+		const std::string text(bytes.begin(), bytes.end());
+		serve(true, text);
+		ap_track_registry_refresh(cache.c_str());
+		CHECK(wait_done(&source) == AP_TRACK_REGISTRY_DONE && source == AP_TRACK_REGISTRY_SOURCE_LIVE);
+		const auto all = ap_track_mode_pairs();
+		CHECK(all.size() == 7 && all[0].registry && all[0].race_lev == std::string(64, 'a') && !all[1].registry);
+	}
+
 	unlink(cache.c_str());
 	rmdir(dir);
 	std::printf("%d checks, %d failures\n", checks, failures);
