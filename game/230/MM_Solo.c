@@ -310,17 +310,15 @@ static void MM_Solo_Go(int page)
 	}
 }
 
-/* Play Solo has a home page to go back to only while the runtime and the bundled
-   ctr.apworld are both there; with either gone, dismissing a message leaves
-   Play Solo (the room list was never loaded for a missing apworld) (PS1). */
-static int MM_Solo_Usable(void)
-{
-	return AP_Solo_RuntimePresent() && AP_Solo_RuntimeProblem() == NULL;
-}
+/* 1 while the message on screen stopped Play Solo from opening (a missing
+   file, PS1): dismissing it leaves Play Solo whatever the player did meanwhile,
+   so Home is never entered without its room list being loaded. */
+static int s_soloMsgLeaves;
 
 static void MM_Solo_Message(const char *text)
 {
 	snprintf(s_soloMsg, sizeof s_soloMsg, "%s", text);
+	s_soloMsgLeaves = 0;
 	MM_Solo_Go(SOLO_MESSAGE);
 }
 
@@ -346,6 +344,7 @@ static int MM_Solo_ConsumesBack(void)
 
 static void MM_Solo_Open(void)
 {
+	s_soloMsgLeaves = 0;
 	// Box Author Mode is on (ap/ap_author_gate.h): no solo room starts. The
 	// message and the Connection page status both say why. Every entry, the
 	// Connection page row and the title screen's PLAY SOLO, comes through here.
@@ -358,14 +357,18 @@ static void MM_Solo_Open(void)
 	{
 		const char *problem = AP_Solo_RuntimeProblem();
 		MM_Solo_Message(problem ? problem : "Solo runtime is missing. Reinstall or update the client.");
+		s_soloMsgLeaves = 1;
 		return;
 	}
+	if (!AP_Solo_SessionActive())
 	{
-		/* ctr.apworld beside the game: only listing works without it (PS1). */
+		/* ctr.apworld beside the game: only listing works without it (PS1). A
+		   running session keeps its Home page, where it can be stopped. */
 		const char *problem = AP_Solo_RuntimeProblem();
 		if (problem)
 		{
 			MM_Solo_Message(problem);
+			s_soloMsgLeaves = 1;
 			return;
 		}
 	}
@@ -1424,7 +1427,7 @@ static void MM_Solo_PageMessage(uint32_t *ot, struct GamepadBuffer *pad)
 				MM_Solo_Go(SOLO_TRACKS);
 		}
 		else
-			MM_Solo_Go(MM_Solo_Usable() ? SOLO_HOME : SOLO_OFF);
+			MM_Solo_Go(!s_soloMsgLeaves && AP_Solo_RuntimePresent() ? SOLO_HOME : SOLO_OFF);
 		return;
 	}
 	MM_Solo_Title("Play Solo", ot);
@@ -1476,7 +1479,7 @@ static void MM_Solo_Back(void)
 		else
 			MM_Solo_Go(SOLO_NEW);
 		break;
-	case SOLO_MESSAGE: MM_Solo_Go(MM_Solo_Usable() ? SOLO_HOME : SOLO_OFF); break;
+	case SOLO_MESSAGE: MM_Solo_Go(!s_soloMsgLeaves && AP_Solo_RuntimePresent() ? SOLO_HOME : SOLO_OFF); break;
 	default: break; /* Busy: Triangle/Start cancels generation. */
 	}
 }

@@ -281,7 +281,8 @@ int AP_Solo_PickStart(int r) { (void)r; return 0; }
 int AP_Solo_PickTake(char *p, int n) { (void)p; (void)n; return 0; }
 int AP_Solo_SessionStart(const char *r) { (void)r; return 1; }
 void AP_Solo_SessionStop(void) {}
-int AP_Solo_SessionActive(void) { return 0; }
+static int sessionActive;
+int AP_Solo_SessionActive(void) { return sessionActive; }
 static char testPassword[64];
 const char *AP_Solo_Password(void) { return testPassword; }
 int AP_Solo_SetPassword(const char *p)
@@ -686,6 +687,14 @@ int main(void)
 	/* Dismissing it (OK or Back) leaves Play Solo; it never opens an unloaded home page. */
 	tap(BTN_CROSS); CHECK(s_soloPage == SOLO_OFF);
 	MM_Solo_Open(); tap(BTN_TRIANGLE); CHECK(s_soloPage == SOLO_OFF);
+	/* Copying the file back while the message is up still leaves, so Home is never entered unloaded. */
+	MM_Solo_Open(); runtimeProblem = NULL; tap(BTN_CROSS); CHECK(s_soloPage == SOLO_OFF);
+	/* A later job error dismisses to Home as before. */
+	MM_Solo_Open(); CHECK(s_soloPage != SOLO_MESSAGE);
+	snprintf(s_soloMsg, sizeof s_soloMsg, "x"); s_soloPage = SOLO_MESSAGE; tap(BTN_CROSS); CHECK(s_soloPage == SOLO_HOME);
+	runtimeProblem = "ctr.apworld is missing from the game folder. Put it back next to the game: copy it, do not move it. Lost it? Reinstall or update the client.";
+	/* A running session keeps its Home page, where it can be stopped. */
+	sessionActive = 1; MM_Solo_Open(); CHECK(s_soloPage != SOLO_MESSAGE); sessionActive = 0;
 	runtimeProblem = NULL;
 	MM_Solo_Open();
 	CHECK(s_soloPage != SOLO_MESSAGE);
