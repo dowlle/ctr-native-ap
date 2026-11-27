@@ -234,7 +234,9 @@ assert "ap_pad_title_layout_for(name, width, FONT_BIG, FONT_SMALL," in draw
 assert "TEXT_ELLIPSIS" in draw and "TEXT_MARQUEE" not in draw, "the name never scrolls"
 assert "JUSTIFY_CENTER | ORANGE" in draw
 custom = function("game/232/AH_WarpPad.c", "static int AH_WarpPad_CustomPadTitle(int levelID)")
-assert "(pad->cup && !pad->gem_cup) || pad->retail_id < 0" in custom
+assert "ap_content_pad_custom_title(ap_content_plan_pad(levelID))" in custom
+predicate = function("ap/ap_content_plan.h", "static inline int ap_content_pad_custom_title(const struct ctr_content_pad *pad)")
+assert "pad->cup ? !pad->gem_cup : pad->retail_id < 0" in predicate, "cups are classified first; Gem Cups keep the retail line"
 site = warp[warp.index("if (credit || AH_WarpPad_CustomPadTitle(levelID))"):warp.index("// midpoint X,")]
 assert "UI_DrawTrackCredit(credit, padX, creditY, creditWidth, TEXT_MARQUEE);" in site, "the credit keeps its scroll"
 assert "AH_WarpPad_DrawCustomTitle(warppadLNG, padX, titleY, titleWidth)" in site
@@ -247,3 +249,9 @@ assert "DecalFont_DrawLine(warppadLNG, padX," in tail[:400] and "- 30 - apLift, 
 assert "racerLift += apTitleExtra;" in warp
 assert "TEXT_SLOT_PAD_TITLE" in draw
 print("pad title wiring: ok")
+
+# CN1b: a lifted hub feed never stacks a row above the content-warning line.
+feed = source("ap/ap_hooks_feed.c")
+floor = feed[feed.index("// CN1b: a tall custom pad title"):feed.index("// Promote a pending line into a free slot")]
+assert "warningY = AP_FEED_CONTENT_WARNING_Y;" in floor and "if (rows < visibleLimit) visibleLimit = rows;" in floor
+print("hub feed floor: ok")

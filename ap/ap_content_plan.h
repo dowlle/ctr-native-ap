@@ -370,6 +370,14 @@ static inline int ap_content_pad_host(const struct ctr_content_pad *pad)
 {
     return pad->retail_id >= 0 ? pad->retail_id : pad->cortex ? AP_CONTENT_CORTEX_HOST : AP_CONTENT_CUSTOM_HOST;
 }
+/* CN1: 1 when a pad's name comes from the room and can be longer than the
+ * retail tables allow, so the warp pad draws it whole. Every cup pad, Gem Cups
+ * included, has retail_id -1, so the cup test comes first: an original Gem Cup
+ * (gem_cup 100 to 104) keeps its retail title line, a custom cup does not. */
+static inline int ap_content_pad_custom_title(const struct ctr_content_pad *pad)
+{
+    return pad && pad->occupied && (pad->cup ? !pad->gem_cup : pad->retail_id < 0);
+}
 /* The engine LevelID a cup leg races on (#133 PR 5). */
 static inline int ap_content_leg_host(const struct ctr_content_leg *leg)
 {

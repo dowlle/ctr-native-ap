@@ -38,8 +38,7 @@ static int AH_WarpPad_CustomPadTitle(int levelID)
 {
 	if (!ap_content_plan_active())
 		return 0;
-	const ctr_content_pad *pad = ap_content_plan_pad(levelID);
-	return pad && pad->occupied && ((pad->cup && !pad->gem_cup) || pad->retail_id < 0);
+	return ap_content_pad_custom_title(ap_content_plan_pad(levelID));
 }
 
 // CN1: the whole custom name at once. `bottomY` is where the single big line

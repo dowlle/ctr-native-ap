@@ -2021,6 +2021,39 @@ int main(int argc, char **argv) {
                    "cups: the sweep display bit resolves");
         }
         expect(seen == 9, "cups: nine cup pads");
+        // CN1b: which parsed pads take the whole-name title path at the warp pad.
+        // Every cup pad parses with retail_id -1, so the Gem Cups share the custom
+        // sentinel; only the cup test tells them apart.
+        {
+            std::map<std::string, std::string> origin;
+            for (const auto &e : plan["entries"]) if (e["kind"] == "track") origin[e["id"]] = tracks[e["track_id"]]["origin"];
+            int gem = 0, custom_cup = 0, custom_track = 0, retail = 0;
+            for (const auto &pr : plan["pads"]) {
+                if (pr["entry_id"].is_null() || pr["id"].get<std::string>().rfind("pad:", 0) != 0) continue;
+                const ctr_content_pad *pad = ap_content_plan_pad(std::stoi(pr["id"].get<std::string>().substr(4)));
+                if (!pad || !pad->occupied) continue;
+                const std::string eid = pr["entry_id"];
+                if (eid.rfind("entry/gem_cup:", 0) == 0) {
+                    ++gem;
+                    expect(pad->retail_id < 0 && pad->cup && pad->gem_cup >= 100 && !ap_content_pad_custom_title(pad),
+                           "cn1b: an original Gem Cup keeps the retail title line");
+                } else if (eid.rfind("entry/cup:", 0) == 0) {
+                    ++custom_cup;
+                    expect(pad->retail_id < 0 && pad->cup && !pad->gem_cup && ap_content_pad_custom_title(pad),
+                           "cn1b: a custom cup draws its whole name");
+                } else if (origin[eid] == "custom") {
+                    ++custom_track;
+                    expect(pad->retail_id < 0 && !pad->cup && ap_content_pad_custom_title(pad), "cn1b: a custom track draws its whole name");
+                } else if (origin[eid] == "retail") {
+                    ++retail;
+                    expect(pad->retail_id >= 0 && !pad->cup && !ap_content_pad_custom_title(pad), "cn1b: a retail track keeps the retail title line");
+                }
+            }
+            expect(gem == 5 && custom_cup == 4 && custom_track >= 1 && retail >= 1, "cn1b: the fixture covers all four pad kinds");
+            expect(!ap_content_pad_custom_title(nullptr), "cn1b: no pad, no custom title");
+            ctr_content_pad empty{};
+            expect(!ap_content_pad_custom_title(&empty), "cn1b: an unoccupied pad keeps the retail path");
+        }
         expect(!victory.empty(), "cups: the fixture has Cup Leg Victory checks");
         J renamed = cups;
         const std::string generic_id = "custom/fixture-loop/2.1";
