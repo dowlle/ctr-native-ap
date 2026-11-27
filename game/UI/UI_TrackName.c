@@ -144,20 +144,28 @@ int UI_RaceTitleLiftUp(const char *name, int width)
 	return ap_pad_title_extra_lift(&layout, data.font_charPixHeight[layout.font], bigH);
 }
 
+// CN2c: how far the fly-in's bottom bar is lifted for the current race's name
+// (0 for every race that keeps the retail draw). The AP feed rows move up by the
+// same amount so a taller bar never covers them.
+int UI_RaceIntroTitleLift(void)
+{
+	if (!UI_TrackNameIsCustom())
+		return 0;
+	return UI_RaceTitleLiftUp(UI_TrackName(-1), sdata->gGT->pushBuffer[0].rect.w - 64);
+}
+
 // Race start banner (CN2): one big line when the name fits `width`, else the
 // small font wrapped at `width`, growing downward from `topY` because the
 // countdown lights sit above the banner and the minimap and the kart below it
-// leave room for three small lines only (CN2b: AP_PAD_TITLE_BANNER_LINES, a
-// longer name ends its last line with an ellipsis). Returns the pixels the
-// block is taller than one big line (the credit line below moves down by that).
+// leave room for three small lines only (CN2b: AP_PAD_TITLE_BANNER_LINES; CN2c:
+// a longer name is first refilled to the edge and ends with an ellipsis only if
+// it still needs more lines). Returns the pixels the block is taller than one
+// big line (the credit line below moves down by that).
 int UI_DrawRaceTitleDown(const char *name, int x, int topY, int width)
 {
 	ap_pad_title_layout layout;
 	const int bigH = data.font_charPixHeight[FONT_BIG];
-	ap_pad_title_fill(name, width, FONT_BIG, UI_RaceTitleWidth, 1, 0, &layout);
-	if (layout.overflow)
-		ap_pad_title_layout_for(name, width, FONT_SMALL, FONT_SMALL, UI_RaceTitleWidth, &layout);
-	ap_pad_title_cap(&layout, AP_PAD_TITLE_BANNER_LINES);
+	ap_pad_title_banner_layout(name, width, FONT_BIG, FONT_SMALL, UI_RaceTitleWidth, &layout);
 	UI_RaceTitleDrawLines(name, &layout, x, topY, width);
 	const int h = ap_pad_title_block_height(&layout, data.font_charPixHeight[layout.font]);
 	return h > bigH ? h - bigH : 0;

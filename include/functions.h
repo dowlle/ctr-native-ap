@@ -7,6 +7,7 @@ const char *UI_TrackCredit(int physicalPad);
 void UI_DrawTrackCredit(const char *credit, int x, int y, int width, int mode);
 int UI_TrackNameIsCustom(void);
 int UI_RaceTitleLiftUp(const char *name, int width);
+int UI_RaceIntroTitleLift(void);
 int UI_DrawRaceTitleUp(const char *name, int x, int bottomY, int width);
 int UI_DrawRaceTitleDown(const char *name, int x, int topY, int width);
 void UI_ResetTrackCreditBanner(void);

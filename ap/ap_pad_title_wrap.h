@@ -176,6 +176,29 @@ static inline void ap_pad_title_cap(ap_pad_title_layout *layout, int max)
 	}
 }
 
+// CN2c: the race start banner layout. One big line when the name fits, else small
+// lines at word boundaries. When that needs more than AP_PAD_TITLE_BANNER_LINES
+// lines (an overwide word is cut and stacks a line of its own, or many words
+// leave ragged ends), fill each line to the edge instead, which cuts words but
+// keeps the whole name; only a name that still needs more lines than the banner
+// has ends in an ellipsis. Never fewer letters than the plain layout would show.
+static inline void ap_pad_title_banner_layout(const char *text, int width, int bigFont, int smallFont,
+                                              ap_pad_title_width_fn fn, ap_pad_title_layout *out)
+{
+	ap_pad_title_layout edge;
+	ap_pad_title_fill(text, width, bigFont, fn, 1, 0, out);
+	if (!out->overflow)
+		return;
+	ap_pad_title_layout_for(text, width, smallFont, smallFont, fn, out);
+	if (out->count > AP_PAD_TITLE_BANNER_LINES || out->overflow)
+	{
+		ap_pad_title_fill(text, width, smallFont, fn, AP_PAD_TITLE_MAX_LINES, 1, &edge);
+		if (edge.count < out->count || (out->overflow && !edge.overflow))
+			*out = edge;
+	}
+	ap_pad_title_cap(out, AP_PAD_TITLE_BANNER_LINES);
+}
+
 // CN2b: the fly-in bars slide off screen over 30 frames (`transition` goes 0 to
 // 30 px). A bottom bar made `lift` px taller by a wrapped name must travel
 // 30 + lift px in the same frames to be fully off screen on the last one.

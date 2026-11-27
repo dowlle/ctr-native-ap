@@ -560,9 +560,19 @@ void AP_FeedDrawRace(void)
 	AP_FeedDrawRaceAt(AP_FEED_BASE_Y);
 }
 
-void AP_FeedDrawRaceIntro(void)
+// CN2c: a wrapped custom track name makes the fly-in's opaque bottom bar `lift`
+// px taller, so its top edge rises from y 186 to 186 - lift and would paint over
+// the newest row at y 172. The rows move up by the same lift. They stop below
+// the 30 px top bar (the full five rows), which only a name of nine or ten small
+// lines (synthetic, no roster name) can reach. With no lift this is the old anchor.
+#define AP_FEED_TOP_BAR_H 30
+void AP_FeedDrawRaceIntro(int lift)
 {
-	AP_FeedDrawRaceAt(AP_FEED_RESULTS_BASE_Y);
+	const int floorY = AP_FEED_TOP_BAR_H + (AP_FEED_MAX_VISIBLE - 1) * AP_FEED_LINE_H;
+	int y = AP_FEED_RESULTS_BASE_Y - (lift > 0 ? lift : 0);
+	if (y < floorY && lift > 0)
+		y = floorY;
+	AP_FeedDrawRaceAt(y);
 }
 
 // End-of-race screens: the race HUD pass returns before AP_FeedDrawRace, so the

@@ -528,7 +528,7 @@ void RenderAllHUD(struct GameTracker *gGT)
 		// ignored right away instead of surfacing after the lights.
 #ifdef CTR_CUSTOM_PACKAGES
 		if (UI_TrackCredit(-1))
-			AP_FeedDrawRaceIntro();
+			AP_FeedDrawRaceIntro(UI_RaceIntroTitleLift());
 		else
 #endif
 			AP_FeedDrawRace();

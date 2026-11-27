@@ -302,6 +302,15 @@ for sig in ("static int UI_RaceTitleWidth(const char *text, int len, int font)",
             "int UI_DrawRaceTitleUp(const char *name, int x, int bottomY, int width)",
             "int UI_DrawRaceTitleDown(const char *name, int x, int topY, int width)"):
     race_fixture += function("game/UI/UI_TrackName.c", sig) + "\n"
+# CN2c: the production AP_FeedDrawRaceIntro with its constants, the row anchor recorded instead of drawn
+feed_src = source("ap/ap_hooks_feed.c")
+race_fixture += "\n"
+for const in ("AP_FEED_LINE_H", "AP_FEED_RESULTS_BASE_Y"):
+    race_fixture += "#define %s %s\n" % (const, re.search(r"#define %s\s+(\S+)" % const, feed_src).group(1))
+race_fixture += "#define AP_FEED_MAX_VISIBLE %s\n" % re.search(r"#define AP_FEED_MAX_VISIBLE\s+(\d+)", source("ap/ap_feed_lines_logic.h")).group(1)
+race_fixture += "#define AP_FEED_TOP_BAR_H %s\n" % re.search(r"#define AP_FEED_TOP_BAR_H\s+(\d+)", feed_src).group(1)
+race_fixture += "static int feedY;\nstatic void AP_FeedDrawRaceAt(int y) { feedY = y; }\n"
+race_fixture += function("ap/ap_hooks_feed.c", "void AP_FeedDrawRaceIntro(int lift)") + "\n"
 race_fixture += r'''
 static int measure(const char *text, int len, int font) { return DecalFont_GetLineWidthStrlen((char *)text, len, font); }
 
@@ -325,15 +334,32 @@ static void whole(const char *name, int width, int capped)
 }
 
 static int capped; /* names the banner cut to three lines with an ellipsis */
+static int cappedRoster; /* of those, roster or suffixed names at the 1P box (must stay 0) */
+
+/* CN2c: the fewest small lines any layout can use: fill each line to the edge, cut anywhere */
+static int edge_lines(const char *name, int width)
+{
+    const int total = (int)strlen(name);
+    int i = 0, n = 0;
+    while (i < total) {
+        while (i < total && name[i] == ' ') i++;
+        if (i >= total) break;
+        int end = i;
+        while (end < total && measure(name + i, end + 1 - i, FONT_SMALL) <= width) end++;
+        if (end == i) end = i + 1;
+        n++; i = end;
+    }
+    return n ? n : 1;
+}
 
 int main(int argc, char **argv)
 {
     (void)argc;
     FILE *f = fopen(argv[1], "r");
-    (void)argv[2]; /* the roster and suffixed names come first, the synthetic worst cases last */
+    /* argv[2]: the roster and suffixed names come first, the synthetic worst cases last */
     char line[512];
     const int bigH = data.font_charPixHeight[FONT_BIG], smallH = data.font_charPixHeight[FONT_SMALL];
-    int n = 0, flyWrapped = 0, flySmall = 0, bannerSmall = 0, bannerOne = 0, maxFly = 0, maxBannerBottom = 0;
+    int maxFeedLift = 0, feedMoved = 0, n = 0, flyWrapped = 0, flySmall = 0, bannerSmall = 0, bannerOne = 0, maxFly = 0, maxBannerBottom = 0;
     char widest[512] = "";
     while (fgets(line, sizeof line, f)) {
         line[strcspn(line, "\r\n")] = 0;
@@ -356,6 +382,18 @@ int main(int argc, char **argv)
                 assert(lift > 0);
                 assert(lift == (nrec - 1) * (glyphH + 2) + glyphH - bigH || (nrec - 1) * (glyphH + 2) + glyphH <= bigH);
             }
+            if (credited) {
+                /* CN2c: the AP feed rows stay above the bottom bar. The bar's top edge is 186 - lift (view bottom 216,
+                   30 px bar, lift px taller); the newest row is a small font line starting at feedY. */
+                AP_FeedDrawRaceIntro(lift);
+                if (lift == 0) assert(feedY == 172);  /* a one line name: exactly main's row */
+                assert(feedY == 172 - lift || lift > 94);
+                if (lift <= 94) assert(feedY + smallH <= 186 - lift);
+                /* the oldest of the five rows is still below the 30 px top bar */
+                assert(feedY - (AP_FEED_MAX_VISIBLE - 1) * AP_FEED_LINE_H >= AP_FEED_TOP_BAR_H);
+                if (lift > maxFeedLift) maxFeedLift = lift;
+                feedMoved += lift > 0;
+            }
             if (!credited) {
                 if (nrec > 1) flyWrapped++;
                 if (rec[0].font == FONT_SMALL) flySmall++;
@@ -371,7 +409,11 @@ int main(int argc, char **argv)
             const int lift = UI_DrawRaceTitleDown(line, x, 76, width);
             /* CN2b: never more than AP_PAD_TITLE_BANNER_LINES lines; a longer name ends its last line with an ellipsis */
             assert(nrec <= 3);
-            whole(line, width, nrec == 3 && measure(rec[2].text, (int)strlen(rec[2].text), rec[2].font) > width);
+            const int isCapped = nrec == 3 && measure(rec[2].text, (int)strlen(rec[2].text), rec[2].font) > width;
+            whole(line, width, isCapped);
+            /* CN2c: no avoidable truncation. A name is cut only when even a fill-to-the-edge layout needs more than three lines */
+            if (isCapped) assert(edge_lines(line, width) > 3);
+            else if (!fitsOne) assert(rec[0].font == FONT_SMALL);
             assert(rec[0].y == 76);
             if (fitsOne) {
                 assert(nrec == 1 && rec[0].font == FONT_BIG && lift == 0 && rec[0].x == x);
@@ -382,7 +424,11 @@ int main(int argc, char **argv)
             const int bottom = 76 + (nrec - 1) * (glyphH + 2) + glyphH;
             /* the name never reaches the minimap (top y 106), in either box */
             assert(bottom <= 104);
-            if (nrec == 3 && measure(rec[2].text, (int)strlen(rec[2].text), rec[2].font) > width) { capped++; if (getenv("CAPLIST")) printf("CAP %d %s\n", width, line); }
+            if (isCapped) {
+                capped++;
+                if (!two && n <= atoi(argv[2])) cappedRoster++;
+                if (getenv("CAPLIST")) printf("CAP %d %s\n", width, line);
+            }
             if (!two) {
                 if (fitsOne) bannerOne++; else bannerSmall++;
                 if (bottom > maxBannerBottom) maxBannerBottom = bottom;
@@ -396,11 +442,34 @@ int main(int argc, char **argv)
            n, flyWrapped, flySmall, maxFly, widest);
     printf("race title: banner (box 384): %d one big line, %d small font; every name ends at y <= %d, %d capped to three lines with an ellipsis (both boxes)\n",
            bannerOne, bannerSmall, maxBannerBottom, capped);
-    /* the roster and suffixed names never need the cap (the synthetic 105 byte worst cases may) */
-    assert(capped >= 1);
-    /* a name that needs five lines: three lines, the third carries the rest */
+    /* CN2c: at the 1P box (384) no roster or suffixed name is cut. Only the synthetic worst cases are, because
+       they need more than three lines even filled to the edge. The harness-only 2P box (320, 2P custom races run
+       as 1P) also cuts the three suffixed forms with a 24 letter author; the CAPLIST=1 run lists every cut name */
+    assert(cappedRoster == 0);
+    printf("race title: credited fly-in feed rows lifted for %d names (largest lift %d px), always above the bar\n", feedMoved, maxFeedLift);
+    printf("race title: %d capped names over both boxes, %d of them roster or suffixed names at 384\n", capped, cappedRoster);
+    /* CN2c: the review's example, an overwide word between two short ones: split earlier it fits in three lines, no ellipsis */
+    {
+        char t[128] = "A ";
+        for (int i = 0; i < 65; i++) strcat(t, "W");
+        strcat(t, " A");
+        for (int two = 0; two < 2; two++) {
+            nrec = 0; UI_DrawRaceTitleDown(t, 256, 76, two ? 320 : 384);
+            assert(nrec == 3 && edge_lines(t, two ? 320 : 384) <= 3);
+            assert(measure(rec[2].text, (int)strlen(rec[2].text), rec[2].font) <= (two ? 320 : 384));
+            whole(t, two ? 320 : 384, 0);
+        }
+    }
+    /* thirteen words of seven letters: even filled to the edge they need more than three small lines, so the cap stays */
     nrec = 0; UI_DrawRaceTitleDown("AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING", 256, 76, 384);
-    assert(nrec == 3 && strstr(rec[2].text, "AMAZING AMAZING AMAZING") != NULL);
+    assert(nrec == 3 && edge_lines("AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING", 384) > 3);
+    /* a name that needs more than three lines even filled to the edge keeps the cap: three lines, the third holds the rest */
+    {
+        char t[200] = "";
+        for (int i = 0; i < 100; i++) strcat(t, i % 7 == 6 ? " " : "W");
+        nrec = 0; UI_DrawRaceTitleDown(t, 256, 76, 384);
+        assert(edge_lines(t, 384) > 3 && nrec == 3 && measure(rec[2].text, (int)strlen(rec[2].text), rec[2].font) > 384);
+    }
     /* exit slide of the fly-in bars: the taller bottom bar is fully off screen on the last frame */
     for (int lift = 0; lift <= 60; lift++) {
         int prev = -1;
@@ -451,6 +520,9 @@ banner = frame[frame.index("if (UI_TrackNameIsCustom())"):frame.index("#endif\n\
 assert "UI_DrawRaceTitleDown(UI_TrackName(-1), x, 76, width)" in banner
 assert "UI_DrawTrackCredit(credit, x, 94 + lift, creditWidth, TEXT_BANNER_MARQUEE)" in banner, "the banner credit keeps its scroll"
 assert "DecalFont_DrawLineBox(UI_TrackName(-1), x, 76, width, FONT_BIG," in banner and "UI_DrawTrackCredit(credit, x, 94, width, TEXT_BANNER_MARQUEE);" in banner, "retail draw unchanged"
+assert "AP_FeedDrawRaceIntro(UI_RaceIntroTitleLift());" in frame, "CN2c: the credited intro feed rows follow the lifted bar"
+lift_fn = function("game/UI/UI_TrackName.c", "int UI_RaceIntroTitleLift(void)")
+assert "!UI_TrackNameIsCustom()" in lift_fn and "UI_RaceTitleLiftUp(UI_TrackName(-1), sdata->gGT->pushBuffer[0].rect.w - 64)" in lift_fn
 custom = function("game/UI/UI_TrackName.c", "int UI_TrackNameIsCustom(void)")
 assert "AP_ContentRaceDisplayName() != NULL" in custom and "MainRaceTrack_OfflineCustomTitle() != NULL" in custom
 cups = function("ap/ap_hooks_content_cups.c", "const char *AP_ContentCupTrackName(void)")
