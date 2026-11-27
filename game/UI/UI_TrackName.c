@@ -133,11 +133,23 @@ int UI_DrawRaceTitleUp(const char *name, int x, int bottomY, int width)
 	return ap_pad_title_extra_lift(&layout, glyphH, bigH);
 }
 
+// How many pixels taller than one big line the fly-in block for `name` is,
+// without drawing it. The caller needs it before drawing, to slide the bottom
+// bar off screen far enough for its extra height.
+int UI_RaceTitleLiftUp(const char *name, int width)
+{
+	ap_pad_title_layout layout;
+	const int bigH = data.font_charPixHeight[FONT_BIG];
+	ap_pad_title_layout_for(name, width, FONT_BIG, FONT_SMALL, UI_RaceTitleWidth, &layout);
+	return ap_pad_title_extra_lift(&layout, data.font_charPixHeight[layout.font], bigH);
+}
+
 // Race start banner (CN2): one big line when the name fits `width`, else the
 // small font wrapped at `width`, growing downward from `topY` because the
 // countdown lights sit above the banner and the minimap and the kart below it
-// leave room for three small lines only. Returns the pixels the block is
-// taller than one big line (the credit line below moves down by that).
+// leave room for three small lines only (CN2b: AP_PAD_TITLE_BANNER_LINES, a
+// longer name ends its last line with an ellipsis). Returns the pixels the
+// block is taller than one big line (the credit line below moves down by that).
 int UI_DrawRaceTitleDown(const char *name, int x, int topY, int width)
 {
 	ap_pad_title_layout layout;
@@ -145,6 +157,7 @@ int UI_DrawRaceTitleDown(const char *name, int x, int topY, int width)
 	ap_pad_title_fill(name, width, FONT_BIG, UI_RaceTitleWidth, 1, 0, &layout);
 	if (layout.overflow)
 		ap_pad_title_layout_for(name, width, FONT_SMALL, FONT_SMALL, UI_RaceTitleWidth, &layout);
+	ap_pad_title_cap(&layout, AP_PAD_TITLE_BANNER_LINES);
 	UI_RaceTitleDrawLines(name, &layout, x, topY, width);
 	const int h = ap_pad_title_block_height(&layout, data.font_charPixHeight[layout.font]);
 	return h > bigH ? h - bigH : 0;

@@ -298,6 +298,7 @@ race_fixture += function("game/DecalFont.c", "int DecalFont_GetLineWidthStrlen(c
 race_fixture += '\n#include "ap/ap_pad_title_wrap.h"\n'
 for sig in ("static int UI_RaceTitleWidth(const char *text, int len, int font)",
             "static void UI_RaceTitleDrawLines(const char *name, const ap_pad_title_layout *layout, int x, int top, int width)",
+            "int UI_RaceTitleLiftUp(const char *name, int width)",
             "int UI_DrawRaceTitleUp(const char *name, int x, int bottomY, int width)",
             "int UI_DrawRaceTitleDown(const char *name, int x, int topY, int width)"):
     race_fixture += function("game/UI/UI_TrackName.c", sig) + "\n"
@@ -305,7 +306,7 @@ race_fixture += r'''
 static int measure(const char *text, int len, int font) { return DecalFont_GetLineWidthStrlen((char *)text, len, font); }
 
 /* every letter once, in order, no line wider than `width`, no cut word that fits, lines in reading order */
-static void whole(const char *name, int width)
+static void whole(const char *name, int width, int capped)
 {
     char plain[1024] = "", joined[1024] = "";
     for (const char *c = name; *c; c++) if (*c != ' ') strncat(plain, c, 1);
@@ -313,7 +314,9 @@ static void whole(const char *name, int width)
     for (int i = 0; i < nrec; i++) {
         assert(rec[i].text[0]);
         assert(rec[i].mode == TEXT_ELLIPSIS && rec[i].slot == TEXT_SLOT_RACE_TITLE && rec[i].w == width);
-        assert(measure(rec[i].text, (int)strlen(rec[i].text), rec[i].font) <= width);
+        /* a capped last line holds the rest of the name and is ellipsized by the renderer */
+        if (!(capped && i == nrec - 1))
+            assert(measure(rec[i].text, (int)strlen(rec[i].text), rec[i].font) <= width);
         assert(rec[i].font == rec[0].font && rec[i].y > prevY);
         prevY = rec[i].y;
         for (const char *c = rec[i].text; *c; c++) if (*c != ' ') strncat(joined, c, 1);
@@ -321,17 +324,17 @@ static void whole(const char *name, int width)
     assert(!strcmp(plain, joined));
 }
 
-static int tall; /* names that need more than three lines on the banner */
+static int capped; /* names the banner cut to three lines with an ellipsis */
 
 int main(int argc, char **argv)
 {
     (void)argc;
     FILE *f = fopen(argv[1], "r");
-    const int real = atoi(argv[2]); /* the first `real` names are roster and suffixed forms, the rest synthetic worst cases */
+    (void)argv[2]; /* the roster and suffixed names come first, the synthetic worst cases last */
     char line[512];
     const int bigH = data.font_charPixHeight[FONT_BIG], smallH = data.font_charPixHeight[FONT_SMALL];
-    int n = 0, overReal = 0, flyWrapped = 0, flySmall = 0, bannerSmall = 0, bannerOne = 0, maxFly = 0, maxBannerBottom = 0, over3 = 0;
-    char widest[512] = "", tallest[512] = "";
+    int n = 0, flyWrapped = 0, flySmall = 0, bannerSmall = 0, bannerOne = 0, maxFly = 0, maxBannerBottom = 0;
+    char widest[512] = "";
     while (fgets(line, sizeof line, f)) {
         line[strcspn(line, "\r\n")] = 0;
         if (!line[0]) continue;
@@ -342,7 +345,8 @@ int main(int argc, char **argv)
             const int bottomY = 216 - (credited ? 29 : 23);
             nrec = 0;
             const int lift = UI_DrawRaceTitleUp(line, 256, bottomY, 448);
-            whole(line, 448);
+            whole(line, 448, 0);
+            assert(UI_RaceTitleLiftUp(line, 448) == lift);
             const int glyphH = data.font_charPixHeight[rec[0].font];
             assert(rec[nrec - 1].y == bottomY + (bigH - glyphH)); /* the last line keeps the old position */
             assert(rec[0].y >= 40);                               /* below the 30 px top bar */
@@ -360,12 +364,15 @@ int main(int argc, char **argv)
         }
         /* race start banner: 1P box 384, 2P box 320 */
         for (int two = 0; two < 2; two++) {
-            const int width = two ? 320 : 384, x = two ? 160 : 256;
+            /* production: x = pushBuffer_UI.rect.w / 2, which is 256 in 1P and in 2P (only the box narrows) */
+            const int width = two ? 320 : 384, x = 256;
             const int fitsOne = measure(line, (int)strlen(line), FONT_BIG) <= width;
             nrec = 0;
             const int lift = UI_DrawRaceTitleDown(line, x, 76, width);
-            whole(line, width);
-            assert(rec[0].y == 76 - 0 + (rec[0].font == FONT_BIG ? 0 : 0));
+            /* CN2b: never more than AP_PAD_TITLE_BANNER_LINES lines; a longer name ends its last line with an ellipsis */
+            assert(nrec <= 3);
+            whole(line, width, nrec == 3 && measure(rec[2].text, (int)strlen(rec[2].text), rec[2].font) > width);
+            assert(rec[0].y == 76);
             if (fitsOne) {
                 assert(nrec == 1 && rec[0].font == FONT_BIG && lift == 0 && rec[0].x == x);
             } else {
@@ -373,13 +380,13 @@ int main(int argc, char **argv)
             }
             const int glyphH = data.font_charPixHeight[rec[0].font];
             const int bottom = 76 + (nrec - 1) * (glyphH + 2) + glyphH;
+            /* the name never reaches the minimap (top y 106), in either box */
+            assert(bottom <= 104);
+            if (nrec == 3 && measure(rec[2].text, (int)strlen(rec[2].text), rec[2].font) > width) { capped++; if (getenv("CAPLIST")) printf("CAP %d %s\n", width, line); }
             if (!two) {
                 if (fitsOne) bannerOne++; else bannerSmall++;
-                if (nrec > 3 && n <= real) overReal++;
-                if (nrec > 3) { over3++; if (nrec > tall) { tall = nrec; strcpy(tallest, line); } }
-                else if (bottom > maxBannerBottom) maxBannerBottom = bottom;
-                /* up to three lines end above the minimap (y 106); the credit then follows at 94 + lift */
-                if (nrec <= 3) { assert(bottom <= 104); assert(94 + lift + smallH <= 114); }
+                if (bottom > maxBannerBottom) maxBannerBottom = bottom;
+                assert(94 + lift + smallH <= 114);
                 /* the credit narrows to 198 once it would reach the minimap, so its right edge stays 16 px left of x 371 */
                 if (lift >= 5) assert(256 + 198 / 2 <= 371 - 16);
             }
@@ -387,8 +394,27 @@ int main(int argc, char **argv)
     }
     printf("race title: %d names. Fly-in (box 448): %d wrapped (%d in the small font), tallest lift %d px (%s).\n",
            n, flyWrapped, flySmall, maxFly, widest);
-    printf("race title: banner (box 384): %d one big line, %d small font; %d need more than 3 lines (at most %d: %s); three lines or fewer end at y <= %d\n",
-           bannerOne, bannerSmall, over3, tall, tallest, maxBannerBottom);
+    printf("race title: banner (box 384): %d one big line, %d small font; every name ends at y <= %d, %d capped to three lines with an ellipsis (both boxes)\n",
+           bannerOne, bannerSmall, maxBannerBottom, capped);
+    /* the roster and suffixed names never need the cap (the synthetic 105 byte worst cases may) */
+    assert(capped >= 1);
+    /* a name that needs five lines: three lines, the third carries the rest */
+    nrec = 0; UI_DrawRaceTitleDown("AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING AMAZING", 256, 76, 384);
+    assert(nrec == 3 && strstr(rec[2].text, "AMAZING AMAZING AMAZING") != NULL);
+    /* exit slide of the fly-in bars: the taller bottom bar is fully off screen on the last frame */
+    for (int lift = 0; lift <= 60; lift++) {
+        int prev = -1;
+        assert(ap_pad_title_slide(0, lift) == 0 && ap_pad_title_slide(30, lift) == 30 + lift);
+        for (int t = 0; t <= 30; t++) {
+            const int shift = ap_pad_title_slide(t, lift);
+            assert(shift >= prev && shift - prev <= 2 + lift / 30 && shift >= t);
+            prev = shift;
+            /* bar top = viewBottom + shift - 30 - lift; on the last frame it is at the view bottom or lower */
+            if (t == 30) assert(shift - 30 - lift >= 0);
+        }
+    }
+    /* and the one line bar slides exactly as on main */
+    for (int t = 0; t <= 30; t++) assert(ap_pad_title_slide(t, 0) == t);
     /* the nominal cases */
     nrec = 0; assert(UI_DrawRaceTitleUp("NINA'S NIGHTMARE", 256, 187, 448) == 0 && nrec == 1);
     nrec = 0; assert(UI_DrawRaceTitleDown("NINA'S NIGHTMARE", 256, 76, 384) == 0 && nrec == 1 && rec[0].font == FONT_BIG);
@@ -396,8 +422,7 @@ int main(int argc, char **argv)
     nrec = 0; assert(UI_DrawRaceTitleUp("ST PATRICKS DAY HUB WORLD", 256, 187, 448) == 0 && nrec == 1); /* 425 px: fits the fly-in box */
     nrec = 0; assert(UI_DrawRaceTitleUp("ST PATRICKS DAY HUB WORLD (CUSTOM, LOCKHEART)", 256, 187, 448) > 0 && nrec == 2 && rec[0].font == FONT_BIG);
     puts("PASS: the fly-in and the race start banner draw every custom name in full");
-    printf("race title: %d roster or suffixed names need more than 3 banner lines\n", overReal);
-    return overReal == 0 ? 0 : 3;
+    return 0;
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
@@ -418,7 +443,9 @@ assert "UI_DrawRaceTitleUp(UI_TrackName(-1), center, bottom - (credit ? 29 : 23)
 assert "UI_DrawTrackCredit(credit, center, bottom - 11, view->w - 64, TEXT_BANNER_MARQUEE)" in site, "the fly-in credit keeps its scroll"
 # the retail and the old credited draws are the else branches, unchanged
 assert "else if (credit)" in site and "238, FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_MARQUEE, TEXT_SLOT_BANNER, NULL);" in site
-assert "- titleLift;" in flow and "rect.h = 0x1e + titleLift;" in flow
+assert "+ bottomShift + -0x1e - titleLift;" in flow and "rect.h = 0x1e + titleLift;" in flow
+assert "bottomShift = ap_pad_title_slide(transition, titleLift);" in site and "windowHeight + -0x1e - titleLift" not in flow, "CN2b: the exit slide of the taller bar"
+assert "int bottomShift = transition;" in site
 frame = source("game/MAIN/MainFrame_RenderFrame.c")
 banner = frame[frame.index("if (UI_TrackNameIsCustom())"):frame.index("#endif\n\t\t\t\t\t}\n\n\t\t\t\t\t// if crystal challenge")]
 assert "UI_DrawRaceTitleDown(UI_TrackName(-1), x, 76, width)" in banner
@@ -429,3 +456,109 @@ assert "AP_ContentRaceDisplayName() != NULL" in custom and "MainRaceTrack_Offlin
 cups = function("ap/ap_hooks_content_cups.c", "const char *AP_ContentCupTrackName(void)")
 assert "!ap_content_leg_custom_title(&pad->legs[leg])" in cups
 print("race title wiring: ok")
+
+# ---- CN2b: the live race classifier --------------------------------------------------------
+# UI_TrackNameIsCustom decides which races draw their name whole. This runs the production
+# AP_ContentRaceDisplayName, AP_ContentCupPad, AP_ContentCupLeg, AP_ContentCupTrackName and
+# UI_TrackNameIsCustom, with the content plan and the race context as data, over every kind of race.
+classify = r'''
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+#define CTR_AP
+#define CTR_CUSTOM_TRACKS
+#define CTR_CUSTOM_PACKAGES
+#define ADVENTURE_BOSS 1
+#include "ap/ap_content_plan.h"
+#include "include/platform/native_custom_race_context.h"
+struct GameTracker { int levelID, bossID, gameMode1; } tracker;
+static struct { struct GameTracker *gGT; } state, *sdata = &state;
+static struct CustomTrackRaceContext ctx, *haveCtx;
+static ctr_content_pad pads[4];
+static ctr_content_package pkgs[3];
+static ctr_content_bosses bosses;
+static int active = 1, garage = -1, oxide = 0, servingLoad = 1;
+static const char *offline;
+const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int level) { (void)level; return haveCtx; }
+int ap_content_plan_active(void) { return active; }
+uint64_t ap_content_plan_epoch(void) { return 7; }
+const ctr_content_pad *ap_content_plan_pad(int i) { return i >= 0 && i < 4 ? &pads[i] : NULL; }
+const ctr_content_package *ap_content_plan_package(int i) { return i >= 0 && i < 3 ? &pkgs[i] : NULL; }
+const ctr_content_bosses *ap_content_plan_bosses(void) { return &bosses; }
+int CustomTrack_GarageVenueServing(int l, int b, int a) { (void)l; (void)b; (void)a; return garage; }
+int CustomTrack_OxideFinalServing(int l, int b, int a) { (void)l; (void)b; (void)a; return oxide; }
+int CustomTrack_ServingLoad(int l, int a, int b) { (void)l; (void)a; (void)b; return servingLoad; }
+const char *MainRaceTrack_OfflineCustomTitle(void) { return offline; }
+const char *AP_CortexTrackDisplayName(void) { return NULL; }
+'''
+cups_src = source("ap/ap_hooks_content_cups.c")
+for sig in ("const ctr_content_pad *AP_ContentCupPad(void)", "int AP_ContentCupLeg(void)",
+            "const char *AP_ContentCupTrackName(void)", "const char *AP_ContentRaceDisplayName(void)"):
+    classify += function("ap/ap_hooks_content_cups.c", sig) + "\n"
+classify += function("game/UI/UI_TrackName.c", "int UI_TrackNameIsCustom(void)") + "\n"
+classify += r'''
+static void race(int cup, int leg, int retail, int cortex, int pad)
+{
+    memset(&ctx, 0, sizeof ctx);
+    ctx.seedEpoch = 7; ctx.physicalPad = pad; ctx.cup = cup; ctx.leg = leg; ctx.retail = retail; ctx.cortex = cortex;
+    ctx.hostLevelID = retail ? 4 : cortex ? AP_CONTENT_CORTEX_HOST : AP_CONTENT_CUSTOM_HOST;
+    ctx.laps = 3;
+    strcpy(ctx.entryID, "entry"); strcpy(ctx.trackID, "track");
+    haveCtx = &ctx;
+}
+
+int main(void)
+{
+    state.gGT = &tracker;
+    strcpy(pkgs[1].display_name, "Custom Package");
+    /* retail track on a plain pad: not custom */
+    race(0, 0, 1, 0, 0); pads[0].occupied = 1; strcpy(pads[0].entry_id, "entry"); strcpy(pads[0].track_id, "track"); pads[0].retail_id = 4;
+    assert(!UI_TrackNameIsCustom());
+    /* a custom track pad: custom, with the room title */
+    race(0, 0, 0, 0, 0); pads[0].retail_id = -1; pads[0].package_index = 1; strcpy(pads[0].room_title, "Room Title");
+    assert(UI_TrackNameIsCustom() && !strcmp(AP_ContentRaceDisplayName(), "Room Title"));
+    /* a stale context (other seed epoch) or a pad that changed: not custom */
+    ctx.seedEpoch = 6; assert(!UI_TrackNameIsCustom()); ctx.seedEpoch = 7;
+    strcpy(pads[0].track_id, "other"); assert(!UI_TrackNameIsCustom()); strcpy(pads[0].track_id, "track");
+    /* Cortex Vortex is a custom-bytes race with a title */
+    race(0, 0, 0, 1, 0); assert(UI_TrackNameIsCustom());
+    /* an original Gem Cup: its retail legs keep the retail banner, a custom leg shows its title */
+    memset(pads, 0, sizeof pads);
+    pads[1].occupied = 1; pads[1].cup = 1; pads[1].gem_cup = 1; strcpy(pads[1].entry_id, "entry");
+    pads[1].trophy_location = 0; pads[1].hub = 0;
+    for (int l = 0; l < AP_CONTENT_CUP_LEGS; l++) { pads[1].legs[l].retail_id = 4; pads[1].legs[l].laps = 3; strcpy(pads[1].legs[l].track_id, "track"); }
+    race(1, 0, 1, 0, 1);
+    assert(AP_ContentCupPad() != NULL && AP_ContentCupLeg() == 0);
+    assert(AP_ContentCupTrackName() == NULL && !UI_TrackNameIsCustom());
+    for (int l = 1; l < AP_CONTENT_CUP_LEGS; l++) { race(1, l, 1, 0, 1); assert(!UI_TrackNameIsCustom()); }
+    pads[1].legs[2].retail_id = -1; pads[1].legs[2].package_index = 1;
+    race(1, 2, 0, 0, 1);
+    assert(AP_ContentCupTrackName() != NULL && UI_TrackNameIsCustom() && !strcmp(AP_ContentRaceDisplayName(), "Custom Package"));
+    race(1, 1, 1, 0, 1); assert(!UI_TrackNameIsCustom()); /* the retail leg next to it stays retail */
+    /* a custom cup */
+    pads[1].gem_cup = 0; pads[1].legs[3].retail_id = -1; pads[1].legs[3].package_index = 1;
+    race(1, 3, 0, 0, 1); assert(UI_TrackNameIsCustom());
+    /* no context: a retail race, a boss race on a retail garage, a custom garage venue, the Oxide final, an offline package */
+    haveCtx = NULL;
+    assert(!UI_TrackNameIsCustom());
+    garage = 2; active = 1; bosses.venue_package[2] = 1; bosses.venue_cortex[2] = 0;
+    assert(UI_TrackNameIsCustom() && !strcmp(AP_ContentRaceDisplayName(), "Custom Package"));
+    bosses.venue_cortex[2] = 1; assert(UI_TrackNameIsCustom() && !strcmp(AP_ContentRaceDisplayName(), "CORTEX VORTEX"));
+    active = 0; assert(!UI_TrackNameIsCustom()); active = 1;
+    garage = -1; assert(!UI_TrackNameIsCustom());
+    oxide = 1; assert(UI_TrackNameIsCustom()); oxide = 0;
+    offline = "Offline Title"; assert(UI_TrackNameIsCustom()); offline = NULL;
+    assert(!UI_TrackNameIsCustom());
+    puts("PASS: the live race classifier names custom races only");
+    return 0;
+}
+'''
+with tempfile.TemporaryDirectory() as tmp:
+    tmp = Path(tmp)
+    (tmp / "classify.c").write_text(classify, encoding="utf-8")
+    subprocess.run(["cc", "-std=gnu99", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function", "-Wno-unused-variable",
+                    "-I", str(root), "-I", str(root / "include"), "-o", str(tmp / "classify"), str(tmp / "classify.c")], check=True)
+    done = subprocess.run([str(tmp / "classify")], capture_output=True, text=True)
+print(done.stdout, end="")
+assert done.returncode == 0, "race classifier failed (exit %d) %s" % (done.returncode, done.stderr)

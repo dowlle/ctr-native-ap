@@ -2055,7 +2055,7 @@ int main(int argc, char **argv) {
             expect(!ap_content_pad_custom_title(&empty), "cn1b: an unoccupied pad keeps the retail path");
         }
 
-        // CN2: which parsed cup legs take the whole-name path on the fly-in and the
+        // CN2: which parsed cup legs take the whole-name path (the live race classifier itself runs in tools/test-pad-title-wrap.py, CN2b) on the fly-in and the
         // race start banner. The race title of a cup leg is the leg's own: an
         // original Gem Cup runs retail tracks and keeps the retail banner, a custom
         // cup leg on a custom track draws its whole name.

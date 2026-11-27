@@ -6,6 +6,7 @@
 
 #ifdef CTR_CUSTOM_PACKAGES
 #include <text_box.h>
+#include "../../ap/ap_pad_title_wrap.h"
 
 static int s_flyInCreditShown;
 
@@ -315,13 +316,19 @@ LAB_80055930:
 		const char *credit = UI_TrackCredit(-1);
 		// CN2: a custom name is drawn whole. A long one wraps upward from the
 		// line it always stood on, and the bottom bar grows to sit behind it.
+		// CN2b: the bottom bar is titleLift px taller, so on the exit slide it
+		// moves titleLift px further than the 30 px of the one line bar, in step
+		// with the top bar, and is fully off screen on the last frame.
 		int titleLift = 0;
+		int bottomShift = transition;
 		if (UI_TrackNameIsCustom())
 		{
 			const RECT *view = &gGT->pushBuffer[0].rect;
 			const int center = view->x + view->w / 2;
-			const int bottom = view->y + view->h + transition;
-			titleLift = UI_DrawRaceTitleUp(UI_TrackName(-1), center, bottom - (credit ? 29 : 23), view->w - 64);
+			titleLift = UI_RaceTitleLiftUp(UI_TrackName(-1), view->w - 64);
+			bottomShift = ap_pad_title_slide(transition, titleLift);
+			const int bottom = view->y + view->h + bottomShift;
+			UI_DrawRaceTitleUp(UI_TrackName(-1), center, bottom - (credit ? 29 : 23), view->w - 64);
 			if (credit)
 			{
 				s_flyInCreditShown = 1;
@@ -373,7 +380,7 @@ LAB_80055930:
 
 		// Draw tiny rectangle near big black title bar (second)
 #ifdef CTR_CUSTOM_PACKAGES
-		rect.y = gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h + windowHeight + -0x1e - titleLift;
+		rect.y = gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h + bottomShift + -0x1e - titleLift;
 #else
 		rect.y = gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h + windowHeight + -0x1e;
 #endif
@@ -391,7 +398,7 @@ LAB_80055930:
 
 		// draw big black title bar (second)
 #ifdef CTR_CUSTOM_PACKAGES
-		rect.y = gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h + windowHeight + -0x1e - titleLift;
+		rect.y = gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h + bottomShift + -0x1e - titleLift;
 		rect.h = 0x1e + titleLift;
 #else
 		rect.y = gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h + windowHeight + -0x1e;

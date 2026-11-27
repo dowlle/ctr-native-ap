@@ -23,6 +23,8 @@
 #define AP_PAD_TITLE_MAX_LINES 10
 #define AP_PAD_TITLE_BIG_LINES 3
 #define AP_PAD_TITLE_SMALL_WORD_LINES 6
+// The race start banner: small lines that fit between the countdown lights and the minimap.
+#define AP_PAD_TITLE_BANNER_LINES 3
 
 typedef struct
 {
@@ -160,6 +162,26 @@ static inline void ap_pad_title_layout_for(const char *text, int width, int bigF
 		return;
 	// words that stack one to a line (a 105 byte title can need 13): fill each line to the edge
 	ap_pad_title_fill(text, width, smallFont, fn, AP_PAD_TITLE_MAX_LINES, 1, out);
+}
+
+// CN2b: keep at most `max` lines. The last kept line then holds the rest of the
+// name and is marked as overflowing, so the drawer ends it with an ellipsis. Used
+// by the race start banner, where only a few lines fit above the minimap.
+static inline void ap_pad_title_cap(ap_pad_title_layout *layout, int max)
+{
+	if (layout->count > max)
+	{
+		layout->count = max;
+		layout->overflow = 1;
+	}
+}
+
+// CN2b: the fly-in bars slide off screen over 30 frames (`transition` goes 0 to
+// 30 px). A bottom bar made `lift` px taller by a wrapped name must travel
+// 30 + lift px in the same frames to be fully off screen on the last one.
+static inline int ap_pad_title_slide(int transition, int lift)
+{
+	return transition * (30 + lift) / 30;
 }
 
 // Vertical pitch between wrapped lines: the glyph height and two pixels.
