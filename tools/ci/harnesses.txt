@@ -37,6 +37,7 @@ tools/test-box-seat.c
 tools/test-box-seat-production.py
 tools/test-box-spots.cpp
 tools/test-alpha2-presentation-production.py
+tools/test-boss-garage-title-width.py
 tools/test-alpha4-small-fixes.py
 tools/test-client-user-agent.py
 tools/test-clip-record-space.py
