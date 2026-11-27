@@ -7,6 +7,9 @@
 #ifdef CTR_AP
 #include "../../ap/ap_warppad_digits_logic.h"
 #endif
+#if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
+#include "../../ap/ap_pad_title_wrap.h"
+#endif
 
 #if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
 static int AH_WarpPad_TextWidth(const struct GameTracker *gGT, int center, int y, int width)
@@ -22,6 +25,48 @@ static int AH_WarpPad_TextWidth(const struct GameTracker *gGT, int center, int y
 	const int mapWidth = topWidth > bottomWidth ? topWidth : bottomWidth;
 	const int clearWidth = 2 * (AH_MAP_RIGHT - mapWidth - 16 - center);
 	return clearWidth < width ? clearWidth : width;
+}
+
+static int AH_WarpPad_TitleWidth(const char *text, int len, int font)
+{
+	return DecalFont_GetLineWidthStrlen((char *)text, len, font);
+}
+
+// A custom track or custom cup pad: its name comes from the room, not from the
+// retail tables, and can be as long as a room title (CN1).
+static int AH_WarpPad_CustomPadTitle(int levelID)
+{
+	if (!ap_content_plan_active())
+		return 0;
+	return ap_content_pad_custom_title(ap_content_plan_pad(levelID));
+}
+
+// CN1: the whole custom name at once. `bottomY` is where the single big line
+// always stood; a long name wraps and grows upward from there, and the extra
+// height (the rows above must lift by it) is returned.
+static int AH_WarpPad_DrawCustomTitle(const char *name, int x, int bottomY, int width)
+{
+	ap_pad_title_layout layout;
+	char line[ 644 ];
+	const int bigH = data.font_charPixHeight[FONT_BIG];
+	ap_pad_title_layout_for(name, width, FONT_BIG, FONT_SMALL, AH_WarpPad_TitleWidth, &layout);
+	const int glyphH = data.font_charPixHeight[layout.font];
+	const int pitch = ap_pad_title_pitch(glyphH);
+	const int lastTop = bottomY + (bigH - glyphH);
+	const int total = (int)strlen(name);
+	for (int i = 0; i < layout.count; i++)
+	{
+		int len = layout.len[i];
+		if (layout.overflow && i == layout.count - 1)
+			len = total - layout.start[i]; // the box shows the rest with "..."
+		if (len > (int)sizeof line - 1)
+			len = (int)sizeof line - 1;
+		memcpy(line, name + layout.start[i], (size_t)len);
+		line[len] = 0;
+		DecalFont_DrawLineBox(line, x, lastTop - (layout.count - 1 - i) * pitch, width, layout.font,
+		                      JUSTIFY_CENTER | ORANGE, TEXT_ELLIPSIS, TEXT_SLOT_PAD_TITLE, NULL);
+	}
+	return ap_pad_title_extra_lift(&layout, glyphH, bigH);
 }
 #endif
 
@@ -881,16 +926,30 @@ void AH_WarpPad_ThTick(struct Thread *t)
 #endif
 #if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
 				const char *credit = UI_TrackCredit(ap_content_plan_active() ? ctr_cfg_warp_phys(levelID) : levelID);
-				if (credit)
+				// CN1: rows above the name lift by the height a wrapped custom name adds.
+				int apTitleExtra = 0;
+				if (credit || AH_WarpPad_CustomPadTitle(levelID))
 				{
-					const int titleY = padBottom - apLift - 30 - 11;
-					const int creditY = padBottom - apLift - 23;
+					const int titleY = padBottom - apLift - 30 - (credit ? 11 : 0);
 					const int titleWidth = AH_WarpPad_TextWidth(gGT, padX, titleY, requirementWidth);
-					const int creditWidth = AH_WarpPad_TextWidth(gGT, padX, creditY, requirementWidth);
-					requirementWidth = AH_WarpPad_TextWidth(gGT, padX, requirementY, requirementWidth);
-					DecalFont_DrawLineBox(warppadLNG, padX, titleY, titleWidth,
-					                      FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_MARQUEE, TEXT_SLOT_PAD_TITLE, NULL);
-					UI_DrawTrackCredit(credit, padX, creditY, creditWidth, TEXT_MARQUEE);
+					if (credit)
+					{
+						const int creditY = padBottom - apLift - 23;
+						const int creditWidth = AH_WarpPad_TextWidth(gGT, padX, creditY, requirementWidth);
+						requirementWidth = AH_WarpPad_TextWidth(gGT, padX, requirementY, requirementWidth);
+						apTitleExtra = AH_WarpPad_DrawCustomTitle(warppadLNG, padX, titleY, titleWidth);
+						UI_DrawTrackCredit(credit, padX, creditY, creditWidth, TEXT_MARQUEE);
+					}
+					else
+					{
+						apTitleExtra = AH_WarpPad_DrawCustomTitle(warppadLNG, padX, titleY, titleWidth);
+					}
+					if (apTitleExtra > 0)
+					{
+						// the name block's top; a feed line must not climb into it
+						const int clearY = titleY - apTitleExtra - data.font_charPixHeight[FONT_SMALL] - 4;
+						if (clearY < apPadFeedY) apPadFeedY = clearY;
+					}
 				}
 				else
 #endif
@@ -971,6 +1030,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						int racerLift = apLift;
 #ifdef CTR_CUSTOM_PACKAGES
 						if (credit) racerLift += 11;
+						racerLift += apTitleExtra;
 #endif
 						char apRacerLine[32];
 						int apHave = AP_CharacterUnlocked(apLockRacer);
@@ -984,7 +1044,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						                     + gGT->pushBuffer[0].rect.h - 82 - racerLift);
 
 #ifdef CTR_CUSTOM_PACKAGES
-						if (credit)
+						if (credit || apTitleExtra > 0)
 						{
 							const int clearY = apCy - data.font_charPixHeight[FONT_SMALL] - 4;
 							if (clearY < apPadFeedY) apPadFeedY = clearY;

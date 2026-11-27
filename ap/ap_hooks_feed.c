@@ -461,7 +461,11 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 		else if (AP_CustomContentWarningVisible())
 			warningY = AP_FEED_CONTENT_WARNING_Y;
 #endif
-		if (warningY)
+		// CN1b: a tall custom pad title lifts the anchor. Never stack a row above
+		// the line the content warning would take (clear of the screen top and the
+		// Wumpa counter row); the rows wait queued until the anchor drops again.
+		if (!warningY)
+			warningY = AP_FEED_CONTENT_WARNING_Y;
 		{
 			const int firstFeedY = warningY + AP_FEED_LINE_H + 8; // FONT_SMALL height
 			const int rows = baseY >= firstFeedY ? 1 + (baseY - firstFeedY) / AP_FEED_LINE_H : 0;
