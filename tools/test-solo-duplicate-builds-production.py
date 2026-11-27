@@ -66,6 +66,18 @@ extern "C" int CustomPackage_FindPinnedFiles(const char *, const char *, const c
                                              const char *, unsigned long, char *, size_t, char *, size_t) { return 0; }
 static std::vector<APSoloModePair> g_pairs; // the client's known mode pairs
 std::vector<APSoloModePair> AP_SoloKnownModePairs() { return g_pairs; }
+// The room lookup: g_storeLev names the one installed package (under
+// assets/tracks/packages/p, with its metadata files) whose LEV it finds.
+static std::string g_storeLev;
+extern "C" int CustomPackage_FindPinnedFilesWithIdentity(const char *assets, const char *, const char *, const char *lev,
+                                                         unsigned long, const char *, unsigned long, char *levPath,
+                                                         size_t levSize, char *vrmPath, size_t vrmSize, char uuid[37]) {
+    if (g_storeLev.empty() || g_storeLev != lev) return 0;
+    std::snprintf(levPath, levSize, "%s/tracks/packages/p/original/a.lev", assets);
+    std::snprintf(vrmPath, vrmSize, "%s/tracks/packages/p/original/a.vrm", assets);
+    uuid[0] = '\0';
+    return 1;
+}
 std::set<std::string> AP_SoloInstalledVersionsByPins(const nlohmann::json &) { return {}; }
 namespace {
 std::vector<APSoloTrackInfo> g_tracks;
@@ -213,6 +225,29 @@ int main(int, char **argv) {
     const std::string cut = rows[1].title;
     assert(cut.size() < sizeof rows[1].title && cut.size() > 30 && cut.compare(cut.size() - 19, 19, " - LRG2Pancho patch") == 0);
     assert((((unsigned char)cut[cut.size() - 20]) & 0xc0) != 0xc0);
+    // 5b. A Saphi download without authored laps waits for laps too: its
+    // label comes from its own package's metadata, not a guess.
+    clean();
+    const auto saphiWait = descriptor(hex('a'), hex('b'), false, false);
+    write("needs-laps/big-forest__1.0.0@" + saphiTag + ".json", saphiWait.dump());
+    fs::create_directories(base + "/assets/tracks/packages/p/metadata");
+    std::ofstream(base + "/assets/tracks/packages/p/metadata/saphi-source.json") << "{}";
+    g_storeLev = hex('a');
+    ParseTracks({{"tracks", {runtimeRow("package/big-forest/1.0.0", patchTag,
+                                        {{"kind", "patch"}, {"patch_sha256", "@PATCH@"}}, "[\"trophy\"]")}}});
+    assert(g_tracks.size() == 2 && std::string(g_tracks[1].title) == "Big Forest - Saphi");
+    g_storeLev.clear();
+    // Without the package it says what it knows: the build tag only.
+    ParseTracks({{"tracks", {runtimeRow("package/big-forest/1.0.0", patchTag,
+                                        {{"kind", "patch"}, {"patch_sha256", "@PATCH@"}}, "[\"trophy\"]")}}});
+    assert(std::string(g_tracks[1].title) == "Big Forest - aaaaaaaa");
+
+    // 5c. A pick never moves to other files under the same plain row id.
+    g_tracks[0].pick = 1;
+    ParseTracks({{"tracks", {runtimeRow("package/big-forest/1.0.0", std::string(16, 'e') + std::string(16, 'f'),
+                                        {{"kind", "patch"}}, "[\"trophy\"]")}}});
+    assert(g_tracks[0].pick == 0);
+
     // 6. MR2 round 4, finding 3: an old Relic-only file left waiting for laps
     // (legacy loose files, no store) is not offered as a track to pick laps for.
     clean();

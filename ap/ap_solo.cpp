@@ -9,11 +9,11 @@
 #include "ap_solo_track_visibility.hpp"
 #include "ap_net.h"
 #include "../include/platform/native_custom_track_visibility.h"
+#include "../include/platform/native_sha256.h" // PS2: loose copies are checked by hash (every AP build)
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_package.h>
 #include <platform/native_custom_track_library.h>
 #include <platform/native_track_credit.h>
-#include <platform/native_sha256.h>
 #include "ap_track_registry.h"
 #include "ap_content_registry.hpp"
 #endif
@@ -542,6 +542,34 @@ std::string BuildSourceLabel(const nlohmann::json &origin)
 	return patch.empty() ? "patch" : patch + " patch";
 }
 
+// PS2: the source a waiting build's own package recorded (its metadata file
+// beside the files a room's lookup finds), or null when unknown. A Saphi
+// download without authored laps waits for laps too.
+nlohmann::json StoreOrigin(const nlohmann::json &d)
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	std::string lev, vrm;
+	uint64_t levBytes = 0, vrmBytes = 0;
+	char levPath[4096], vrmPath[4096], uuid[37] = {};
+	if (!AP_SoloDescriptorPins(d, lev, levBytes, vrm, vrmBytes) ||
+	    !CustomPackage_FindPinnedFilesWithIdentity(AssetsDir().c_str(), AP_SoloJsonString(d, "revision").c_str(),
+	                                               AP_SoloJsonString(d, "uuid").c_str(), lev.c_str(), (unsigned long)levBytes,
+	                                               vrm.c_str(), (unsigned long)vrmBytes, levPath, sizeof levPath, vrmPath,
+	                                               sizeof vrmPath, uuid))
+		return nullptr;
+	std::error_code ec;
+	const fs::path package = fs::u8path(levPath).parent_path().parent_path();
+	if (fs::exists(package / "metadata/saphi-source.json", ec) || fs::exists(package / "metadata/seed-source.json", ec))
+		return {{"kind", "saphi"}};
+	if (fs::exists(package / "metadata/xdelta-source.json", ec))
+		return {{"kind", "patch"}};
+	return nullptr;
+#else
+	(void)d;
+	return nullptr;
+#endif
+}
+
 // PS2: rows that share a descriptor id are builds of one track key and version
 // with other files. Each title gets its source, so a player can tell them
 // apart; two builds from the same source also get their build tag.
@@ -565,7 +593,7 @@ void LabelBuilds(std::vector<APSoloTrackInfo> &rows, const std::map<std::string,
 			{
 				const auto d = nlohmann::json::parse(
 				    ReadSmallPlainFile(fs::u8path(SoloPath("needs-laps")) / fs::u8path(rows[i].file), kDescriptorMax), nullptr, false);
-				origin = d.is_object() && d.contains("locator") ? d["locator"] : nlohmann::json({{"kind", "patch"}});
+				origin = d.is_object() && d.contains("locator") ? d["locator"] : StoreOrigin(d);
 			}
 			labels.push_back(BuildSourceLabel(origin));
 		}
@@ -599,14 +627,14 @@ void LabelBuilds(std::vector<APSoloTrackInfo> &rows, const std::map<std::string,
 	}
 }
 
-// The same row in two lists: the same row id, or (PS2) the same descriptor id
-// and build tag, since a row id gains or loses "@<build>" when another build
-// of its track appears or goes.
+// The same row in two lists (PS2): the same descriptor id and build tag, since
+// a row id gains or loses "@<build>" when another build of its track appears
+// or goes, and a plain row id may name other files after a reinstall.
 bool SameTrackRow(const APSoloTrackInfo &a, const APSoloTrackInfo &b)
 {
-	if (std::strcmp(a.id, b.id) == 0)
-		return true;
-	return a.build[0] && std::strcmp(a.build, b.build) == 0 && AP_SoloRowBaseId(a.id) == AP_SoloRowBaseId(b.id);
+	if (a.build[0] && b.build[0])
+		return std::strcmp(a.build, b.build) == 0 && AP_SoloRowBaseId(a.id) == AP_SoloRowBaseId(b.id);
+	return std::strcmp(a.id, b.id) == 0; // an older runtime reports no build tag
 }
 
 // A new track list keeps the picks of the tracks still in it. The first list of a
@@ -1162,6 +1190,24 @@ extern "C" int AP_Solo_TrackGet(int index, struct APSoloTrackInfo *out)
 	return 1;
 }
 
+// One seed lists one copy of a track: the same track key, or (PS2) two keys
+// the registry names as one track, which the solo runtime refuses together.
+static bool SameTrackForPicks(const std::string &a, const std::string &b)
+{
+	if (AP_SoloTrackSameContent(a, b))
+		return true;
+#ifdef CTR_CUSTOM_PACKAGES
+	const auto key = [](const std::string &id) {
+		const size_t slash = id.find('/', 8);
+		return id.compare(0, 8, "package/") == 0 && slash != std::string::npos ? id.substr(8, slash - 8) : std::string();
+	};
+	const std::string ka = key(a), kb = key(b);
+	return !ka.empty() && !kb.empty() && ap_track_registry_canonical_key(ka) == ap_track_registry_canonical_key(kb);
+#else
+	return false;
+#endif
+}
+
 extern "C" void AP_Solo_TrackCycle(int index)
 {
 	if (index >= 0 && index < (int)g_tracks.size() && !g_tracks[index].needsLaps)
@@ -1169,7 +1215,7 @@ extern "C" void AP_Solo_TrackCycle(int index)
 		g_tracks[index].pick = g_tracks[index].modes[0] ? AP_SoloTrackNextPick(g_tracks[index].pick) : AP_SOLO_TRACK_OFF;
 		if (g_tracks[index].pick != AP_SOLO_TRACK_OFF)
 			for (int other = 0; other < (int)g_tracks.size(); ++other)
-				if (other != index && AP_SoloTrackSameContent(g_tracks[index].id, g_tracks[other].id))
+				if (other != index && SameTrackForPicks(g_tracks[index].id, g_tracks[other].id))
 					g_tracks[other].pick = AP_SOLO_TRACK_OFF;
 	}
 }
@@ -1487,10 +1533,11 @@ bool RelicRowOfRacePair(const nlohmann::json &kept, const nlohmann::json &fresh)
 	return false;
 }
 
-// PS2: a file in assets/tracks/<key>/original with the pin's suffix, size and
-// SHA-256. PinnedFilePresent checks the size only (it runs for every listed
-// row); this one decides whether another build's entry may be taken over.
-bool LooseFileWithPin(const std::string &key, const nlohmann::json &pin)
+// PS2: a file in assets/tracks/<folder>/original with the pin's suffix, size
+// and SHA-256. PinnedFilePresent checks the size only (it runs for every
+// listed row); this one decides whether another build's entry may be taken
+// over.
+bool LooseFileWithPin(const std::string &folderName, const nlohmann::json &pin)
 {
 	const std::string role = AP_SoloJsonString(pin, "role"), sha = AP_SoloJsonString(pin, "sha256");
 	const auto bytes = pin.is_object() ? pin.find("bytes") : pin.end();
@@ -1498,7 +1545,7 @@ bool LooseFileWithPin(const std::string &key, const nlohmann::json &pin)
 		return false;
 	const std::uintmax_t size = bytes->get<std::uintmax_t>();
 	std::error_code ec;
-	const fs::path folder = fs::u8path(AssetsDir()) / "tracks" / fs::u8path(key) / "original";
+	const fs::path folder = fs::u8path(AssetsDir()) / "tracks" / fs::u8path(folderName) / "original";
 	for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec))
 	{
 		std::string name = it->path().filename().u8string();
@@ -1519,6 +1566,24 @@ bool LooseFileWithPin(const std::string &key, const nlohmann::json &pin)
 		NativeSha256_Final(&ctx, digest);
 		NativeSha256_ToHex(digest, hex);
 		if (NativeSha256_HexEquals(sha.c_str(), hex))
+			return true;
+	}
+	return false;
+}
+
+// PS2: every pin of `files` as a loose file, with its hash, in the track's
+// own folder or its versioned folder (assets/tracks/<key>-<revision>), the
+// folders a room's lookup and the solo runtime accept.
+bool LooseCopyInstalled(const nlohmann::json &files, const std::string &key, const std::string &revision)
+{
+	if (!files.is_array() || files.empty())
+		return false;
+	for (const std::string &folder : {key, key + "-" + revision})
+	{
+		bool all = true;
+		for (const auto &pin : files)
+			all = all && LooseFileWithPin(folder, pin);
+		if (all)
 			return true;
 	}
 	return false;
@@ -1547,11 +1612,7 @@ bool KeptCopyInstalled(const nlohmann::json &kept, const std::string &key, const
 #else
 	(void)revision;
 #endif
-	bool loose = files.is_array() && !files.empty();
-	if (loose)
-		for (const auto &pin : files)
-			loose = loose && LooseFileWithPin(key, pin);
-	return loose;
+	return LooseCopyInstalled(files, key, revision);
 }
 
 bool MayReplace(const nlohmann::json &kept, const nlohmann::json &fresh, const std::string &key,
@@ -1575,11 +1636,7 @@ bool MayReplace(const nlohmann::json &kept, const nlohmann::json &fresh, const s
 	const nlohmann::json files = kept.value("files", nlohmann::json());
 	if (scope.live->count(PinSignature(revision, files)))
 		return false;
-	bool loose = files.is_array() && !files.empty();
-	if (loose)
-		for (const auto &pin : files)
-			loose = loose && PinnedFilePresent(key, pin);
-	return !loose;
+	return !LooseCopyInstalled(files, key, revision); // PS2: by hash, in either folder
 }
 
 // Removes our own plain descriptor file, clearing a read-only bit once.
@@ -1721,15 +1778,18 @@ void HideRelicOnlyDescriptor(const std::string &key, const std::string &revision
 }
 
 // PS2: removes our own solo/tracks and solo/needs-laps entries with exactly
-// these file pins under the key's plain or build name: an older cut of a
-// package whose newest cut is now listed. Its package stays in the store for
+// these file pins and this package uuid (`retiring` holds both) under the
+// key's plain or build name: an older cut of a package whose newest cut is
+// now listed. Its package stays in the store for
 // the rooms that pin it; only the Play Solo entry goes.
-void RetireExactBuild(const std::string &key, const std::string &revision, const std::string &filesJson)
+void RetireExactBuild(const std::string &key, const std::string &revision, const std::string &retiring)
 {
-	const nlohmann::json files = nlohmann::json::parse(filesJson, nullptr, false);
+	const nlohmann::json what = nlohmann::json::parse(retiring, nullptr, false);
+	const nlohmann::json files = what.is_object() ? what.value("files", nlohmann::json()) : nlohmann::json();
+	const std::string uuid = what.is_object() ? AP_SoloJsonString(what, "uuid") : std::string();
 	const std::string plain = AP_SoloDescriptorFileName(key, revision);
 	std::error_code ec;
-	if (plain.empty() || !files.is_array() || SoloRootIsLink())
+	if (plain.empty() || !files.is_array() || uuid.empty() || SoloRootIsLink())
 		return;
 	const std::string build = AP_SoloBuildDescriptorFileName(key, revision, AP_SoloBuildTag(files));
 	for (const std::string &name : {plain, build})
@@ -1741,7 +1801,7 @@ void RetireExactBuild(const std::string &key, const std::string &revision, const
 				continue;
 			const fs::path target = dir / fs::u8path(name);
 			const auto kept = nlohmann::json::parse(ReadSmallPlainFile(target, kDescriptorMax), nullptr, false);
-			if (!kept.is_object() || kept.value("files", nlohmann::json()) != files)
+			if (!kept.is_object() || kept.value("files", nlohmann::json()) != files || AP_SoloJsonString(kept, "uuid") != uuid)
 				continue;
 			std::string detail;
 			if (RemoveDescriptorFile(target, detail))
@@ -2278,9 +2338,18 @@ void KeepOneCopyPerEntry(StorePublication &result)
 				retired.push_back({0, all[i].key, all[i].revision, copies[i].uuid, all[i].title, all[i].pin,
 				                   all[into[i]].pin, all[into[i]].key});
 			else if (files(all[i]) != files(all[into[i]]))
-				// PS2: an older cut under the same key: its own entry goes once the newest cut is listed.
-				retired.push_back({5, all[i].key, all[i].revision, files(all[i]).dump(), all[i].title, all[i].pin,
-				                   all[into[i]].pin, all[into[i]].key});
+			{
+				// PS2: an older cut under the same key: its own entry goes once
+				// the newest cut is listed, unless another listed package (of
+				// another uuid) has the same files and keeps the entry.
+				bool claimed = false;
+				for (size_t j = 0; j < all.size(); j++)
+					claimed = claimed || (into[j] == j && files(all[j]) == files(all[i]));
+				if (!claimed)
+					retired.push_back({5, all[i].key, all[i].revision,
+					                   nlohmann::json({{"files", files(all[i])}, {"uuid", copies[i].uuid}}).dump(),
+					                   all[i].title, all[i].pin, all[into[i]].pin, all[into[i]].key});
+			}
 		}
 		// PS2: an older cut of the same package (other files) is not a build
 		// of its own: its entry may go to the newest install. A signature that
@@ -2836,6 +2905,9 @@ extern "C" int AP_Solo_TrackKeepLaps(int index)
 	const nlohmann::json d =
 	    nlohmann::json::parse(ReadSmallPlainFile(dir / fs::u8path(name), kDescriptorMax), nullptr, false);
 	if (!AP_SoloNeedsLapsDescriptor(d, name))
+		return 0;
+	// PS2: the waiting file still holds the build the row showed.
+	if (g_tracks[index].build[0] && AP_SoloBuildTag(d.value("files", nlohmann::json())) != g_tracks[index].build)
 		return 0;
 	std::string json = AP_SoloDescriptorWithLaps(d, g_tracks[index].laps);
 	if (!json.empty())

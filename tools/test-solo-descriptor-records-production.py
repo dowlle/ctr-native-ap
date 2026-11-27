@@ -188,15 +188,26 @@ int main(int, char **argv) {
     assert(read(std::string("tracks/") + name) == newB);
     scan.pin.clear();
 
-    // 4. Old pins still present as loose files in assets/tracks/nina/original:
-    // not stale, so a rescan does not replace them.
-    clean(); write(std::string("tracks/") + name, oldA);
+    // 4. Old pins still present as loose files (by hash, in the track's own
+    // or versioned folder): not stale, so a rescan does not replace them.
+    // newB's pins are no SHA-256, so it has no build name and is refused.
+    const std::string looseA = descriptor("Nina", pins("09ecb6ebc8bcefc733f6f2ec44f791abeed6a99edf0cc31519637898aebd52d8", "aa20c23e3201834050679e1d88941b9a6fed0557c9a705cb2c315e2e63fd486d"));
+    for (const char *folder : {"/tracks/nina/original", "/tracks/nina-1.0.0/original"}) {
+        clean(); write(std::string("tracks/") + name, looseA);
+        fs::create_directories(assets + folder);
+        std::ofstream(assets + folder + "/n.lev") << std::string(100, 'x');
+        std::ofstream(assets + folder + "/n.vrm") << std::string(200, 'x');
+        scan.live = liveB;
+        assert(!ApplyStoreDescriptor(entry(1, "Nina", newB, "b"), scan, message));
+        assert(read(std::string("tracks/") + name) == looseA);
+    }
+    // Files of the right sizes but other bytes are not the old copy: stale.
+    clean(); write(std::string("tracks/") + name, looseA);
     fs::create_directories(assets + "/tracks/nina/original");
-    std::ofstream(assets + "/tracks/nina/original/n.lev") << std::string(100, 'x');
-    std::ofstream(assets + "/tracks/nina/original/n.vrm") << std::string(200, 'x');
-    scan.live = liveB;
-    assert(!ApplyStoreDescriptor(entry(1, "Nina", newB, "b"), scan, message));
-    assert(read(std::string("tracks/") + name) == oldA);
+    std::ofstream(assets + "/tracks/nina/original/n.lev") << std::string(100, 'y');
+    std::ofstream(assets + "/tracks/nina/original/n.vrm") << std::string(200, 'y');
+    assert(ApplyStoreDescriptor(entry(1, "Nina", newB, "b"), scan, message));
+    assert(read(std::string("tracks/") + name) == newB);
 
     // 5. A reinstall that needs laps replaces a stale complete entry: the new
     // one waits for laps and the stale one goes.
@@ -521,10 +532,11 @@ int main(int, char **argv) {
         APSoloModePair p;
         p.trackKey = "nina"; p.raceRevision = "1.0.0"; p.relicRevision = "1.0.0-relic";
         p.raceLev = std::string(64, 'a'); p.raceVrm = std::string(64, 'b');
-        p.relicLev = std::string(64, 'c'); p.relicVrm = std::string(64, 'd');
+        // The Relic files' real hashes: a loose copy counts as installed by hash (PS2).
+        p.relicLev = "0d4e2ca9e9cbced7a7a5380eb29e1a3783b9b6d0db72de36a1051038e1c1fbc7"; p.relicVrm = "7b0bd700ce066ef35190fde2dd7a0bcce426b8e10e4d32613ab550105545faad";
         p.raceLevBytes = 100; p.raceVrmBytes = 200; p.relicLevBytes = 300; p.relicVrmBytes = 400;
         p.targets[0] = 3; p.targets[1] = 2; p.targets[2] = 1; p.source = "test";
-        const std::string a = std::string(64, 'a'), b = std::string(64, 'b'), c = std::string(64, 'c'), d = std::string(64, 'd');
+        const std::string a = std::string(64, 'a'), b = std::string(64, 'b'), c = p.relicLev, d = p.relicVrm;
         const std::string relicRow = descriptor("Nina Relic", pins(c.c_str(), d.c_str(), 300, 400));
         const std::string raceRow = descriptor("Nina", pins(a.c_str(), b.c_str()));
         const std::string raceWait = descriptor("Nina", pins(a.c_str(), b.c_str()), 0);
@@ -723,6 +735,21 @@ int main(int, char **argv) {
             for (const auto &e : recut2.descriptors) assert(ApplyStoreDescriptor(e, recut2, message));
             assert(!fs::exists(base + "/solo/tracks/" + n) && read("tracks/" + lb) == newer.dump());
             assert(loggedFile("a newer cut of the same package is listed"));
+            // A third package (another uuid) with the older cut's files keeps
+            // that entry: nothing is retired, and a retire by pins alone would
+            // not touch an entry of another uuid either.
+            clean(); installed();
+            auto other = nlohmann::json::parse(saphi); other["uuid"] = "u-other";
+            write("tracks/" + n, other.dump()); write("tracks/" + lb, newer.dump());
+            StorePublication recut3; recut3.assets = assets; recut3.live = full.live;
+            recut3.descriptors = {entry(1, "Big Forest", older.dump(), "a"), entry(1, "Big Forest", newer.dump(), "c"),
+                                  entry(1, "Big Forest", other.dump(), "d")};
+            KeepOneCopyPerEntry(recut3);
+            for (const auto &e : recut3.descriptors) assert(e.kind != 5);
+            for (const auto &e : recut3.descriptors) assert(ApplyStoreDescriptor(e, recut3, message));
+            assert(read("tracks/" + n) == other.dump() && read("tracks/" + lb) == newer.dump());
+            RetireExactBuild("nina", "1.0.0", nlohmann::json({{"files", older["files"]}, {"uuid", "u-same"}}).dump());
+            assert(read("tracks/" + n) == other.dump());
         }
 
         // l) A3-20 laps moved to a replacement key whose plain name holds
@@ -765,7 +792,7 @@ int main(int, char **argv) {
 with tempfile.TemporaryDirectory() as directory:
     path = Path(directory)
     (path / "records.cpp").write_text(fixture)
-    subprocess.run(["g++", "-std=c++17", "-Wall", "-Wextra", "-Werror", "-I", str(root),
+    subprocess.run(["g++", "-std=c++17", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function", "-I", str(root),
                     "-I", str(root / "ap/vendor/json/include"), str(path / "records.cpp"),
                     "-o", str(path / "records")], check=True)
     (path / "client").mkdir()
