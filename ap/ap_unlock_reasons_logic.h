@@ -132,7 +132,8 @@ typedef struct AP_UnlockGarageHold
 	unsigned held;          // own gate met, hub closed, not yet announced
 	unsigned saved;         // held at the last disconnect, waiting for the room check
 	unsigned reported;      // announced in this room session
-	unsigned savedReported; // announced before the last disconnect
+	unsigned savedReported; // announced before the last disconnect, until the room check
+	unsigned blocked;       // kept quiet by savedReported while the room check is pending
 } AP_UnlockGarageHold;
 
 static inline void AP_UnlockGarageConnectReset(AP_UnlockGarageHold *h, int mayResume, int alreadyPending)
@@ -141,13 +142,23 @@ static inline void AP_UnlockGarageConnectReset(AP_UnlockGarageHold *h, int mayRe
 	{
 		h->saved = 0;
 		h->savedReported = 0;
+		h->blocked = 0;
+	}
+	else if (!alreadyPending)
+	{
+		// The feed keeps its held lines for this room (AP_FeedConnectReset),
+		// so what was announced stays announced.
+		h->saved = h->held;
+		h->savedReported = h->reported;
+		h->blocked = 0;
 	}
 	else
 	{
-		// A second drop while the room check is still pending keeps what the
-		// first drop saved and adds what the connection in between held.
-		h->saved = (alreadyPending ? h->saved : 0) | h->held;
-		h->savedReported = (alreadyPending ? h->savedReported : 0) | h->reported;
+		// A second drop while the room check is still pending: the feed keeps
+		// only the first drop's lines, so a garage announced in between has
+		// lost its line and is held again.
+		h->saved |= h->held | h->reported | h->blocked;
+		h->blocked = 0;
 	}
 	h->held = 0;
 	h->reported = 0;
@@ -160,8 +171,11 @@ static inline void AP_UnlockGarageResolveReconnect(AP_UnlockGarageHold *h, int s
 		h->reported |= h->savedReported;
 		h->held |= h->saved & ~h->reported;
 	}
+	else
+		h->held |= h->blocked; // another room: what was kept quiet is new here
 	h->saved = 0;
 	h->savedReported = 0;
+	h->blocked = 0;
 }
 
 // FN1: the garages to announce on one live update. `rose` is the diff's new
@@ -169,12 +183,15 @@ static inline void AP_UnlockGarageResolveReconnect(AP_UnlockGarageHold *h, int s
 // silently). A held garage that is now enterable is announced even without
 // a diff (the reconnect case, or its own gate returning on a quiet frame).
 // A held garage stays held until it is announced. Each garage is announced
-// at most once per room session. Returns the garage bit mask to announce.
+// at most once per room session; while the room check is pending, a garage
+// announced before the drop stays quiet. Returns the garage mask to announce.
 static inline unsigned AP_UnlockGarageAnnounce(AP_UnlockGarageHold *h, const AP_UnlockWatch *now, unsigned rose)
 {
-	unsigned out = ((h->held | rose) & now->garagesOpen) & ~h->reported;
+	unsigned ready = (h->held | rose) & now->garagesOpen & ~h->reported;
+	unsigned out = ready & ~h->savedReported;
+	h->blocked |= ready & h->savedReported;
 	h->reported |= out;
-	h->held = (h->held | now->garagesBehindDoor) & ~h->reported & ~now->garagesOpen;
+	h->held = (h->held | now->garagesBehindDoor) & ~h->reported & ~h->blocked & ~now->garagesOpen;
 	return out;
 }
 

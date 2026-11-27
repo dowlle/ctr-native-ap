@@ -330,6 +330,65 @@ int main(void)
     quiet(10);
     assert(lines("Komodo Joe GARAGE OPEN") == 1);
 
+    // Review round 2, finding 1: the feed is live again before the room
+    // check answers, a garage opens, and the connection drops a second time
+    // before the check. The garage is held again, not lost.
+    fresh();
+    bossOwn[1] = 1;
+    item();
+    clear_feed();
+    AP_UnlockReasonsConnectReset(1, 0);
+    ap_feed_primed = 1;
+    quiet(5);
+    ap_recv_count[AP_IDX_KEY] = 1;
+    item();
+    assert(lines("Papu Papu GARAGE OPEN") == 1);
+    clear_feed();                 // the feed drops lines queued while pending
+    AP_UnlockReasonsConnectReset(1, 1);
+    ap_feed_primed = 0;
+    quiet(5);
+    AP_UnlockReasonsResolveReconnect(1);
+    ap_feed_primed = 1;
+    quiet(10);
+    show("second drop while pending");
+    assert(lines("Papu Papu GARAGE OPEN") == 1);
+
+    // Review round 2, finding 2: N. Oxide's garage reopens while the room
+    // check is pending. It stays quiet in the same room...
+    fresh();
+    ap_recv_count[AP_IDX_KEY] = 1;
+    oxideOwn = 1;
+    item();
+    clear_feed();
+    oxideOwn = 0;
+    quiet(5);
+    AP_UnlockReasonsConnectReset(1, 0);
+    ap_feed_primed = 1;
+    quiet(5);
+    oxideOwn = 1;
+    item();
+    assert(lines("Oxide GARAGE OPEN") == 0);
+    AP_UnlockReasonsResolveReconnect(1);
+    quiet(10);
+    assert(lines("Oxide GARAGE OPEN") == 0);
+    // ... and is announced once when the check says it is another room.
+    fresh();
+    ap_recv_count[AP_IDX_KEY] = 1;
+    oxideOwn = 1;
+    item();
+    clear_feed();
+    oxideOwn = 0;
+    quiet(5);
+    AP_UnlockReasonsConnectReset(1, 0);
+    ap_feed_primed = 1;
+    quiet(5);
+    oxideOwn = 1;
+    item();
+    assert(lines("Oxide GARAGE OPEN") == 0);
+    AP_UnlockReasonsResolveReconnect(0);
+    quiet(10);
+    assert(lines("Oxide GARAGE OPEN") == 1);
+
     // 6. A reload (fresh client, nothing to resume) with an enterable garage
     //    adopts it silently: no repeat of a line shown in an earlier session.
     fresh();
