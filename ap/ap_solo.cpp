@@ -1382,6 +1382,33 @@ bool RetireDescriptor(const std::string &key, const std::string &revision, const
 	return removedAll || !strict;
 }
 
+// MR2: removes our own solo/tracks or solo/needs-laps file of a Relic-only
+// package (same key, revision and file pins) that an older client listed as a
+// track of its own. Anything else in those folders is left alone.
+void HideRelicOnlyDescriptor(const std::string &key, const std::string &revision, const std::string &filesJson)
+{
+	const std::string name = AP_SoloDescriptorFileName(key, revision);
+	const nlohmann::json files = nlohmann::json::parse(filesJson, nullptr, false);
+	std::error_code ec;
+	if (name.empty() || !files.is_array() || SoloRootIsLink())
+		return;
+	for (const char *folder : {"tracks", "needs-laps"})
+	{
+		const fs::path dir = fs::u8path(SoloPath(folder));
+		if (fs::is_symlink(dir, ec))
+			continue;
+		const fs::path target = dir / fs::u8path(name);
+		const auto kept = nlohmann::json::parse(ReadSmallPlainFile(target, kDescriptorMax), nullptr, false);
+		if (!kept.is_object() || kept.value("files", nlohmann::json()) != files)
+			continue;
+		std::string detail;
+		if (RemoveDescriptorFile(target, detail))
+			Log(std::string("retired solo/") + folder + "/" + name + ": it is the Relic Race file of a split track");
+		else
+			Log(std::string("could not retire solo/") + folder + "/" + name + ": " + detail);
+	}
+}
+
 // The one writer behind both C entry points and the store publication: kind 1
 // is a complete descriptor for solo/tracks, kind 2 one that waits for its laps
 // in solo/needs-laps. Every refusal is logged with its file name and gives
@@ -1530,32 +1557,6 @@ std::string PackageLabel(const CustomPackageStoreEntry &entry)
 		title = title.substr(0, cut) + "...";
 	}
 	return title;
-}
-
-// Merged mode builds (MR2): every known race pair with its Relic pair.
-std::vector<APSoloModePair> KnownModePairs()
-{
-	std::vector<APSoloModePair> out;
-	for (const ApTrackModePairPins &r : ap_track_mode_pairs())
-	{
-		APSoloModePair p;
-		p.trackKey = r.key;
-		p.raceRevision = r.race_revision;
-		p.relicRevision = r.relic_revision;
-		p.raceLev = r.race_lev;
-		p.raceVrm = r.race_vrm;
-		p.relicLev = r.relic_lev;
-		p.relicVrm = r.relic_vrm;
-		p.raceLevBytes = r.race_lev_bytes;
-		p.raceVrmBytes = r.race_vrm_bytes;
-		p.relicLevBytes = r.relic_lev_bytes;
-		p.relicVrmBytes = r.relic_vrm_bytes;
-		for (int i = 0; i < 3; i++)
-			p.targets[i] = r.targets[i];
-		p.source = r.registry ? "registry" : "built-in";
-		out.push_back(std::move(p));
-	}
-	return out;
 }
 
 struct StorePublication
@@ -1801,7 +1802,7 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 		else if (ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE)
 			ap_track_registry_refresh(cache.c_str());
 		if (cancel && cancel->load()) return result;
-		result.modePairs = KnownModePairs();
+		result.modePairs = AP_SoloKnownModePairs();
 		char scanError[256] = {};
 		// One install publishes only its own revision: no other package is
 		// read or hashed for it (A3-46). `live` is not needed then: a fresh
@@ -1827,33 +1828,6 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 		result.descriptors.push_back(std::move(d));
 	result.hidden.clear();
 	return result;
-}
-
-// MR2: removes our own solo/tracks or solo/needs-laps file of a Relic-only
-// package (same key, revision and file pins) that an older client listed as a
-// track of its own. Anything else in those folders is left alone.
-void HideRelicOnlyDescriptor(const std::string &key, const std::string &revision, const std::string &filesJson)
-{
-	const std::string name = AP_SoloDescriptorFileName(key, revision);
-	const nlohmann::json files = nlohmann::json::parse(filesJson, nullptr, false);
-	std::error_code ec;
-	if (name.empty() || !files.is_array() || SoloRootIsLink())
-		return;
-	for (const char *folder : {"tracks", "needs-laps"})
-	{
-		const fs::path dir = fs::u8path(SoloPath(folder));
-		if (fs::is_symlink(dir, ec))
-			continue;
-		const fs::path target = dir / fs::u8path(name);
-		const auto kept = nlohmann::json::parse(ReadSmallPlainFile(target, kDescriptorMax), nullptr, false);
-		if (!kept.is_object() || kept.value("files", nlohmann::json()) != files)
-			continue;
-		std::string detail;
-		if (RemoveDescriptorFile(target, detail))
-			Log(std::string("retired solo/") + folder + "/" + name + ": it is the Relic Race file of a split track");
-		else
-			Log(std::string("could not retire solo/") + folder + "/" + name + ": " + detail);
-	}
 }
 
 // Writes one collected descriptor. On a refusal `message` names the track and
@@ -2312,7 +2286,7 @@ extern "C" int AP_Solo_ExportTrackYaml(const CustomTrackLibraryEntry *entry, int
 		}
 	}
 	std::string note;
-	const int paired = AP_SoloApplyModePair(descriptor, KnownModePairs(), note);
+	const int paired = AP_SoloApplyModePair(descriptor, AP_SoloKnownModePairs(), note);
 	if (paired == AP_SOLO_PAIR_RELIC_ONLY)
 	{
 		Log(std::string("export of ") + key + " " + revision + " refused: " + note);
@@ -2689,3 +2663,31 @@ extern "C" void AP_Solo_Shutdown(void)
 	if (g_session.state == AP_SOLO_SESSION_FAILED)
 		g_session.state = AP_SOLO_SESSION_NONE;
 }
+
+#ifdef CTR_CUSTOM_PACKAGES
+// Merged mode builds (MR2): every known race pair with its Relic pair.
+std::vector<APSoloModePair> AP_SoloKnownModePairs()
+{
+	std::vector<APSoloModePair> out;
+	for (const ApTrackModePairPins &r : ap_track_mode_pairs())
+	{
+		APSoloModePair p;
+		p.trackKey = r.key;
+		p.raceRevision = r.race_revision;
+		p.relicRevision = r.relic_revision;
+		p.raceLev = r.race_lev;
+		p.raceVrm = r.race_vrm;
+		p.relicLev = r.relic_lev;
+		p.relicVrm = r.relic_vrm;
+		p.raceLevBytes = r.race_lev_bytes;
+		p.raceVrmBytes = r.race_vrm_bytes;
+		p.relicLevBytes = r.relic_lev_bytes;
+		p.relicVrmBytes = r.relic_vrm_bytes;
+		for (int i = 0; i < 3; i++)
+			p.targets[i] = r.targets[i];
+		p.source = r.registry ? "registry" : "built-in";
+		out.push_back(std::move(p));
+	}
+	return out;
+}
+#endif

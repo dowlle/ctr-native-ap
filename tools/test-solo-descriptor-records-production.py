@@ -368,6 +368,25 @@ int main(int, char **argv) {
         assert(ApplyStoreDescriptor(keeper, live, why) && ApplyStoreDescriptor(retire, live, why));
         assert(read("needs-laps/" + oldName).empty() && !read("needs-laps/" + newName).empty());
     }
+    // MR2: a Relic-only package (kind 3) is never listed. Our old file for the
+    // same key, version and pins is removed from both folders; a file with
+    // other pins (another copy) and other names stay.
+    {
+        clean();
+        const std::string relic = descriptor("Nina", pins("ca", "cb")), other = descriptor("Nina", pins("da", "db"));
+        write(std::string("tracks/") + name, relic);
+        write(std::string("needs-laps/") + name, descriptor("Nina", pins("ca", "cb"), 0));
+        write("tracks/other__1.0.0.json", relic);
+        StorePublication scan;
+        std::string message;
+        assert(ApplyStoreDescriptor(entry(3, "Nina", nlohmann::json::parse(pins("ca", "cb")).dump(), "c"), scan, message));
+        assert(!fs::exists(base + "/solo/tracks/" + name) && !fs::exists(base + "/solo/needs-laps/" + name));
+        assert(read("tracks/other__1.0.0.json") == relic && loggedFile("it is the Relic Race file of a split track"));
+        assert(scan.listed.empty());
+        write(std::string("tracks/") + name, other);
+        assert(ApplyStoreDescriptor(entry(3, "Nina", nlohmann::json::parse(pins("ca", "cb")).dump(), "c"), scan, message));
+        assert(read(std::string("tracks/") + name) == other);
+    }
     puts("PASS: stale descriptors are replaced, live ones are named and kept, every refusal logs its file");
 }
 '''

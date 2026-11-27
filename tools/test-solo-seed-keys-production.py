@@ -39,6 +39,7 @@ extern "C" void ap_track_registry_prepare_identity(const char *, int (*)(const v
 extern "C" int ap_track_registry_status(int *, char *, int) { return AP_TRACK_REGISTRY_UNAVAILABLE; }
 extern "C" int ap_track_registry_refresh(const char *) { return 0; }
 std::string ap_track_registry_canonical_key(const std::string &key) { return key; }
+std::vector<APSoloModePair> AP_SoloKnownModePairs() { return {}; }
 '''
 
 body = helper["tests"].split("static int install_seed(")[0]

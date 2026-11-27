@@ -461,6 +461,9 @@ struct APSoloModePair
 	std::string source;         // "registry" or "built-in", for the log
 };
 
+// Registry mode_pairs first, then the built-in table (ap_solo.cpp).
+std::vector<APSoloModePair> AP_SoloKnownModePairs();
+
 enum APSoloModePairResult
 {
 	AP_SOLO_PAIR_NONE = 0,   // no pair names these files: written as before
