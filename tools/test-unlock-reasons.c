@@ -224,6 +224,88 @@ int main(void)
 	AP_UnlockReasonLine(line, sizeof line, AP_UNLOCK_DOOR, "Cup Room", 0, 1);
 	expect_str("singular folded door line", line, "Cup Room DOOR OPEN (+1 PAD)");
 
+	// ── FN1: a garage is open only when it can be entered ──
+	expect("Ripper Roo stands in N. Sanity Beach", AP_UnlockGarageHub(0), 1);
+	expect("Papu Papu stands in The Lost Ruins", AP_UnlockGarageHub(1), 2);
+	expect("Komodo Joe stands in Glacier Park", AP_UnlockGarageHub(2), 3);
+	expect("Pinstripe stands in Citadel City", AP_UnlockGarageHub(3), 4);
+	expect("Oxide stands in Gem Stone Valley", AP_UnlockGarageHub(4), 0);
+	{
+		static const int keysNeed[AP_UNLOCK_GARAGE_COUNT] = {0, 1, 2, 3, 1};
+		int g;
+		for (g = 0; g < AP_UNLOCK_GARAGE_COUNT; g++)
+		{
+			char name[64];
+			memset(&b, 0, sizeof b);
+			AP_UnlockGarageClassify(&b, g, 0, 3);
+			snprintf(name, sizeof name, "garage %d own gate shut: nothing", g);
+			expect(name, (int)(b.garagesOpen | b.garagesBehindDoor), 0);
+			if (keysNeed[g] > 0)
+			{
+				memset(&b, 0, sizeof b);
+				AP_UnlockGarageClassify(&b, g, 1, keysNeed[g] - 1);
+				snprintf(name, sizeof name, "garage %d one Key short: behind door", g);
+				expect(name, (int)b.garagesBehindDoor, 1 << g);
+				expect(name, (int)b.garagesOpen, 0);
+			}
+			memset(&b, 0, sizeof b);
+			AP_UnlockGarageClassify(&b, g, 1, keysNeed[g]);
+			snprintf(name, sizeof name, "garage %d with its Keys: open", g);
+			expect(name, (int)b.garagesOpen, 1 << g);
+			expect(name, (int)b.garagesBehindDoor, 0);
+		}
+	}
+	{
+		AP_UnlockGarageHold hold;
+		memset(&hold, 0, sizeof hold);
+		memset(&b, 0, sizeof b);
+		b.garagesBehindDoor = 1u << 1;
+		expect("held garage is not announced", (int)AP_UnlockGarageAnnounce(&hold, &b, 0), 0);
+		expect("held garage is remembered", (int)hold.held, 1 << 1);
+		b.garagesBehindDoor = 0;
+		b.garagesOpen = 1u << 1;
+		expect("Keys arrive: announced once", (int)AP_UnlockGarageAnnounce(&hold, &b, 1u << 1), 1 << 1);
+		expect("and never again", (int)AP_UnlockGarageAnnounce(&hold, &b, 1u << 1), 0);
+		// reconnect: the Keys arrived while away
+		memset(&hold, 0, sizeof hold);
+		memset(&b, 0, sizeof b);
+		b.garagesBehindDoor = 1u << 4;
+		AP_UnlockGarageAnnounce(&hold, &b, 0);
+		AP_UnlockGarageConnectReset(&hold, 1, 0);
+		expect("reconnect saves the held garage", (int)hold.saved, 1 << 4);
+		AP_UnlockGarageResolveReconnect(&hold, 1);
+		b.garagesBehindDoor = 0;
+		b.garagesOpen = 1u << 4;
+		expect("same room: announced after the absorb", (int)AP_UnlockGarageAnnounce(&hold, &b, 0), 1 << 4);
+		AP_UnlockGarageConnectReset(&hold, 1, 0);
+		AP_UnlockGarageResolveReconnect(&hold, 1);
+		expect("second reconnect: no repeat", (int)AP_UnlockGarageAnnounce(&hold, &b, 0), 0);
+		memset(&hold, 0, sizeof hold);
+		hold.held = 1u << 2;
+		AP_UnlockGarageConnectReset(&hold, 1, 0);
+		AP_UnlockGarageResolveReconnect(&hold, 0);
+		b.garagesOpen = 1u << 2;
+		expect("other room: nothing inherited", (int)AP_UnlockGarageAnnounce(&hold, &b, 0), 0);
+		// a held garage stays held while its own gate is briefly shut
+		memset(&hold, 0, sizeof hold);
+		memset(&b, 0, sizeof b);
+		b.garagesBehindDoor = 1u << 1;
+		AP_UnlockGarageAnnounce(&hold, &b, 0);
+		b.garagesBehindDoor = 0;
+		expect("gate shut: still held", (int)(AP_UnlockGarageAnnounce(&hold, &b, 0) == 0 && hold.held == (1u << 1)), 1);
+		b.garagesOpen = 1u << 1;
+		expect("gate back with Keys: announced on a quiet frame", (int)AP_UnlockGarageAnnounce(&hold, &b, 0), 1 << 1);
+		// announced garages stay announced across a same-room reconnect
+		AP_UnlockGarageConnectReset(&hold, 1, 0);
+		AP_UnlockGarageResolveReconnect(&hold, 1);
+		b.garagesOpen = 0;
+		AP_UnlockGarageAnnounce(&hold, &b, 0);
+		b.garagesOpen = 1u << 1;
+		expect("reopened after reconnect: no repeat", (int)AP_UnlockGarageAnnounce(&hold, &b, 1u << 1), 0);
+		AP_UnlockGarageConnectReset(&hold, 0, 0);
+		expect("new room: announced set cleared", (int)AP_UnlockGarageAnnounce(&hold, &b, 1u << 1), 1 << 1);
+	}
+
 	printf("%s unlock reasons\n", failures ? "FAIL" : "PASS");
 	return failures != 0;
 }
