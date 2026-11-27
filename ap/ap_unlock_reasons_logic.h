@@ -134,6 +134,7 @@ typedef struct AP_UnlockGarageHold
 	unsigned reported;      // announced in this room session
 	unsigned savedReported; // announced before the last disconnect, until the room check
 	unsigned blocked;       // kept quiet by savedReported while the room check is pending
+	unsigned queued;        // announced with a feed line (feed not OFF) in this session
 } AP_UnlockGarageHold;
 
 static inline void AP_UnlockGarageConnectReset(AP_UnlockGarageHold *h, int mayResume, int alreadyPending)
@@ -155,13 +156,15 @@ static inline void AP_UnlockGarageConnectReset(AP_UnlockGarageHold *h, int mayRe
 	else
 	{
 		// A second drop while the room check is still pending: the feed keeps
-		// only the first drop's lines, so a garage announced in between has
-		// lost its line and is held again.
-		h->saved |= h->held | h->reported | h->blocked;
-		h->blocked = 0;
+		// only the first drop's lines, so a garage whose line was queued in
+		// between is held again. One announced with the feed OFF stays
+		// announced, and `blocked` waits for the room check as before.
+		h->saved |= h->held | h->queued;
+		h->savedReported |= h->reported & ~h->queued;
 	}
 	h->held = 0;
 	h->reported = 0;
+	h->queued = 0;
 }
 
 static inline void AP_UnlockGarageResolveReconnect(AP_UnlockGarageHold *h, int sameRoom)

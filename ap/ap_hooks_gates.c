@@ -1929,6 +1929,8 @@ static void AP_UnlockReasonsUpdate(int mode)
 			if (ev[i].kind == AP_UNLOCK_GARAGE)
 				garagesRose |= 1u << ev[i].index;
 		garages = AP_UnlockGarageAnnounce(&ap_unlock_garage_hold, &now, garagesRose);
+		if (feedMode != AP_ITEM_FEED_OFF)
+			ap_unlock_garage_hold.queued |= garages;
 		for (int g = 0; g < AP_UNLOCK_GARAGE_COUNT; ++g)
 			if ((garages & (1u << g)) && feedMode != AP_ITEM_FEED_OFF)
 			{

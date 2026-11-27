@@ -389,6 +389,53 @@ int main(void)
     quiet(10);
     assert(lines("Oxide GARAGE OPEN") == 1);
 
+    // Review round 3, finding 2: shown in the old room, the garage opens in a
+    // fresh room before its room check, and a second drop comes before the
+    // check. The new room still gets the line.
+    fresh();
+    ap_recv_count[AP_IDX_KEY] = 1;
+    bossOwn[1] = 1;
+    item();
+    assert(lines("Papu Papu GARAGE OPEN") == 1);
+    clear_feed();
+    bossOwn[1] = 0;               // the new room starts without the relics
+    AP_UnlockReasonsConnectReset(1, 0);
+    ap_feed_primed = 1;
+    quiet(5);
+    bossOwn[1] = 1;
+    item();
+    assert(lines("Papu Papu GARAGE OPEN") == 0); // quiet until the room check
+    AP_UnlockReasonsConnectReset(1, 1);
+    ap_feed_primed = 0;
+    quiet(5);
+    AP_UnlockReasonsResolveReconnect(0);
+    ap_feed_primed = 1;
+    quiet(10);
+    show("fresh room after a second drop");
+    assert(lines("Papu Papu GARAGE OPEN") == 1);
+
+    // Review round 3, finding 3: opened with the feed OFF while the room
+    // check is pending, then a second drop. Turning the feed on later does
+    // not replay it.
+    fresh();
+    bossOwn[1] = 1;
+    item();
+    AP_UnlockReasonsConnectReset(1, 0);
+    ap_feed_primed = 1;
+    quiet(5);
+    feedMode = AP_ITEM_FEED_OFF;
+    ap_recv_count[AP_IDX_KEY] = 1;
+    item();
+    assert(ap_feed.qcount == 0);
+    AP_UnlockReasonsConnectReset(1, 1);
+    ap_feed_primed = 0;
+    quiet(5);
+    feedMode = AP_ITEM_FEED_ALL;
+    AP_UnlockReasonsResolveReconnect(1);
+    ap_feed_primed = 1;
+    quiet(10);
+    assert(lines("Papu Papu GARAGE OPEN") == 0);
+
     // 6. A reload (fresh client, nothing to resume) with an enterable garage
     //    adopts it silently: no repeat of a line shown in an earlier session.
     fresh();
