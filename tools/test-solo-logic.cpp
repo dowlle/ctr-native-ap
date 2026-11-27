@@ -705,6 +705,119 @@ static void test_large_hint_checklists()
 	CHECK(AP_SoloSetEntries(row).empty() && !AP_SoloSetHas(row, row.keys.front()));
 }
 
+// MR2: a track whose Relic Race is in a second file pair is written as one
+// track entry: the race pair stays `files`, the Relic pair becomes
+// `relic_files`, and the Relic pair alone is never a track's main pair.
+static void test_mode_pairs()
+{
+	const std::string A(64, 'a'), B(64, 'b'), C(64, 'c'), D(64, 'd');
+	APSoloModePair pair;
+	pair.trackKey = "toasty-terrace";
+	pair.raceRevision = "1.3.0";
+	pair.relicRevision = "1.3.1";
+	pair.raceLev = A; pair.raceLevBytes = 1088620;
+	pair.raceVrm = B; pair.raceVrmBytes = 458808;
+	pair.relicLev = C; pair.relicLevBytes = 1085668;
+	pair.relicVrm = D; pair.relicVrmBytes = 458808;
+	pair.targets[0] = 86400; pair.targets[1] = 67200; pair.targets[2] = 62400;
+	pair.source = "registry";
+	auto descriptor = [](const std::string &lev, uint64_t levBytes, const std::string &vrm, uint64_t vrmBytes) {
+		return nlohmann::json{{"id", "package/toasty-terrace/1.3.0"}, {"content_id", "toasty-terrace"}, {"revision", "1.3.0"},
+		                      {"laps", 3},
+		                      {"capabilities", {{"time_trial", false}, {"arcade", true}, {"relic", false}, {"ctr_tokens", true}}},
+		                      {"files", nlohmann::json::array({{{"role", "lev"}, {"sha256", lev}, {"bytes", levBytes}, {"format", "ctr-lev"}, {"format_version", 1}},
+		                                                       {{"role", "vrm"}, {"sha256", vrm}, {"bytes", vrmBytes}, {"format", "ctr-vrm"}, {"format_version", 1}}})},
+		                      {"evidence", nlohmann::json::array()}};
+	};
+	std::string note;
+	// The race pair gets the Relic pair, its revision, targets and capabilities.
+	auto race = descriptor(A, 1088620, B, 458808);
+	const auto files = race["files"];
+	CHECK(AP_SoloApplyModePair(race, {pair}, note) == AP_SOLO_PAIR_MERGED);
+	CHECK(race["files"] == files);
+	CHECK(race["relic_files"].size() == 2 && race["relic_files"][0]["role"] == "lev" && race["relic_files"][0]["sha256"] == C &&
+	      race["relic_files"][0]["bytes"] == 1085668u && race["relic_files"][0]["format"] == "ctr-lev" &&
+	      race["relic_files"][1]["role"] == "vrm" && race["relic_files"][1]["sha256"] == D && race["relic_files"][1]["format"] == "ctr-vrm" &&
+	      race["relic_files"][1]["format_version"] == 1);
+	CHECK(race["relic_revision"] == "1.3.1");
+	CHECK(race["relic_targets"] == (nlohmann::json{{"sapphire", 86400}, {"gold", 67200}, {"platinum", 62400}}));
+	CHECK(race["capabilities"]["relic"] == true && race["capabilities"]["time_trial"] == true &&
+	      race["capabilities"]["arcade"] == true && race["capabilities"]["ctr_tokens"] == true);
+	CHECK(note.find("1.3.1") != std::string::npos && note.find("registry") != std::string::npos);
+	// Applying it again changes nothing.
+	auto again = race;
+	CHECK(AP_SoloApplyModePair(again, {pair}, note) == AP_SOLO_PAIR_KEPT && again == race);
+	// The Relic pair alone is left out, unchanged.
+	auto relic = descriptor(C, 1085668, D, 458808);
+	const auto relicBefore = relic;
+	CHECK(AP_SoloApplyModePair(relic, {pair}, note) == AP_SOLO_PAIR_RELIC_ONLY && relic == relicBefore);
+	CHECK(note.find("toasty-terrace 1.3.0") != std::string::npos);
+	// Any other track, or the same LEV with another size, is written as before.
+	for (auto other : {descriptor(A, 1088621, B, 458808), descriptor(A, 1088620, C, 458808), descriptor(B, 1, A, 2)})
+	{
+		const auto before = other;
+		CHECK(AP_SoloApplyModePair(other, {pair}, note) == AP_SOLO_PAIR_NONE && other == before);
+	}
+	// No pairs, a broken descriptor: unchanged.
+	auto none = descriptor(A, 1088620, B, 458808);
+	CHECK(AP_SoloApplyModePair(none, {}, note) == AP_SOLO_PAIR_NONE && !none.contains("relic_files"));
+	nlohmann::json broken = {{"files", "x"}};
+	CHECK(AP_SoloApplyModePair(broken, {pair}, note) == AP_SOLO_PAIR_NONE);
+	// A race pair that waits for laps or already has a Relic Race of its own is kept, with the reason.
+	auto noLaps = descriptor(A, 1088620, B, 458808);
+	noLaps.erase("laps");
+	CHECK(AP_SoloApplyModePair(noLaps, {pair}, note) == AP_SOLO_PAIR_KEPT && !noLaps.contains("relic_files") &&
+	      note.find("lap count") != std::string::npos);
+	auto ownRelic = descriptor(A, 1088620, B, 458808);
+	ownRelic["capabilities"]["relic"] = true;
+	ownRelic["relic_targets"] = {{"sapphire", 3}, {"gold", 2}, {"platinum", 1}};
+	const auto ownBefore = ownRelic;
+	CHECK(AP_SoloApplyModePair(ownRelic, {pair}, note) == AP_SOLO_PAIR_KEPT && ownRelic == ownBefore);
+	// A pair that is not usable is ignored: targets out of order, equal pairs, bad hashes.
+	APSoloModePair bad = pair;
+	bad.targets[1] = bad.targets[0];
+	auto t1 = descriptor(A, 1088620, B, 458808);
+	CHECK(AP_SoloApplyModePair(t1, {bad}, note) == AP_SOLO_PAIR_NONE);
+	bad = pair;
+	bad.relicLev = A; bad.relicLevBytes = pair.raceLevBytes; bad.relicVrm = B; bad.relicVrmBytes = pair.raceVrmBytes;
+	CHECK(AP_SoloApplyModePair(t1, {bad}, note) == AP_SOLO_PAIR_NONE);
+	bad = pair;
+	bad.relicLev = std::string(64, 'E');
+	CHECK(AP_SoloApplyModePair(t1, {bad}, note) == AP_SOLO_PAIR_NONE && !t1.contains("relic_files"));
+	// The first usable pair wins; a later one cannot pair the same race files again.
+	APSoloModePair second = pair;
+	second.relicLev = std::string(64, 'f');
+	second.relicRevision = "9.9.9";
+	auto first = descriptor(A, 1088620, B, 458808);
+	CHECK(AP_SoloApplyModePair(first, {pair, second}, note) == AP_SOLO_PAIR_MERGED && first["relic_revision"] == "1.3.1");
+	// relic_revision is informational and left out when it is not a plain revision.
+	APSoloModePair odd = pair;
+	odd.relicRevision = "relic build";
+	auto noRevision = descriptor(A, 1088620, B, 458808);
+	CHECK(AP_SoloApplyModePair(noRevision, {odd}, note) == AP_SOLO_PAIR_MERGED && !noRevision.contains("relic_revision") &&
+	      noRevision.contains("relic_files"));
+	// MR2 review 2, finding 1: relic_revision names a version the Relic files
+	// are installed under, because a room finds them by revision and pins.
+	CHECK(AP_SoloChooseRelicRevision({}, "1.1.2-relic", "") == "1.1.2-relic");           // not installed: the label
+	CHECK(AP_SoloChooseRelicRevision({"1.1.2"}, "1.1.2-relic", "") == "1.1.2");          // Saphi Library install
+	CHECK(AP_SoloChooseRelicRevision({"1.1.2", "1.1.2-relic"}, "1.1.2-relic", "1.1.2") == "1.1.2-relic");
+	CHECK(AP_SoloChooseRelicRevision({"1.0.0", "1.0.0b"}, "1.0.0-relic", "1.0.0b") == "1.0.0b"); // the kept row's
+	CHECK(AP_SoloChooseRelicRevision({"1.0.0", "1.0.0b"}, "1.0.0-relic", "2.0") == "1.0.0");     // first installed
+	CHECK(AP_SoloChooseRelicRevision({"bad version"}, "relic build", "") == "");
+	CHECK(AP_SoloChooseRelicRevision({"bad version", "1.3.1"}, "", "") == "1.3.1");
+	auto merged = descriptor(A, 1088620, B, 458808);
+	CHECK(AP_SoloApplyModePair(merged, {pair}, note) == AP_SOLO_PAIR_MERGED);
+	CHECK(AP_SoloUseInstalledRelicRevision(merged, {"1.3.1"}, "") == "; installed as 1.3.1" && merged["relic_revision"] == "1.3.1");
+	CHECK(AP_SoloUseInstalledRelicRevision(merged, {"1.3.1b"}, "").find("not 1.3.1") != std::string::npos &&
+	      merged["relic_revision"] == "1.3.1b");
+	auto unnamed = descriptor(A, 1088620, B, 458808);
+	CHECK(AP_SoloApplyModePair(unnamed, {odd}, note) == AP_SOLO_PAIR_MERGED && !unnamed.contains("relic_revision"));
+	AP_SoloUseInstalledRelicRevision(unnamed, {"1.3.1"}, "");
+	CHECK(unnamed["relic_revision"] == "1.3.1");
+	AP_SoloUseInstalledRelicRevision(noRevision, {}, "");
+	CHECK(!noRevision.contains("relic_revision"));
+}
+
 int main()
 {
 	test_parse_lines();
@@ -723,6 +836,7 @@ int main()
 	test_needs_laps();
 	test_store_descriptor_rescan();
 	test_fold_store_copies();
+	test_mode_pairs();
 	if (g_fail)
 	{
 		std::printf("test-solo-logic: %d failure(s)\n", g_fail);

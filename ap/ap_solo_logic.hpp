@@ -446,6 +446,158 @@ static inline std::string AP_SoloDescriptorWithLaps(const nlohmann::json &d, int
 	return out.dump();
 }
 
+// Merged mode builds (relic_files, MR2): a track whose race modes (Trophy
+// Race, CTR Challenge) are in one LEV/VRM pair and whose Relic Race is in
+// another is one track. A mode pair names both pairs by exact pins and the
+// Relic targets the track entry carries. The pairs come from the registry's
+// `mode_pairs` first and the client's built-in table second; nothing is
+// paired by name, revision or guess.
+struct APSoloModePair
+{
+	std::string trackKey, raceRevision, relicRevision;
+	std::string raceLev, raceVrm, relicLev, relicVrm; // lower-case SHA-256
+	uint64_t raceLevBytes = 0, raceVrmBytes = 0, relicLevBytes = 0, relicVrmBytes = 0;
+	int targets[3] = {0, 0, 0}; // sapphire, gold, platinum in 960 Hz ticks
+	std::string source;         // "registry" or "built-in", for the log
+};
+
+// Registry mode_pairs first, then the built-in table (ap_solo.cpp).
+std::vector<APSoloModePair> AP_SoloKnownModePairs();
+
+// Every version under which a verified installed package carries exactly
+// these LEV and VRM pins (ap_solo.cpp; empty without the package library).
+std::set<std::string> AP_SoloInstalledVersionsByPins(const nlohmann::json &files);
+
+enum APSoloModePairResult
+{
+	AP_SOLO_PAIR_NONE = 0,   // no pair names these files: written as before
+	AP_SOLO_PAIR_MERGED,     // the race pair: relic_files added
+	AP_SOLO_PAIR_RELIC_ONLY, // the Relic pair of a known race pair: never a track's main pair
+	AP_SOLO_PAIR_KEPT,       // the race pair, left as before for the reason in `note`
+};
+
+// The descriptor's LEV and VRM pins, in that order, or false.
+static inline bool AP_SoloDescriptorPins(const nlohmann::json &d, std::string &lev, uint64_t &levBytes,
+                                         std::string &vrm, uint64_t &vrmBytes)
+{
+	const auto files = d.is_object() ? d.find("files") : d.end();
+	if (!d.is_object() || files == d.end() || !files->is_array() || files->size() != 2)
+		return false;
+	const nlohmann::json &a = (*files)[0], &b = (*files)[1];
+	if (!a.is_object() || !b.is_object() || AP_SoloJsonString(a, "role") != "lev" || AP_SoloJsonString(b, "role") != "vrm" ||
+	    !a.contains("bytes") || !b.contains("bytes") || !a["bytes"].is_number_unsigned() || !b["bytes"].is_number_unsigned())
+		return false;
+	lev = AP_SoloJsonString(a, "sha256");
+	vrm = AP_SoloJsonString(b, "sha256");
+	levBytes = a["bytes"].get<uint64_t>();
+	vrmBytes = b["bytes"].get<uint64_t>();
+	return lev.size() == 64 && vrm.size() == 64;
+}
+
+// A pair the merge may use: distinct pins, sizes and targets in range.
+static inline bool AP_SoloModePairValid(const APSoloModePair &p)
+{
+	auto hex = [](const std::string &h) {
+		return h.size() == 64 && std::all_of(h.begin(), h.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
+	};
+	return hex(p.raceLev) && hex(p.raceVrm) && hex(p.relicLev) && hex(p.relicVrm) && p.raceLevBytes && p.raceVrmBytes &&
+	       p.relicLevBytes && p.relicVrmBytes && p.raceLevBytes <= 16u * 1024 * 1024 && p.relicLevBytes <= 16u * 1024 * 1024 &&
+	       p.raceVrmBytes <= 4u * 1024 * 1024 && p.relicVrmBytes <= 4u * 1024 * 1024 &&
+	       !(p.raceLev == p.relicLev && p.raceVrm == p.relicVrm) && p.targets[2] > 0 && p.targets[1] > p.targets[2] &&
+	       p.targets[0] > p.targets[1] && p.targets[0] <= 960 * 60 * 60;
+}
+
+// Applies the first matching pair to a Play Solo or Export YAML descriptor.
+// MERGED: `d` gets the Relic pair as `relic_files`, `relic_revision`, the
+// pair's `relic_targets` and capabilities relic and time_trial, as the shared
+// spec (Merged mode builds, 2026-11-23) and the apworld admit them. The race
+// pair stays the main pair. RELIC_ONLY: `d` is a Relic pair and must not be
+// offered as a track's main pair. `note` says why for the log.
+static inline int AP_SoloApplyModePair(nlohmann::json &d, const std::vector<APSoloModePair> &pairs, std::string &note)
+{
+	std::string lev, vrm;
+	uint64_t levBytes = 0, vrmBytes = 0;
+	if (!AP_SoloDescriptorPins(d, lev, levBytes, vrm, vrmBytes))
+		return AP_SOLO_PAIR_NONE;
+	for (const APSoloModePair &p : pairs)
+		if (AP_SoloModePairValid(p) && p.relicLev == lev && p.relicLevBytes == levBytes && p.relicVrm == vrm &&
+		    p.relicVrmBytes == vrmBytes)
+		{
+			note = "it is the Relic Race file of " + p.trackKey + " " + p.raceRevision + " (" + p.source +
+			       " mode pair); Play Solo writes it with that version's race file";
+			return AP_SOLO_PAIR_RELIC_ONLY;
+		}
+	for (const APSoloModePair &p : pairs)
+	{
+		if (!AP_SoloModePairValid(p) || p.raceLev != lev || p.raceLevBytes != levBytes || p.raceVrm != vrm ||
+		    p.raceVrmBytes != vrmBytes)
+			continue;
+		const auto caps = d.find("capabilities");
+		if (d.contains("relic_files"))
+			note = "it already names a Relic pair";
+		else if (!d.contains("laps"))
+			note = "it waits for its lap count";
+		else if (caps == d.end() || !caps->is_object())
+			note = "it has no capabilities";
+		else if (caps->value("relic", false) || d.contains("relic_targets"))
+			note = "its race file has a Relic Race of its own";
+		else
+		{
+			d["relic_files"] = nlohmann::json::array(
+			    {{{"role", "lev"}, {"sha256", p.relicLev}, {"bytes", p.relicLevBytes}, {"format", "ctr-lev"}, {"format_version", 1}},
+			     {{"role", "vrm"}, {"sha256", p.relicVrm}, {"bytes", p.relicVrmBytes}, {"format", "ctr-vrm"}, {"format_version", 1}}});
+			// relic_revision is informational: written only when it is a plain revision.
+			if (!p.relicRevision.empty() && !AP_SoloDescriptorFileName("x", p.relicRevision).empty())
+				d["relic_revision"] = p.relicRevision;
+			d["relic_targets"] = {{"sapphire", p.targets[0]}, {"gold", p.targets[1]}, {"platinum", p.targets[2]}};
+			(*caps)["relic"] = true;
+			(*caps)["time_trial"] = true; // a Relic Race runs on the Relic pair's timed lap graph
+			note = "added the Relic Race file " + p.relicRevision + " (" + p.source + " mode pair)";
+			return AP_SOLO_PAIR_MERGED;
+		}
+		note = "Relic Race file " + p.relicRevision + " not added: " + note;
+		return AP_SOLO_PAIR_KEPT;
+	}
+	return AP_SOLO_PAIR_NONE;
+}
+
+// The relic_revision a merged entry carries. A room finds its Relic files by
+// revision and pins (CustomPackage_FindPinnedFiles), so when the Relic pair
+// is installed the entry must name an installed version: the pair's label if
+// it is installed under it, else `preferred` (a kept row's revision), else
+// the first installed one in order. Only plain revisions count. When the
+// pair is not installed the label stays: a room installs it under that name.
+// Returns "" when there is nothing to write.
+static inline std::string AP_SoloChooseRelicRevision(const std::set<std::string> &installed, const std::string &label,
+                                                     const std::string &preferred)
+{
+	const auto plain = [](const std::string &v) { return !v.empty() && !AP_SoloDescriptorFileName("x", v).empty(); };
+	if (plain(label) && installed.count(label))
+		return label;
+	if (plain(preferred) && installed.count(preferred))
+		return preferred;
+	for (const std::string &v : installed)
+		if (plain(v))
+			return v;
+	return plain(label) ? label : std::string();
+}
+
+// Sets `d`'s relic_revision as AP_SoloChooseRelicRevision says. The label is
+// the revision AP_SoloApplyModePair wrote. Returns a note for the log.
+static inline std::string AP_SoloUseInstalledRelicRevision(nlohmann::json &d, const std::set<std::string> &installed,
+                                                           const std::string &preferred)
+{
+	const std::string label = AP_SoloJsonString(d, "relic_revision");
+	const std::string chosen = AP_SoloChooseRelicRevision(installed, label, preferred);
+	if (chosen.empty())
+		d.erase("relic_revision");
+	else
+		d["relic_revision"] = chosen;
+	if (!chosen.empty() && installed.count(chosen))
+		return chosen == label ? "; installed as " + chosen : "; installed as " + chosen + ", not " + (label.empty() ? "unnamed" : label);
+	return installed.empty() ? "; Relic files not installed yet" : "; no installed Relic version is a plain revision";
+}
+
 // Stop sequence for a running server: /save and /exit on stdin, then wait,
 // then end the child. Returns what to do this tick.
 enum APSoloStopStep

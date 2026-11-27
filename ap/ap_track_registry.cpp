@@ -53,8 +53,11 @@ struct Index
 	struct Credit { std::string name, role; };
 	std::unordered_map<std::string, std::vector<Credit>> credits;
 	std::unordered_map<std::string, std::string> titles, lev_keys, roads, aliases;
+	std::vector<ApTrackModePairPins> mode_pairs; // MR2: race pair, Relic pair, Relic targets
 	bool has_identity = false;
 };
+constexpr size_t kMaxModePairs = 8;     // per track, like the registry checker
+constexpr int kMaxRelicTicks = 960 * 60 * 60;
 constexpr size_t kMaxCredits = 16;     // per track
 constexpr size_t kCreditNameMax = 80;  // bytes, like a Saphi author
 
@@ -171,6 +174,48 @@ void saphi_downloads(const nlohmann::json &revision, Revision &out)
 	}
 }
 
+// MR2: a track's optional `mode_pairs` (registry checker: race and relic name
+// two of this track's revisions, relic_targets slower to faster). A pair this
+// client cannot read in full is skipped, never half used: the client then
+// writes the track as before. Revision labels must be unique in the track.
+void read_mode_pairs(const nlohmann::json &track, const std::string &key,
+                     const std::unordered_map<std::string, Revision> &labelled,
+                     const std::unordered_map<std::string, int> &label_count, std::vector<ApTrackModePairPins> &out)
+{
+	const nlohmann::json *pairs = member(track, "mode_pairs");
+	if (key.empty() || !pairs || !pairs->is_array() || pairs->size() > kMaxModePairs) return;
+	for (const auto &pair : *pairs)
+	{
+		const std::string race = short_text(member(pair, "race")), relic = short_text(member(pair, "relic"));
+		const nlohmann::json *targets = member(pair, "relic_targets");
+		auto a = labelled.find(race), b = labelled.find(relic);
+		if (race.empty() || relic.empty() || race == relic || a == labelled.end() || b == labelled.end() ||
+		    label_count.at(race) != 1 || label_count.at(relic) != 1 || !targets)
+			continue;
+		ApTrackModePairPins row;
+		bool ok = true;
+		const char *tiers[3] = {"sapphire", "gold", "platinum"};
+		for (int i = 0; i < 3; i++)
+		{
+			long long n = 0;
+			const nlohmann::json *t = member(*targets, tiers[i]);
+			ok = ok && t && positive(*t, kMaxRelicTicks, n);
+			row.targets[i] = ok ? static_cast<int>(n) : 0;
+		}
+		if (!ok || !(row.targets[0] > row.targets[1] && row.targets[1] > row.targets[2])) continue;
+		if (a->second.lev == b->second.lev && a->second.vrm == b->second.vrm) continue;
+		row.key = key;
+		row.race_revision = race;
+		row.relic_revision = relic;
+		row.race_lev = a->second.lev; row.race_lev_bytes = a->second.lev_size;
+		row.race_vrm = a->second.vrm; row.race_vrm_bytes = a->second.vrm_size;
+		row.relic_lev = b->second.lev; row.relic_lev_bytes = b->second.lev_size;
+		row.relic_vrm = b->second.vrm; row.relic_vrm_bytes = b->second.vrm_size;
+		row.registry = true;
+		out.push_back(std::move(row));
+	}
+}
+
 bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::string &error)
 {
 	index = {};
@@ -242,6 +287,8 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 			if (found == index.key_by_saphi.end()) index.key_by_saphi.emplace(static_cast<int>(track_id), key);
 			else if (found->second != key) found->second.clear();
 		}
+		std::unordered_map<std::string, Revision> labelled; // this track's revisions with both pins
+		std::unordered_map<std::string, int> label_count;
 		for (const auto &revision : *revisions)
 		{
 			Revision row;
@@ -254,8 +301,10 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 			row.key = key;
 			row.revision = short_text(member(revision, "revision"));
 			saphi_downloads(revision, row);
+			if (!row.revision.empty() && ++label_count[row.revision] == 1) labelled.emplace(row.revision, row);
 			index.rows.push_back(std::move(row));
 		}
+		read_mode_pairs(track, key, labelled, label_count, index.mode_pairs);
 	}
 	auto read_keys = [&](const char *field, auto &out, bool hashes) {
 		const auto *mapping = member(root, field);
@@ -731,3 +780,45 @@ void ap_track_registry_test_reset()
 	s.generation++;
 }
 #endif
+
+int ap_track_registry_parse_mode_pairs(const std::vector<unsigned char> &bytes, std::vector<ApTrackModePairPins> &pairs,
+                                       std::string &error)
+{
+	Index index;
+	pairs.clear();
+	if (!parse_index(bytes, index, error)) return -1;
+	pairs = index.mode_pairs;
+	return static_cast<int>(pairs.size());
+}
+
+// The client's own rows (include/platform/native_track_mode_pairs.inc).
+std::vector<ApTrackModePairPins> ap_track_builtin_mode_pairs()
+{
+	std::vector<ApTrackModePairPins> out;
+#define MP(k_, rr, rl, rlb, rv, rvb, qr, ql, qlb, qv, qvb, s, g, p)                                                    \
+	{                                                                                                                   \
+		ApTrackModePairPins row;                                                                                        \
+		row.key = k_; row.race_revision = rr; row.relic_revision = qr;                                                 \
+		row.race_lev = rl; row.race_lev_bytes = rlb; row.race_vrm = rv; row.race_vrm_bytes = rvb;                       \
+		row.relic_lev = ql; row.relic_lev_bytes = qlb; row.relic_vrm = qv; row.relic_vrm_bytes = qvb;                   \
+		row.targets[0] = s; row.targets[1] = g; row.targets[2] = p;                                                     \
+		out.push_back(row);                                                                                             \
+	}
+#include <platform/native_track_mode_pairs.inc>
+#undef MP
+	return out;
+}
+
+std::vector<ApTrackModePairPins> ap_track_mode_pairs()
+{
+	std::shared_ptr<const Index> index;
+	{
+		RegistryState &s = registry_state();
+		std::lock_guard<std::mutex> lock(s.mutex);
+		index = s.index;
+	}
+	std::vector<ApTrackModePairPins> out = index ? index->mode_pairs : std::vector<ApTrackModePairPins>();
+	for (auto &row : ap_track_builtin_mode_pairs())
+		out.push_back(std::move(row));
+	return out;
+}
