@@ -64,11 +64,11 @@ assert "int racerLift = apLift;" in block and "if (credit) racerLift += 11;" in 
 assert "rect.h - 82 - racerLift" in block and "padBottom - 45 - racerLift" in block
 assert "apCy - data.font_charPixHeight[FONT_SMALL] - 4" in block
 assert "AP_FeedHubPadTitle(apPadFeedY)" in block
-assert "padBottom - apLift - 30 - 11" in block and "padBottom - apLift - 23" in block
+assert "padBottom - apLift - 30 - (credit ? 11 : 0)" in block and "padBottom - apLift - 23" in block
 # Both branches share the retail center. Catch a later reassignment or a
 # separately shifted title, credit, requirement, racer line or portrait.
 assert re.findall(r"\bpadX\s*=(?!=)\s*([^;]+);", block) == ["padView->x + padView->w / 2"]
-assert "DecalFont_DrawLineBox(warppadLNG, padX, titleY, titleWidth," in block
+assert "AH_WarpPad_DrawCustomTitle(warppadLNG, padX, titleY, titleWidth)" in block
 assert "UI_DrawTrackCredit(credit, padX, creditY, creditWidth," in block
 assert block.count("AH_WarpPad_TextWidth(gGT, padX,") == 4
 assert "requirementWidth = AH_WarpPad_TextWidth(gGT, padX, requirementY, requirementWidth);" in block
