@@ -348,8 +348,18 @@ static void MM_Solo_Open(void)
 	}
 	if (!AP_Solo_RuntimePresent())
 	{
-		MM_Solo_Message("Solo runtime is missing. Reinstall or update the client.");
+		const char *problem = AP_Solo_RuntimeProblem();
+		MM_Solo_Message(problem ? problem : "Solo runtime is missing. Reinstall or update the client.");
 		return;
+	}
+	{
+		/* ctr.apworld beside the game: only listing works without it (PS1). */
+		const char *problem = AP_Solo_RuntimeProblem();
+		if (problem)
+		{
+			MM_Solo_Message(problem);
+			return;
+		}
 	}
 	if (s_soloName[0] == '\0')
 		snprintf(s_soloName, sizeof s_soloName, "%s", g_config.slot[0] ? g_config.slot : "Player");

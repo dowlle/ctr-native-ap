@@ -141,7 +141,9 @@ static char generatedName[AP_SOLO_TEXT];
 static int itemGets;
 static int shortLetters;
 static char inbox[512];
+static const char *runtimeProblem; /* NULL: every file is there (PS1) */
 int AP_Solo_RuntimePresent(void) { return 1; }
+const char *AP_Solo_RuntimeProblem(void) { return runtimeProblem; }
 int ap_net_dial_blocked(void) { return 0; } // Box Author Mode off (ap/ap_author_gate.h)
 int AP_Solo_ListStart(void) { return 0; }
 int AP_Solo_DescribeStart(const char *y) { (void)y; describes++; return 1; }
@@ -319,10 +321,10 @@ static void frame(int buttons, const char *where)
 	CHECKM(panels == 1, where);
 	CHECKM(s_soloPage == SOLO_BUSY || strstr(drawn, "BACK") || strstr(drawn, "OK") || strstr(drawn, "CANCEL"), where);
 	/* Same draw-record format as the Custom Tracks screen harness. */
-	if (getenv("CT_SHOT_DIR") && !strcmp(where, "home empty"))
+	if (getenv("CT_SHOT_DIR") && (!strcmp(where, "home empty") || !strcmp(where, "missing apworld")))
 	{
 		char path[1024];
-		snprintf(path, sizeof path, "%s/solo-home.txt", getenv("CT_SHOT_DIR"));
+		snprintf(path, sizeof path, "%s/%s", getenv("CT_SHOT_DIR"), !strcmp(where, "home empty") ? "solo-home.txt" : "solo-missing-apworld.txt");
 		FILE *f = fopen(path, "w");
 		if (f)
 		{
@@ -673,6 +675,17 @@ int main(void)
 	s_soloPage = SOLO_SESSION; frame(0, "session");
 	snprintf(s_soloMsg, sizeof s_soloMsg, "The path of that file is too long. Move it to a shorter folder, or use the inbox.");
 	s_soloPage = SOLO_MESSAGE; frame(0, "message");
+
+	/* PS1: a missing ctr.apworld stops Play Solo at the door, in plain words
+	   that fit the message page, and the page's back returns out of Play Solo. */
+	runtimeProblem = "ctr.apworld is missing from the game folder. Put it back next to the game: copy it, do not move it.";
+	MM_Solo_Open();
+	CHECK(s_soloPage == SOLO_MESSAGE && !strcmp(s_soloMsg, runtimeProblem));
+	frame(0, "missing apworld");
+	CHECK(strstr(drawn, "ctr.apworld is missing") && strstr(drawn, "not move it."));
+	runtimeProblem = NULL;
+	MM_Solo_Open();
+	CHECK(s_soloPage != SOLO_MESSAGE);
 
 	menuTestLetters = true;
 	MM_Solo_Go(SOLO_HOME); frame(0, "Xbox home hints");
