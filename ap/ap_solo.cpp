@@ -513,7 +513,7 @@ bool HiddenTrackDescriptor(const nlohmann::json &descriptor)
 }
 
 // PS2: the source a Play Solo title names when two builds share a track key
-// and version: "Saphi", "<patch> patch" (the patch file players know, from
+// and version, as "Big Forest - Saphi": "Saphi", "<patch> patch" (the patch file players know, from
 // the track source table), "patch" or "local files". `origin` is the solo
 // runtime's {"kind": "saphi"|"patch"|"local", "patch_sha256"} or a
 // descriptor's locator; "" when it says nothing.
@@ -577,7 +577,7 @@ void LabelBuilds(std::vector<APSoloTrackInfo> &rows, const std::map<std::string,
 			if (label.empty())
 				continue;
 			std::string title = row.title;
-			const std::string suffix = " (" + label + ")";
+			const std::string suffix = " - " + label; // the menu font has no parentheses
 			if (title.size() + suffix.size() >= sizeof row.title)
 			{
 				size_t cut = sizeof row.title - 1 - suffix.size(); // never inside a UTF-8 sequence

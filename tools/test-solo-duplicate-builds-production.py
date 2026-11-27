@@ -133,10 +133,10 @@ int main(int, char **argv) {
     write("needs-laps/" + patchFile, patchWait.dump());
     ParseTracks({{"tracks", {runtimeRow("package/big-forest/1.0.0", saphiTag, {{"kind", "saphi"}}, "[]")}}});
     assert(g_tracks.size() == 2);
-    assert(std::string(g_tracks[0].id) == "package/big-forest/1.0.0" && std::string(g_tracks[0].title) == "Big Forest (Saphi)");
+    assert(std::string(g_tracks[0].id) == "package/big-forest/1.0.0" && std::string(g_tracks[0].title) == "Big Forest - Saphi");
     assert(std::string(g_tracks[0].file) == "big-forest__1.0.0.json" && std::string(g_tracks[0].creditLev) == hex('a'));
     assert(std::string(g_tracks[1].id) == "package/big-forest/1.0.0@" + patchTag && g_tracks[1].needsLaps);
-    assert(std::string(g_tracks[1].title) == "Big Forest (LRG2Pancho patch)" && std::string(g_tracks[1].file) == patchFile);
+    assert(std::string(g_tracks[1].title) == "Big Forest - LRG2Pancho patch" && std::string(g_tracks[1].file) == patchFile);
 
     // Picking its laps writes the LRG2 build's own complete file; the Saphi
     // build's entry is untouched.
@@ -152,7 +152,7 @@ int main(int, char **argv) {
                              runtimeRow("package/big-forest/1.0.0@" + patchTag, patchTag,
                                         {{"kind", "patch"}, {"patch_sha256", "@PATCH@"}}, "[\"trophy\",\"ctr\"]")}}});
     assert(g_tracks.size() == 2 && !g_tracks[0].needsLaps && !g_tracks[1].needsLaps);
-    assert(std::string(g_tracks[0].title) == "Big Forest (Saphi)" && std::string(g_tracks[1].title) == "Big Forest (LRG2Pancho patch)");
+    assert(std::string(g_tracks[0].title) == "Big Forest - Saphi" && std::string(g_tracks[1].title) == "Big Forest - LRG2Pancho patch");
     assert(std::string(g_tracks[1].file) == patchFile && std::string(g_tracks[1].creditLev) == hex('c'));
     assert(std::string(g_tracks[1].modes) == "Trophy, CTR" && g_tracks[0].modes[0] == '\0');
 
@@ -164,7 +164,7 @@ int main(int, char **argv) {
     ParseTracks({{"tracks", {runtimeRow("package/big-forest/1.0.0", saphiTag, {{"kind", "saphi"}}, "[]")}}});
     assert(g_tracks.size() == 2 && std::string(g_tracks[0].file) == "big-forest__1.0.0@" + saphiTag + ".json");
     assert(std::string(g_tracks[1].id) == "package/big-forest/1.0.0@" + patchTag && std::string(g_tracks[1].file) == "big-forest__1.0.0.json");
-    assert(std::string(g_tracks[0].title) == "Big Forest (Saphi)" && std::string(g_tracks[1].title) == "Big Forest (LRG2Pancho patch)");
+    assert(std::string(g_tracks[0].title) == "Big Forest - Saphi" && std::string(g_tracks[1].title) == "Big Forest - LRG2Pancho patch");
     // Laps for a waiting build under the plain name: written there, as before.
     assert(AP_Solo_TrackKeepLaps(1) && nlohmann::json::parse(read("tracks/big-forest__1.0.0.json"))["laps"] == 3);
 
@@ -188,7 +188,7 @@ int main(int, char **argv) {
         CopyText(rows[i].id, sizeof rows[i].id, std::string("package/fixture/1@") + rows[i].build);
     }
     LabelBuilds(rows, {{rows[0].id, {{"kind", "local"}}}, {rows[1].id, {{"kind", "local"}}}});
-    assert(std::string(rows[0].title) == "Fixture (local files aaaaaaaa)" && std::string(rows[1].title) == "Fixture (local files cccccccc)");
+    assert(std::string(rows[0].title) == "Fixture - local files aaaaaaaa" && std::string(rows[1].title) == "Fixture - local files cccccccc");
     assert(BuildSourceLabel({{"kind", "patch"}, {"patch_sha256", hex('e')}}) == "patch");
     assert(BuildSourceLabel(nlohmann::json()).empty());
     // A long title is cut so the source still fits, never inside UTF-8.
@@ -198,7 +198,7 @@ int main(int, char **argv) {
     CopyText(rows[1].title, sizeof rows[1].title, longTitle);
     LabelBuilds(rows, {{rows[0].id, {{"kind", "saphi"}}}, {rows[1].id, {{"kind", "patch"}, {"patch_sha256", "@PATCH@"}}}});
     const std::string cut = rows[1].title;
-    assert(cut.size() < sizeof rows[1].title && cut.size() > 30 && cut.compare(cut.size() - 19, 19, " (LRG2Pancho patch)") == 0);
+    assert(cut.size() < sizeof rows[1].title && cut.size() > 30 && cut.compare(cut.size() - 19, 19, " - LRG2Pancho patch") == 0);
     assert((((unsigned char)cut[cut.size() - 20]) & 0xc0) != 0xc0);
     // 6. MR2 round 4, finding 3: an old Relic-only file left waiting for laps
     // (legacy loose files, no store) is not offered as a track to pick laps for.
