@@ -20,8 +20,17 @@
 // tools/test-unlock-reasons.c pins every behaviour here out of engine.
 //
 // Header-only and free of engine types, like ap_pad_state.h.
+//
+// FN1: a garage counts as open only when the player can enter it: its own
+// gate is met AND the player holds the Keys of the hub it stands in. The Key
+// count comes from AP_PadActivityHubKeys, the one table the in-game tracker's
+// garage row (AP_GarageActivities) and fast travel ask, so the feed and the
+// tracker cannot disagree. A garage whose own gate is met first waits behind
+// its hub door and is announced once, when the Keys arrive.
 
 #include <stdio.h>
+
+#include "ap_pad_activity_logic.h" // AP_PadActivityHubKeys: the hub-door Key table
 
 // Watched pads: the 22 dense warp pads (0..19, 21, 23) plus the five gem cup
 // pads (100..104), mapped to bits 0..26. These are the only engine LevelIDs
@@ -42,7 +51,8 @@ typedef struct AP_UnlockWatch
 	unsigned padStage2;   // bit per pad slot: stage-2 requirement met
 	unsigned doorsReady;  // bit per door: received Keys reach its requirement
 	unsigned padsBehindDoor[AP_UNLOCK_DOOR_COUNT]; // pad rules met, Key gate closed
-	unsigned garagesOpen; // bit per garage: requirement met
+	unsigned garagesOpen; // bit per garage: own gate met and hub Keys held (enterable)
+	unsigned garagesBehindDoor; // bit per garage: own gate met, hub Keys missing
 	unsigned char shopOpen[AP_UNLOCK_SHOP_HUBS]; // unlocked (on-sale) slots per hub
 	unsigned char shopKnown; // the lifetime storage has resolved; 0 -> shop diff silent
 } AP_UnlockWatch;
@@ -89,6 +99,66 @@ static inline unsigned AP_UnlockHeldForDoor(unsigned *held, const AP_UnlockWatch
 	else
 		*held = now->padsBehindDoor[door];
 	return opened;
+}
+
+// FN1: the tracker hub index (0 Gem Stone Valley .. 4 Citadel City) garage
+// `g` stands in. Garages 0..3 are Ripper Roo, Papu Papu, Komodo Joe and
+// Pinstripe in hubs 1..4; Oxide's garage (4) is in Gem Stone Valley.
+static inline int AP_UnlockGarageHub(int g)
+{
+	return g == 4 ? 0 : g + 1;
+}
+
+// FN1: file garage `g` into the watch. `ownOpen` is the garage's own gate
+// (AP_BossGarageOpen / AP_OxideGarageOpen); `keysHave` the received Keys.
+static inline void AP_UnlockGarageClassify(AP_UnlockWatch *w, int g, int ownOpen, int keysHave)
+{
+	if (!ownOpen || g < 0 || g >= AP_UNLOCK_GARAGE_COUNT)
+		return;
+	if (keysHave >= AP_PadActivityHubKeys(AP_UnlockGarageHub(g), -1))
+		w->garagesOpen |= 1u << g;
+	else
+		w->garagesBehindDoor |= 1u << g;
+}
+
+// FN1: garages waiting for their hub door, kept across a same-room reconnect
+// like the held pads, so a garage whose Keys arrived while the client was
+// away is still announced once after the silent inventory absorb.
+typedef struct AP_UnlockGarageHold
+{
+	unsigned held;     // own gate met, hub closed, at the last live update
+	unsigned saved;    // held at the last disconnect, waiting for the room check
+	unsigned reported; // announced since this connection started
+} AP_UnlockGarageHold;
+
+static inline void AP_UnlockGarageConnectReset(AP_UnlockGarageHold *h, int mayResume, int alreadyPending)
+{
+	if (!mayResume)
+		h->saved = 0;
+	else if (!alreadyPending)
+		h->saved = h->held;
+	h->held = 0;
+	h->reported = 0;
+}
+
+static inline void AP_UnlockGarageResolveReconnect(AP_UnlockGarageHold *h, int sameRoom)
+{
+	if (sameRoom)
+		h->held |= h->saved & ~h->reported;
+	h->saved = 0;
+}
+
+// FN1: the garages to announce on one live update. `rose` is the diff's new
+// garagesOpen bits (0 on a quiet frame, which adopts non-item changes
+// silently). A held garage that is now enterable is announced even without
+// a diff (the reconnect case). Each garage is announced at most once per
+// connection. Returns the garage bit mask to announce.
+static inline unsigned AP_UnlockGarageAnnounce(AP_UnlockGarageHold *h, const AP_UnlockWatch *now, unsigned rose)
+{
+	unsigned out = ((h->held & now->garagesOpen) | (rose & now->garagesOpen)) & ~h->reported;
+	h->reported |= out;
+	h->held = now->garagesBehindDoor;
+	return out;
 }
 
 // Physical pad LevelID -> watch bit slot, or -1 when the id is no warp pad.
