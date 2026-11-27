@@ -245,12 +245,34 @@ static inline APSoloIdentity AP_SoloIdentity(const std::string &serverSeed, cons
 	return serverSeed == roomSeed ? AP_SOLO_ID_MATCH : AP_SOLO_ID_FOREIGN;
 }
 
+// What Play Solo tells the player when a file it needs beside the game is
+// gone (PS1). "" when all four are there. The client carries its own
+// generator, so ctr.apworld must sit next to the executable: a player who
+// moves it into an Archipelago install breaks New Solo Seed.
+static inline std::string AP_SoloRuntimeProblemText(bool hasFolder, bool hasPython, bool hasScript, bool hasApworld)
+{
+	if (!hasFolder)
+		return "The solo-runtime folder is missing from the game folder. Reinstall or update the client.";
+	if (!hasPython && !hasScript)
+		return "Python and ctr_solo.py are missing from the solo-runtime folder. Reinstall or update the client.";
+	if (!hasPython)
+		return "Python is missing from the solo-runtime folder. Reinstall or update the client.";
+	if (!hasScript)
+		return "ctr_solo.py is missing from the solo-runtime folder. Reinstall or update the client.";
+	if (!hasApworld)
+		return "ctr.apworld is missing from the game folder. Put it back next to the game: copy it, do not move it. "
+		       "Lost it? Reinstall or update the client.";
+	return "";
+}
+
 // The message the menu shows for an error event, by kind (design note,
 // "Invalid options and other errors").
 static inline std::string AP_SoloErrorText(const std::string &kind, const std::string &message)
 {
 	if (kind == "link")
 		return message;
+	if (kind == "runtime" && message.compare(0, 22, "ctr.apworld is missing") == 0)
+		return AP_SoloRuntimeProblemText(true, true, true, false); // the wrapper found it gone after the early check
 	if (kind == "runtime" || kind == "internal" || kind == "start")
 		return "Solo runtime is damaged. Reinstall or update the client.";
 	if (kind == "fill" || kind == "generate")
