@@ -31,6 +31,9 @@ static const size_t kDescriptorMax = 64 * 1024;
 static std::string SoloPath(const std::string &) { return "/nonexistent-solo-test"; }
 static std::string ReadSmallPlainFile(const fs::path &, size_t) { return {}; }
 '''
+# PS2: KeepOneCopyPerEntry compares descriptor pins with store signatures.
+start = solo.index("std::string PinSignature(const std::string &revision")
+extra += "namespace {\n" + solo[start:solo.index("\n}\n", start) + 3] + "}\n"
 extra += between("// PinSignature of a verified store package", "// Writes one collected descriptor.")
 extra += r'''
 extern "C" int ap_track_registry_lookup(const char *, uint32_t, const char *, uint32_t,

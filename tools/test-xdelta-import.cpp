@@ -1738,8 +1738,9 @@ int main()
             }
         }
         XdeltaImport_Free(&c.scan);
-        /* Two tracks with one track key and version: the first keeps the
-           Play Solo descriptor, the second would replace its file. */
+        /* Two tracks with one track key and version and other files are two
+           builds (PS2): both keep a Play Solo descriptor, the second under
+           its own build file name when the client records it. */
         {
             nlohmann::json same = d;
             same["tracks"]["9"]["track_key"] = "snow-lane-key";
@@ -1759,8 +1760,8 @@ int main()
                 mkdir(twinAssets.c_str(), 0755);
                 CHECK(XdeltaImportTest_InstallDescriptors(twin.scan, sel.data(), twinAssets.c_str(), &kept, nullptr, note,
                                                           sizeof note) == 2 &&
-                      kept == 1 && !std::strcmp(note, "Long Road is not on Play Solo: another track in this patch has the same track key"),
-                      "one descriptor per track key and version");
+                      kept == 2 && !std::strstr(note, "is not on Play Solo"),
+                      "one descriptor per track key, version and files");
             }
             XdeltaImport_Free(&twin.scan);
         }

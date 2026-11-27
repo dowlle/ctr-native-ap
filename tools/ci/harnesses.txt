@@ -233,6 +233,7 @@ tools/test-solo-selection-production.py
 tools/test-hidden-patch-tracks-production.py
 tools/test-solo-publication-production.py
 tools/test-solo-descriptor-records-production.py
+tools/test-solo-duplicate-builds-production.py
 tools/test-solo-toggle-wording-production.py
 tools/test-solo-logic.cpp
 tools/test-solo-runtime-message.cpp

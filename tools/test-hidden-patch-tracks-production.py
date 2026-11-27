@@ -106,6 +106,8 @@ static std::string base;
 static std::string BaseDir() { return base + "/"; }
 static std::string SoloPath(const std::string &rel) { return BaseDir() + "solo/" + rel; }
 static const std::string &AssetsDir() { return base; }
+// MR2 round 4, finding 3 (PS2): AddNeedsLapsRows skips known Relic-only pairs.
+std::vector<APSoloModePair> AP_SoloKnownModePairs() { return {}; }
 '''
 for signature in (
     "bool SoloRootIsLink()", "std::string ReadSmallPlainFile(", "bool CopyText(",

@@ -52,6 +52,7 @@ static int SDL_GetTicks() { return 42; }
 static std::string SoloPath(const std::string& s) { return s; }
 '''
 for signature in ('int WriteNewFile(', 'void ClearOptionOverrides()', 'bool AddOptionOverrides(',
+                  'static bool SameTrackForPicks(',  # PS2: one copy of a track per seed
                   'extern "C" void AP_Solo_TrackCycle(int index)',
                   'extern "C" int AP_Solo_GenerateStart(',
                   'extern "C" int AP_Solo_SetPassword(const char *password)',

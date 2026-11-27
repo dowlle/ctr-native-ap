@@ -9,6 +9,7 @@
 #include "ap_solo_track_visibility.hpp"
 #include "ap_net.h"
 #include "../include/platform/native_custom_track_visibility.h"
+#include "../include/platform/native_sha256.h" // PS2: loose copies are checked by hash (every AP build)
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_package.h>
 #include <platform/native_custom_track_library.h>
@@ -480,7 +481,7 @@ std::string NeedsLapsFileName(const APSoloTrackInfo &t);
 
 void ReadTrackCreditPins(APSoloTrackInfo &info, const nlohmann::json &descriptor)
 {
-	if (!descriptor.is_object() || AP_SoloJsonString(descriptor, "id") != info.id) return;
+	if (!descriptor.is_object() || AP_SoloJsonString(descriptor, "id") != AP_SoloRowBaseId(info.id)) return;
 	const auto files = descriptor.find("files");
 	if (files != descriptor.end() && files->is_array())
 		for (const auto &file : *files)
@@ -512,10 +513,135 @@ bool HiddenTrackDescriptor(const nlohmann::json &descriptor)
 	return false;
 }
 
+// PS2: the source a Play Solo title names when two builds share a track key
+// and version, as "Big Forest - Saphi": "Saphi", "<patch> patch" (the patch file players know, from
+// the track source table), "patch" or "local files". `origin` is the solo
+// runtime's {"kind": "saphi"|"patch"|"local", "patch_sha256"} or a
+// descriptor's locator; "" when it says nothing.
+std::string BuildSourceLabel(const nlohmann::json &origin)
+{
+	if (!origin.is_object())
+		return std::string();
+	const std::string kind = AP_SoloJsonString(origin, "kind");
+	if (kind == "saphi")
+		return "Saphi";
+	if (kind == "local")
+		return "local files";
+	if (kind != "patch" && kind != "xdelta")
+		return std::string();
+	std::string patch;
+#ifdef CTR_CUSTOM_PACKAGES
+	const std::string sha = AP_SoloJsonString(origin, "patch_sha256");
+	const char *file = sha.empty() ? nullptr : CustomTrackCredit_PatchSource(nullptr, sha.c_str());
+	if (file && std::strcmp(file, "an imported xdelta pack") != 0)
+		patch = file;
+#endif
+	const size_t dot = patch.rfind('.');
+	if (dot != std::string::npos && dot > 0)
+		patch.resize(dot);
+	return patch.empty() ? "patch" : patch + " patch";
+}
+
+// PS2: the source a waiting build's own package recorded (its metadata file
+// beside the files a room's lookup finds), or null when unknown. A Saphi
+// download without authored laps waits for laps too.
+nlohmann::json StoreOrigin(const nlohmann::json &d)
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	std::string lev, vrm;
+	uint64_t levBytes = 0, vrmBytes = 0;
+	char levPath[4096], vrmPath[4096], uuid[37] = {};
+	if (!AP_SoloDescriptorPins(d, lev, levBytes, vrm, vrmBytes) ||
+	    !CustomPackage_FindPinnedFilesWithIdentity(AssetsDir().c_str(), AP_SoloJsonString(d, "revision").c_str(),
+	                                               AP_SoloJsonString(d, "uuid").c_str(), lev.c_str(), (unsigned long)levBytes,
+	                                               vrm.c_str(), (unsigned long)vrmBytes, levPath, sizeof levPath, vrmPath,
+	                                               sizeof vrmPath, uuid))
+		return nullptr;
+	std::error_code ec;
+	const fs::path package = fs::u8path(levPath).parent_path().parent_path();
+	if (fs::exists(package / "metadata/saphi-source.json", ec) || fs::exists(package / "metadata/seed-source.json", ec))
+		return {{"kind", "saphi"}};
+	if (fs::exists(package / "metadata/xdelta-source.json", ec))
+		return {{"kind", "patch"}};
+	return nullptr;
+#else
+	(void)d;
+	return nullptr;
+#endif
+}
+
+// PS2: rows that share a descriptor id are builds of one track key and version
+// with other files. Each title gets its source, so a player can tell them
+// apart; two builds from the same source also get their build tag.
+// `origins` holds the solo runtime's origin per row id; a waiting row is an
+// import, its descriptor's locator names the patch.
+void LabelBuilds(std::vector<APSoloTrackInfo> &rows, const std::map<std::string, nlohmann::json> &origins)
+{
+	std::map<std::string, std::vector<size_t>> groups;
+	for (size_t i = 0; i < rows.size(); i++)
+		groups[AP_SoloRowBaseId(rows[i].id)].push_back(i);
+	for (const auto &group : groups)
+	{
+		if (group.second.size() < 2)
+			continue;
+		std::vector<std::string> labels;
+		for (size_t i : group.second)
+		{
+			const auto found = origins.find(rows[i].id);
+			nlohmann::json origin = found != origins.end() ? found->second : nlohmann::json();
+			if (!origin.is_object() && rows[i].needsLaps && rows[i].file[0])
+			{
+				const auto d = nlohmann::json::parse(
+				    ReadSmallPlainFile(fs::u8path(SoloPath("needs-laps")) / fs::u8path(rows[i].file), kDescriptorMax), nullptr, false);
+				origin = d.is_object() && d.contains("locator") ? d["locator"] : StoreOrigin(d);
+			}
+			labels.push_back(BuildSourceLabel(origin));
+		}
+		for (size_t n = 0; n < group.second.size(); n++)
+		{
+			APSoloTrackInfo &row = rows[group.second[n]];
+			std::string label = labels[n];
+			if (std::count(labels.begin(), labels.end(), label) > 1 || label.empty())
+			{
+				// Two builds from one source: 8 hex digits of the LEV, or of
+				// the VRM when they share a LEV.
+				const std::string tag = row.build;
+				bool sameLev = false;
+				for (size_t m = 0; m < group.second.size(); m++)
+					sameLev = sameLev || (m != n && std::string(rows[group.second[m]].build).substr(0, 16) == tag.substr(0, 16));
+				label += std::string(label.empty() ? "" : " ") + (sameLev && tag.size() == 32 ? tag.substr(16, 8) : tag.substr(0, 8));
+			}
+			if (label.empty())
+				continue;
+			std::string title = row.title;
+			const std::string suffix = " - " + label; // the menu font has no parentheses
+			if (title.size() + suffix.size() >= sizeof row.title)
+			{
+				size_t cut = sizeof row.title - 1 - suffix.size(); // never inside a UTF-8 sequence
+				while (cut > 0 && ((unsigned char)title[cut] & 0xc0) == 0x80)
+					cut--;
+				title.resize(cut);
+			}
+			CopyText(row.title, sizeof row.title, title + suffix);
+		}
+	}
+}
+
+// The same row in two lists (PS2): the same descriptor id and build tag, since
+// a row id gains or loses "@<build>" when another build of its track appears
+// or goes, and a plain row id may name other files after a reinstall.
+bool SameTrackRow(const APSoloTrackInfo &a, const APSoloTrackInfo &b)
+{
+	if (a.build[0] && b.build[0])
+		return std::strcmp(a.build, b.build) == 0 && AP_SoloRowBaseId(a.id) == AP_SoloRowBaseId(b.id);
+	return std::strcmp(a.id, b.id) == 0; // an older runtime reports no build tag
+}
+
 // A new track list keeps the picks of the tracks still in it. The first list of a
 // start begins as the YAML has each track.
 void ParseTracks(const nlohmann::json &r)
 {
+	std::map<std::string, nlohmann::json> origins; // PS2: row id -> recorded source
 	std::vector<APSoloTrackInfo> next;
 	if (r.contains("tracks") && r["tracks"].is_array())
 		for (const auto &t : r["tracks"])
@@ -529,24 +655,48 @@ void ParseTracks(const nlohmann::json &r)
 			CopyText(info.title, sizeof info.title, AP_SoloJsonString(t, "display_name"));
 			CopyText(info.revision, sizeof info.revision, AP_SoloJsonString(t, "revision"));
 			CopyText(info.author, sizeof info.author, AP_SoloJsonString(t, "author"));
-			const auto descriptorName = NeedsLapsFileName(info);
-			if (!descriptorName.empty() && AP_SoloJsonString(t, "source") == "file")
-				ReadTrackCreditPins(info, nlohmann::json::parse(
-					ReadSmallPlainFile(fs::u8path(SoloPath("tracks")) / fs::u8path(descriptorName), kDescriptorMax),
-					nullptr, false));
+			const std::string build = AP_SoloJsonString(t, "build");
+			if (build.size() == 32)
+				CopyText(info.build, sizeof info.build, build);
+			if (t.contains("origin"))
+				origins[info.id] = t["origin"];
+			if (AP_SoloJsonString(t, "source") == "file")
+			{
+				// PS2: the build's file is the plain name when that holds its
+				// pins, else its build name.
+				const std::string plain = NeedsLapsFileName(info);
+				const auto read = [](const std::string &name) {
+					return name.empty() ? nlohmann::json() : nlohmann::json::parse(
+					    ReadSmallPlainFile(fs::u8path(SoloPath("tracks")) / fs::u8path(name), kDescriptorMax), nullptr, false);
+				};
+				nlohmann::json d = read(plain);
+				std::string name = plain;
+				if (info.build[0] && (!d.is_object() || AP_SoloBuildTag(d.value("files", nlohmann::json())) != info.build))
+				{
+					const std::string revision = AP_SoloJsonString(t, "revision");
+					name = AP_SoloBuildDescriptorFileName(AP_SoloJsonString(t, "content_id"), revision, info.build);
+					d = read(name);
+				}
+				if (d.is_object())
+				{
+					CopyText(info.file, sizeof info.file, name);
+					ReadTrackCreditPins(info, d);
+				}
+			}
 			CopyText(info.modes, sizeof info.modes, AP_SoloTrackModes(t.value("modes", nlohmann::json())));
 			info.timeTrial = t.value("time_trial", false) ? 1 : 0;
 			info.pick = AP_SoloTrackStart(t);
 			g_trackStarts[info.id] = info.pick;
 			for (const auto &old : g_tracks)
-				if (std::strcmp(old.id, info.id) == 0)
+				if (SameTrackRow(old, info))
 					info.pick = old.pick;
 			next.push_back(info);
 		}
 	AddNeedsLapsRows(next);
+	LabelBuilds(next, origins);
 	for (APSoloTrackInfo &info : next)
 		for (const auto &old : g_tracks)
-			if (info.needsLaps && std::strcmp(old.id, info.id) == 0 && old.needsLaps)
+			if (info.needsLaps && old.needsLaps && SameTrackRow(old, info))
 				info.laps = old.laps;
 	g_tracks = next;
 }
@@ -1040,6 +1190,24 @@ extern "C" int AP_Solo_TrackGet(int index, struct APSoloTrackInfo *out)
 	return 1;
 }
 
+// One seed lists one copy of a track: the same track key, or (PS2) two keys
+// the registry names as one track, which the solo runtime refuses together.
+static bool SameTrackForPicks(const std::string &a, const std::string &b)
+{
+	if (AP_SoloTrackSameContent(a, b))
+		return true;
+#ifdef CTR_CUSTOM_PACKAGES
+	const auto key = [](const std::string &id) {
+		const size_t slash = id.find('/', 8);
+		return id.compare(0, 8, "package/") == 0 && slash != std::string::npos ? id.substr(8, slash - 8) : std::string();
+	};
+	const std::string ka = key(a), kb = key(b);
+	return !ka.empty() && !kb.empty() && ap_track_registry_canonical_key(ka) == ap_track_registry_canonical_key(kb);
+#else
+	return false;
+#endif
+}
+
 extern "C" void AP_Solo_TrackCycle(int index)
 {
 	if (index >= 0 && index < (int)g_tracks.size() && !g_tracks[index].needsLaps)
@@ -1047,7 +1215,7 @@ extern "C" void AP_Solo_TrackCycle(int index)
 		g_tracks[index].pick = g_tracks[index].modes[0] ? AP_SoloTrackNextPick(g_tracks[index].pick) : AP_SOLO_TRACK_OFF;
 		if (g_tracks[index].pick != AP_SOLO_TRACK_OFF)
 			for (int other = 0; other < (int)g_tracks.size(); ++other)
-				if (other != index && AP_SoloTrackSameContent(g_tracks[index].id, g_tracks[other].id))
+				if (other != index && SameTrackForPicks(g_tracks[index].id, g_tracks[other].id))
 					g_tracks[other].pick = AP_SOLO_TRACK_OFF;
 	}
 }
@@ -1170,11 +1338,23 @@ void DropNeedsLaps(const std::string &name)
 		fs::remove(target, ec);
 }
 
+// PS2: DropNeedsLaps only while the waiting entry has these file pins: under
+// a plain name another build may wait for its laps.
+void DropNeedsLapsOf(const std::string &name, const nlohmann::json &files)
+{
+	const auto pending = nlohmann::json::parse(
+	    ReadSmallPlainFile(fs::u8path(SoloPath("needs-laps")) / fs::u8path(name), kDescriptorMax), nullptr, false);
+	if (!pending.is_object() || pending.value("files", nlohmann::json()) == files)
+		DropNeedsLaps(name);
+}
+
 // solo/needs-laps/<track key>__<revision>.json of a listed row
 // (id package/<track key>/<revision>), or "".
 std::string NeedsLapsFileName(const APSoloTrackInfo &t)
 {
-	const std::string id = t.id;
+	if (t.file[0])
+		return t.file; // PS2: a build beside another one has its own name
+	const std::string id = AP_SoloRowBaseId(t.id);
 	const size_t slash = id.find('/', 8);
 	if (id.compare(0, 8, "package/") != 0 || slash == std::string::npos)
 		return std::string();
@@ -1233,6 +1413,15 @@ void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)
 		                                               nullptr, false);
 		if (!AP_SoloNeedsLapsDescriptor(d, name) || HiddenTrackDescriptor(d))
 			continue;
+		// MR2 round 4, finding 3: a Relic-only file an older client left
+		// waiting for laps (a legacy loose install with no store for the
+		// publication to retire it) is never offered as a track.
+		{
+			nlohmann::json probe = d;
+			std::string note;
+			if (AP_SoloApplyModePair(probe, AP_SoloKnownModePairs(), note) == AP_SOLO_PAIR_RELIC_ONLY)
+				continue;
+		}
 		APSoloTrackInfo info;
 		std::memset(&info, 0, sizeof info);
 		if (!CopyText(info.id, sizeof info.id, AP_SoloJsonString(d, "id")) ||
@@ -1240,11 +1429,23 @@ void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)
 			continue;
 		CopyText(info.title, sizeof info.title, AP_SoloJsonString(d, "display_name"));
 		CopyText(info.author, sizeof info.author, AP_SoloJsonString(d, "author"));
+		CopyText(info.build, sizeof info.build, AP_SoloBuildTag(d.value("files", nlohmann::json())));
+		CopyText(info.file, sizeof info.file, name);
 		ReadTrackCreditPins(info, d);
-		bool listed = false;
+		// PS2: listed already when a row has this id and these files. A row
+		// with this id and other files is another build: this one gets its own
+		// row id. A row without a build tag (an older runtime) counts as this one.
+		bool listed = false, other = false;
 		for (const APSoloTrackInfo &row : rows)
-			listed = listed || std::strcmp(row.id, info.id) == 0;
+			if (AP_SoloRowBaseId(row.id) == info.id)
+			{
+				const bool same = !row.build[0] || !info.build[0] || std::strcmp(row.build, info.build) == 0;
+				listed = listed || same;
+				other = other || !same;
+			}
 		if (listed)
+			continue;
+		if (other && !CopyText(info.id, sizeof info.id, AP_SoloBuildRowId(info.id, info.build)))
 			continue;
 		const auto files = d.find("files");
 		bool installed = files != d.end() && files->is_array() && files->size() == 2;
@@ -1332,25 +1533,110 @@ bool RelicRowOfRacePair(const nlohmann::json &kept, const nlohmann::json &fresh)
 	return false;
 }
 
+// PS2: a file in assets/tracks/<folder>/original with the pin's suffix, size
+// and SHA-256. PinnedFilePresent checks the size only (it runs for every
+// listed row); this one decides whether another build's entry may be taken
+// over.
+bool LooseFileWithPin(const std::string &folderName, const nlohmann::json &pin)
+{
+	const std::string role = AP_SoloJsonString(pin, "role"), sha = AP_SoloJsonString(pin, "sha256");
+	const auto bytes = pin.is_object() ? pin.find("bytes") : pin.end();
+	if ((role != "lev" && role != "vrm") || sha.size() != 64 || bytes == pin.end() || !bytes->is_number_unsigned())
+		return false;
+	const std::uintmax_t size = bytes->get<std::uintmax_t>();
+	std::error_code ec;
+	const fs::path folder = fs::u8path(AssetsDir()) / "tracks" / fs::u8path(folderName) / "original";
+	for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec))
+	{
+		std::string name = it->path().filename().u8string();
+		for (char &c : name)
+			c = (char)std::tolower((unsigned char)c);
+		std::error_code fe;
+		if (name.size() <= 4 || name.compare(name.size() - 4, 4, "." + role) != 0 ||
+		    !fs::is_regular_file(it->symlink_status(fe)) || fs::file_size(it->path(), fe) != size || fe)
+			continue;
+		std::ifstream in(it->path(), std::ios::binary);
+		NativeSha256Ctx ctx;
+		NativeSha256_Init(&ctx);
+		char buffer[65536];
+		while (in.read(buffer, sizeof buffer) || in.gcount() > 0)
+			NativeSha256_Update(&ctx, buffer, (size_t)in.gcount());
+		unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
+		char hex[NATIVE_SHA256_HEX_BYTES];
+		NativeSha256_Final(&ctx, digest);
+		NativeSha256_ToHex(digest, hex);
+		if (NativeSha256_HexEquals(sha.c_str(), hex))
+			return true;
+	}
+	return false;
+}
+
+// PS2: every pin of `files` as a loose file, with its hash, in the track's
+// own folder or its versioned folder (assets/tracks/<key>-<revision>), the
+// folders a room's lookup and the solo runtime accept.
+bool LooseCopyInstalled(const nlohmann::json &files, const std::string &key, const std::string &revision)
+{
+	if (!files.is_array() || files.empty())
+		return false;
+	for (const std::string &folder : {key, key + "-" + revision})
+	{
+		bool all = true;
+		for (const auto &pin : files)
+			all = all && LooseFileWithPin(folder, pin);
+		if (all)
+			return true;
+	}
+	return false;
+}
+
+// PS2: true while the files a kept descriptor pins are still installed: a
+// verified package in the shared store with those pins under its version, or
+// loose files in assets/tracks/<key>/original with those hashes. A fresh
+// install asks this before it takes a name over: another installed build
+// keeps its entry, and the new build gets its own file. It runs only when a
+// name holds another build's pins.
+bool KeptCopyInstalled(const nlohmann::json &kept, const std::string &key, const std::string &revision)
+{
+	const nlohmann::json files = kept.value("files", nlohmann::json());
+#ifdef CTR_CUSTOM_PACKAGES
+	std::string lev, vrm;
+	uint64_t levBytes = 0, vrmBytes = 0;
+	if (AP_SoloDescriptorPins(kept, lev, levBytes, vrm, vrmBytes))
+	{
+		char levPath[4096], vrmPath[4096];
+		if (CustomPackage_FindPinnedFiles(AssetsDir().c_str(), revision.c_str(), nullptr, lev.c_str(),
+		                                  (unsigned long)levBytes, vrm.c_str(), (unsigned long)vrmBytes, levPath,
+		                                  sizeof levPath, vrmPath, sizeof vrmPath))
+			return true;
+	}
+#else
+	(void)revision;
+#endif
+	return LooseCopyInstalled(files, key, revision);
+}
+
 bool MayReplace(const nlohmann::json &kept, const nlohmann::json &fresh, const std::string &key,
                 const std::string &revision, const DescriptorScope &scope)
 {
-	if (scope.fresh)
-		return true;
 	if (RelicRowOfRacePair(kept, fresh))
 		return true;
+	if ((scope.fresh || scope.live) && HiddenTrackDescriptor(kept))
+		return true; // Only the discovery entry changes. The pinned package remains installed.
+	if (scope.fresh)
+	{
+		// The same package cut again (one package uuid, other files) is the
+		// newest install of that package, as the full scan folds it (A3-29).
+		const std::string uuid = AP_SoloJsonString(kept, "uuid");
+		if (!uuid.empty() && uuid == AP_SoloJsonString(fresh, "uuid"))
+			return true;
+		return !KeptCopyInstalled(kept, key, revision); // PS2: an installed build keeps its entry
+	}
 	if (!scope.live)
 		return false;
-	if (HiddenTrackDescriptor(kept))
-		return true; // Only the discovery entry changes. The pinned package remains installed.
 	const nlohmann::json files = kept.value("files", nlohmann::json());
 	if (scope.live->count(PinSignature(revision, files)))
 		return false;
-	bool loose = files.is_array() && !files.empty();
-	if (loose)
-		for (const auto &pin : files)
-			loose = loose && PinnedFilePresent(key, pin);
-	return !loose;
+	return !LooseCopyInstalled(files, key, revision); // PS2: by hash, in either folder
 }
 
 // Removes our own plain descriptor file, clearing a read-only bit once.
@@ -1380,47 +1666,80 @@ bool RetireDescriptor(const std::string &key, const std::string &revision, const
                       const std::string &keeperRevision = std::string())
 {
 	bool removedAll = true;
-	const std::string name = AP_SoloDescriptorFileName(key, revision);
-	const std::string keeperName = AP_SoloDescriptorFileName(keeperKey, keeperRevision.empty() ? revision : keeperRevision);
+	const std::string plain = AP_SoloDescriptorFileName(key, revision);
+	const std::string keeperRev = keeperRevision.empty() ? revision : keeperRevision;
+	const std::string keeperPlain = AP_SoloDescriptorFileName(keeperKey, keeperRev);
 	std::error_code ec;
-	if (name.empty() || keeperName.empty() || uuid.empty() || SoloRootIsLink())
+	if (plain.empty() || keeperPlain.empty() || uuid.empty() || SoloRootIsLink())
 		return true;
 	for (const char *folder : {"tracks", "needs-laps"})
 	{
 		const fs::path dir = fs::u8path(SoloPath(folder));
 		if (fs::is_symlink(dir, ec))
 			continue;
-		const fs::path target = dir / fs::u8path(name);
-		const auto d = nlohmann::json::parse(ReadSmallPlainFile(target, kDescriptorMax), nullptr, false);
-		std::string detail;
-		if (!d.is_object() || AP_SoloJsonString(d, "uuid") != uuid)
-			continue;
-		if (std::strcmp(folder, "tracks") == 0 && d.contains("laps"))
+		// PS2: the old copy's entry is under the plain name or, beside another
+		// build of that key and version, under its own build name.
+		std::vector<std::string> names = {plain};
+		const std::string stem = plain.substr(0, plain.size() - 5) + "@";
+		for (fs::directory_iterator it(dir, ec), end; !ec && it != end && names.size() < 16; it.increment(ec))
 		{
-			const auto pending = nlohmann::json::parse(
-			    ReadSmallPlainFile(fs::u8path(SoloPath("needs-laps")) / fs::u8path(keeperName), kDescriptorMax), nullptr, false);
-			auto merged = AP_SoloMergeNeedsLaps(d, pending);
-			if (!merged.is_null())
-				merged = WithModePair(merged, d); // MR2: the moved row keeps its Relic pair
-			if (!merged.is_null())
-			{
-				// The old file holds the player's laps until they are safe in the new one.
-				if (!KeepDescriptorFile("tracks", keeperName, merged.dump()))
-				{
-					why = "its laps could not be moved to solo/tracks/" + keeperName;
-					Log("kept solo/tracks/" + name + ": " + why);
-					return false;
-				}
-				DropNeedsLaps(keeperName);
-			}
+			const std::string file = it->path().filename().u8string();
+			if (file.size() == stem.size() + 37 && file.compare(0, stem.size(), stem) == 0)
+				names.push_back(file);
 		}
-		if (RemoveDescriptorFile(target, detail))
-			Log(std::string("retired solo/") + folder + "/" + name + ": the active copy lists the track under another key");
-		else
+		for (const std::string &name : names)
 		{
-			Log(std::string("could not retire solo/") + folder + "/" + name + ": " + detail);
-			removedAll = false;
-			why = "could not remove solo/" + std::string(folder) + "/" + name;
+			const fs::path target = dir / fs::u8path(name);
+			const auto d = nlohmann::json::parse(ReadSmallPlainFile(target, kDescriptorMax), nullptr, false);
+			std::string detail;
+			if (!d.is_object() || AP_SoloJsonString(d, "uuid") != uuid)
+				continue;
+			if (std::strcmp(folder, "tracks") == 0 && d.contains("laps"))
+			{
+				// The keeper has the same files. It waits under its plain name
+				// or its build name (PS2), and its complete entry never goes
+				// over another build's entry.
+				const nlohmann::json files = d.value("files", nlohmann::json());
+				const std::string keeperBuild = AP_SoloBuildDescriptorFileName(keeperKey, keeperRev, AP_SoloBuildTag(files));
+				const auto at = [&](const char *where, const std::string &file) {
+					return file.empty() ? nlohmann::json() : nlohmann::json::parse(
+					    ReadSmallPlainFile(fs::u8path(SoloPath(where)) / fs::u8path(file), kDescriptorMax), nullptr, false);
+				};
+				const auto pinsAt = [&](const char *where, const std::string &file) {
+					const auto j = at(where, file);
+					return j.is_object() ? j.value("files", nlohmann::json()) : nlohmann::json();
+				};
+				const std::string pendingName = pinsAt("needs-laps", keeperPlain) == files ? keeperPlain :
+				                                pinsAt("needs-laps", keeperBuild) == files ? keeperBuild : std::string();
+				const nlohmann::json plainKept = pinsAt("tracks", keeperPlain);
+				const std::string keeperName =
+				    pendingName != keeperBuild && (plainKept.is_null() || plainKept == files) ? keeperPlain : keeperBuild;
+				if (!pendingName.empty() && keeperName.empty())
+					continue; // no file this build may use: the old entry keeps the laps
+				auto merged = pendingName.empty() || keeperName.empty() ? nlohmann::json()
+				                                                        : AP_SoloMergeNeedsLaps(d, at("needs-laps", pendingName));
+				if (!merged.is_null())
+					merged = WithModePair(merged, d); // MR2: the moved row keeps its Relic pair
+				if (!merged.is_null())
+				{
+					// The old file holds the player's laps until they are safe in the new one.
+					if (!KeepDescriptorFile("tracks", keeperName, merged.dump()))
+					{
+						why = "its laps could not be moved to solo/tracks/" + keeperName;
+						Log("kept solo/tracks/" + name + ": " + why);
+						return false;
+					}
+					DropNeedsLapsOf(pendingName, files);
+				}
+			}
+			if (RemoveDescriptorFile(target, detail))
+				Log(std::string("retired solo/") + folder + "/" + name + ": the active copy lists the track under another key");
+			else
+			{
+				Log(std::string("could not retire solo/") + folder + "/" + name + ": " + detail);
+				removedAll = false;
+				why = "could not remove solo/" + std::string(folder) + "/" + name;
+			}
 		}
 	}
 	return removedAll || !strict;
@@ -1431,25 +1750,65 @@ bool RetireDescriptor(const std::string &key, const std::string &revision, const
 // track of its own. Anything else in those folders is left alone.
 void HideRelicOnlyDescriptor(const std::string &key, const std::string &revision, const std::string &filesJson)
 {
-	const std::string name = AP_SoloDescriptorFileName(key, revision);
+	const std::string plain = AP_SoloDescriptorFileName(key, revision);
 	const nlohmann::json files = nlohmann::json::parse(filesJson, nullptr, false);
 	std::error_code ec;
-	if (name.empty() || !files.is_array() || SoloRootIsLink())
+	if (plain.empty() || !files.is_array() || SoloRootIsLink())
 		return;
-	for (const char *folder : {"tracks", "needs-laps"})
+	// PS2: a Relic build may also sit under its own build name.
+	const std::string build = AP_SoloBuildDescriptorFileName(key, revision, AP_SoloBuildTag(files));
+	for (const std::string &name : {plain, build})
 	{
-		const fs::path dir = fs::u8path(SoloPath(folder));
-		if (fs::is_symlink(dir, ec))
-			continue;
-		const fs::path target = dir / fs::u8path(name);
-		const auto kept = nlohmann::json::parse(ReadSmallPlainFile(target, kDescriptorMax), nullptr, false);
-		if (!kept.is_object() || kept.value("files", nlohmann::json()) != files)
-			continue;
-		std::string detail;
-		if (RemoveDescriptorFile(target, detail))
-			Log(std::string("retired solo/") + folder + "/" + name + ": it is the Relic Race file of a split track");
-		else
-			Log(std::string("could not retire solo/") + folder + "/" + name + ": " + detail);
+		for (const char *folder : {"tracks", "needs-laps"})
+		{
+			const fs::path dir = fs::u8path(SoloPath(folder));
+			if (name.empty() || fs::is_symlink(dir, ec))
+				continue;
+			const fs::path target = dir / fs::u8path(name);
+			const auto kept = nlohmann::json::parse(ReadSmallPlainFile(target, kDescriptorMax), nullptr, false);
+			if (!kept.is_object() || kept.value("files", nlohmann::json()) != files)
+				continue;
+			std::string detail;
+			if (RemoveDescriptorFile(target, detail))
+				Log(std::string("retired solo/") + folder + "/" + name + ": it is the Relic Race file of a split track");
+			else
+				Log(std::string("could not retire solo/") + folder + "/" + name + ": " + detail);
+		}
+	}
+}
+
+// PS2: removes our own solo/tracks and solo/needs-laps entries with exactly
+// these file pins and this package uuid (`retiring` holds both) under the
+// key's plain or build name: an older cut of a package whose newest cut is
+// now listed. Its package stays in the store for
+// the rooms that pin it; only the Play Solo entry goes.
+void RetireExactBuild(const std::string &key, const std::string &revision, const std::string &retiring)
+{
+	const nlohmann::json what = nlohmann::json::parse(retiring, nullptr, false);
+	const nlohmann::json files = what.is_object() ? what.value("files", nlohmann::json()) : nlohmann::json();
+	const std::string uuid = what.is_object() ? AP_SoloJsonString(what, "uuid") : std::string();
+	const std::string plain = AP_SoloDescriptorFileName(key, revision);
+	std::error_code ec;
+	if (plain.empty() || !files.is_array() || uuid.empty() || SoloRootIsLink())
+		return;
+	const std::string build = AP_SoloBuildDescriptorFileName(key, revision, AP_SoloBuildTag(files));
+	for (const std::string &name : {plain, build})
+	{
+		for (const char *folder : {"tracks", "needs-laps"})
+		{
+			const fs::path dir = fs::u8path(SoloPath(folder));
+			if (name.empty() || fs::is_symlink(dir, ec))
+				continue;
+			const fs::path target = dir / fs::u8path(name);
+			const auto kept = nlohmann::json::parse(ReadSmallPlainFile(target, kDescriptorMax), nullptr, false);
+			if (!kept.is_object() || kept.value("files", nlohmann::json()) != files || AP_SoloJsonString(kept, "uuid") != uuid)
+				continue;
+			std::string detail;
+			if (RemoveDescriptorFile(target, detail))
+				Log(std::string("retired solo/") + folder + "/" + name + ": a newer cut of the same package is listed");
+			else
+				Log(std::string("could not retire solo/") + folder + "/" + name + ": " + detail);
+		}
 	}
 }
 
@@ -1476,6 +1835,12 @@ nlohmann::json WithModePair(nlohmann::json d, const nlohmann::json &kept)
 // is a complete descriptor for solo/tracks, kind 2 one that waits for its laps
 // in solo/needs-laps. Every refusal is logged with its file name and gives
 // `why` a short reason the player can act on.
+//
+// PS2: the file is solo/<folder>/<key>__<revision>.json, the plain name,
+// unless that name holds another build of the same key and version (other
+// file pins) that may not be replaced: then this build keeps its own entry
+// under AP_SoloBuildDescriptorFileName, and both stay listed. A build that
+// already has a file keeps using it. Nothing is refused for a clash of names.
 bool RecordDescriptor(int kind, const char *contentId, const char *revision, const char *json,
                       const DescriptorScope &scope, std::string &why)
 {
@@ -1485,7 +1850,8 @@ bool RecordDescriptor(int kind, const char *contentId, const char *revision, con
 		Log("refused a descriptor without id, revision or body");
 		return false;
 	}
-	const std::string name = AP_SoloDescriptorFileName(contentId, revision);
+	const std::string plain = AP_SoloDescriptorFileName(contentId, revision);
+	std::string name = plain;
 	auto refuse = [&](const std::string &reason, const std::string &detail) {
 		why = reason;
 		Log("refused " + (name.empty() ? std::string(contentId) + " " + revision : name) + ": " + detail);
@@ -1502,43 +1868,94 @@ bool RecordDescriptor(int kind, const char *contentId, const char *revision, con
 	const fs::path tracks = fs::u8path(SoloPath("tracks"));
 	if (fs::is_symlink(tracks, ec))
 		return refuse("solo/tracks is a link; make it a normal folder", "solo/tracks is a link");
-	const nlohmann::json kept = nlohmann::json::parse(ReadSmallPlainFile(tracks / fs::u8path(name), kDescriptorMax),
-	                                                  nullptr, false);
-	const nlohmann::json pending = nlohmann::json::parse(
-	    ReadSmallPlainFile(fs::u8path(SoloPath("needs-laps")) / fs::u8path(name), kDescriptorMax), nullptr, false);
+	auto readAt = [&](const char *folder, const std::string &file) {
+		return nlohmann::json::parse(ReadSmallPlainFile(fs::u8path(SoloPath(folder)) / fs::u8path(file), kDescriptorMax),
+		                             nullptr, false);
+	};
+	auto pinsOf = [](const nlohmann::json &d) {
+		return d.is_object() && d.contains("files") ? d["files"] : nlohmann::json();
+	};
+	// Where this build's descriptor goes (PS2).
+	const std::string build = AP_SoloBuildDescriptorFileName(contentId, revision, AP_SoloBuildTag(fresh["files"]));
+	{
+		const nlohmann::json plainKept = readAt("tracks", plain), plainPending = readAt("needs-laps", plain);
+		bool plainOurs = pinsOf(plainKept) == fresh["files"] || pinsOf(plainPending) == fresh["files"];
+		// Only waiting under the plain name while another installed build
+		// holds its complete entry there: a complete descriptor moves out.
+		if (plainOurs && kind != 2 && pinsOf(plainKept) != fresh["files"] && pinsOf(plainKept).is_array() &&
+		    !MayReplace(plainKept, fresh, contentId, revision, scope))
+			plainOurs = false;
+		if (!plainOurs && !build.empty())
+		{
+			const bool buildUsed = pinsOf(readAt("tracks", build)).is_array() || pinsOf(readAt("needs-laps", build)).is_array();
+			std::string holder;
+			for (const nlohmann::json *d : {&plainKept, &plainPending})
+				if (holder.empty() && pinsOf(*d).is_array() && !MayReplace(*d, fresh, contentId, revision, scope))
+					holder = AP_SoloJsonString(*d, "display_name");
+			if (buildUsed || !holder.empty())
+			{
+				name = build;
+				if (!buildUsed)
+					Log("listing " + plain + " beside another installed build of the same version" +
+					    (holder.empty() ? std::string() : " (" + holder + ")") + " as " + build);
+			}
+		}
+	}
+	const nlohmann::json kept = readAt("tracks", name);
+	const nlohmann::json pending = readAt("needs-laps", name);
 	const bool keptOther = kept.is_object() && kept.contains("files") && kept["files"] != fresh["files"];
 	const bool pendingOther = pending.is_object() && pending.contains("files") && pending["files"] != fresh["files"];
-	for (const auto &[other, d, folder] : {std::make_tuple(keptOther, &kept, "solo/tracks"),
-	                                       std::make_tuple(pendingOther, &pending, "solo/needs-laps")})
+	// Under the plain name, the other folder may hold another installed build
+	// beside this one (an entry an older client wrote): it is left alone.
+	const bool keptOurs = kept.is_object() && kept.contains("files") && !keptOther;
+	const bool pendingOurs = pending.is_object() && pending.contains("files") && !pendingOther;
+	bool replaceKept = false, replacePending = false;
+	for (const auto &[other, d, folder, replace] : {std::make_tuple(keptOther, &kept, "solo/tracks", &replaceKept),
+	                                               std::make_tuple(pendingOther, &pending, "solo/needs-laps", &replacePending)})
 	{
 		if (!other)
 			continue;
 		if (!MayReplace(*d, fresh, contentId, revision, scope))
+		{
+			if (keptOurs || pendingOurs)
+			{
+				Log(std::string("left ") + folder + "/" + name + " alone: it is another installed build of this version");
+				continue;
+			}
 			return refuse("another installed copy has the same name and version but other files; "
 			              "reinstall the copy you want to play",
 			              std::string(folder) + " holds other file pins of a copy that is still installed");
+		}
+		*replace = true;
 		Log(std::string("replacing ") + folder + "/" + name + ": " +
-		    (scope.fresh ? "a copy with other files was just installed" :
-		     RelicRowOfRacePair(*d, fresh) ? "it is the Relic Race file of this track, which the race file carries" :
-		     HiddenTrackDescriptor(*d) ? "the previous copy is hidden" : "its files are no longer installed"));
+		    (RelicRowOfRacePair(*d, fresh) ? "it is the Relic Race file of this track, which the race file carries" :
+		     HiddenTrackDescriptor(*d) ? "the previous copy is hidden" :
+		     scope.fresh && !AP_SoloJsonString(*d, "uuid").empty() && AP_SoloJsonString(*d, "uuid") == AP_SoloJsonString(fresh, "uuid")
+		         ? "a newer cut of the same package was just installed" :
+		     scope.fresh ? "a copy with other files was just installed, the old files are gone" :
+		     "its files are no longer installed"));
 	}
 	// A replaced entry for other files goes first, so a file that cannot be
 	// removed (in use, antivirus) leaves one state, not both.
 	std::string detail;
-	if (pendingOther && !RemoveDescriptorFile(fs::u8path(SoloPath("needs-laps")) / fs::u8path(name), detail))
+	if (replacePending && !RemoveDescriptorFile(fs::u8path(SoloPath("needs-laps")) / fs::u8path(name), detail))
 		return refuse("its file in solo/needs-laps is read-only or in use (antivirus?)", "stale entry kept: " + detail);
-	if (kind == 2 && keptOther && !RemoveDescriptorFile(tracks / fs::u8path(name), detail))
+	if (kind == 2 && replaceKept && !RemoveDescriptorFile(tracks / fs::u8path(name), detail))
 		return refuse("its file in solo/tracks is read-only or in use (antivirus?)", "stale entry kept: " + detail);
 	if (kind != 2)
 	{
+		if (keptOther && !replaceKept)
+			return refuse("its file in solo/tracks belongs to another installed build", "solo/tracks/" + name + " kept");
 		if (!KeepDescriptorFile("tracks", name, json, &why))
 			return false;
-		DropNeedsLaps(name);
+		DropNeedsLapsOf(name, fresh["files"]);
+		if (name != plain)
+			DropNeedsLapsOf(plain, fresh["files"]); // this build waited under the plain name before
 		return true;
 	}
 	// A chosen lap count stays with the same pins. A reinstall may change
 	// title, author or capabilities: publish those, keep the player's laps.
-	if (kept.is_object() && kept.contains("files") && !keptOther)
+	if (keptOurs)
 	{
 		auto merged = AP_SoloMergeNeedsLaps(kept, fresh);
 		if (!merged.is_null())
@@ -1548,9 +1965,11 @@ bool RecordDescriptor(int kind, const char *contentId, const char *revision, con
 			              "kept laps are missing or out of range");
 		if (!AP_SoloDescriptorUnchanged(kept, merged) && !KeepDescriptorFile("tracks", name, merged.dump(), &why))
 			return false;
-		DropNeedsLaps(name);
+		DropNeedsLapsOf(name, fresh["files"]);
 		return true;
 	}
+	if (pendingOther && !replacePending)
+		return refuse("its file in solo/needs-laps belongs to another installed build", "solo/needs-laps/" + name + " kept");
 	return KeepDescriptorFile("needs-laps", name, json, &why);
 }
 } // namespace
@@ -1628,7 +2047,9 @@ std::string PackageLabel(const CustomPackageStoreEntry &entry)
 struct StorePublication
 {
 	// kind 0 retires `key` (json holds the package uuid) once the copy `keeper`
-	// (pin, under keeperKey) is published.
+	// (pin, under keeperKey) is published. Kind 5 (PS2) retires the entry of
+	// an older cut of the same package under the same key (json holds its
+	// file pins) once `keeper` is published.
 	struct Descriptor
 	{
 		int kind;
@@ -1843,9 +2264,15 @@ std::string StoreDescriptorKey(const CustomPackageLocalInfo &local, const char *
 	return {};
 }
 
-// One Play Solo entry per canonical key and declared version. Keep the most
-// recently published owner while it is installed, otherwise the newest
+// One Play Solo entry per canonical key, declared version and file pins.
+// Copies with the same files under keys that mean the same track keep the
+// most recently published owner while it is installed, otherwise the newest
 // install. Other copies stay in the store for the rooms that pin them.
+// PS2: builds with other files (a Saphi download beside a patch import) are
+// separate entries and all stay listed; RecordDescriptor gives a second build
+// its own file. Copies of one package uuid and version still fold into the
+// newest install (A3-29), and a folded older cut no longer counts as an
+// installed build that keeps the plain name.
 void KeepOneCopyPerEntry(StorePublication &result)
 {
 	using Descriptor = StorePublication::Descriptor;
@@ -1863,20 +2290,26 @@ void KeepOneCopyPerEntry(StorePublication &result)
 	};
 	std::vector<std::string> entryNames;
 	for (const Descriptor &d : all)
-		entryNames.push_back(AP_SoloDescriptorFileName(ap_track_registry_canonical_key(d.key), d.revision));
+	{
+		const std::string name = AP_SoloDescriptorFileName(ap_track_registry_canonical_key(d.key), d.revision);
+		entryNames.push_back(name.empty() ? name : name + "|" + files(d).dump());
+	}
 	auto descriptorTime = [&](const Descriptor &d) {
 		auto newest = fs::file_time_type::min();
-		const auto name = AP_SoloDescriptorFileName(d.key, d.revision);
-		for (const char *folder : {"tracks", "needs-laps"})
-		{
-			const fs::path path = fs::u8path(SoloPath(folder)) / fs::u8path(name);
-			if (pins(ReadSmallPlainFile(path, kDescriptorMax)) != files(d))
-				continue;
-			std::error_code ec;
-			const auto time = fs::last_write_time(path, ec);
-			if (!ec && time > newest)
-				newest = time;
-		}
+		for (const std::string &name : {AP_SoloDescriptorFileName(d.key, d.revision),
+		                                AP_SoloBuildDescriptorFileName(d.key, d.revision, AP_SoloBuildTag(files(d)))})
+			for (const char *folder : {"tracks", "needs-laps"})
+			{
+				if (name.empty())
+					continue;
+				const fs::path path = fs::u8path(SoloPath(folder)) / fs::u8path(name);
+				if (pins(ReadSmallPlainFile(path, kDescriptorMax)) != files(d))
+					continue;
+				std::error_code ec;
+				const auto time = fs::last_write_time(path, ec);
+				if (!ec && time > newest)
+					newest = time;
+			}
 		return newest;
 	};
 	// One track imported again under another name has one package uuid and
@@ -1904,7 +2337,34 @@ void KeepOneCopyPerEntry(StorePublication &result)
 			if (all[i].key != all[into[i]].key)
 				retired.push_back({0, all[i].key, all[i].revision, copies[i].uuid, all[i].title, all[i].pin,
 				                   all[into[i]].pin, all[into[i]].key});
+			else if (files(all[i]) != files(all[into[i]]))
+			{
+				// PS2: an older cut under the same key: its own entry goes once
+				// the newest cut is listed, unless another listed package (of
+				// another uuid) has the same files and keeps the entry.
+				bool claimed = false;
+				for (size_t j = 0; j < all.size(); j++)
+					claimed = claimed || (into[j] == j && files(all[j]) == files(all[i]));
+				if (!claimed)
+					retired.push_back({5, all[i].key, all[i].revision,
+					                   nlohmann::json({{"files", files(all[i])}, {"uuid", copies[i].uuid}}).dump(),
+					                   all[i].title, all[i].pin, all[into[i]].pin, all[into[i]].key});
+			}
 		}
+		// PS2: an older cut of the same package (other files) is not a build
+		// of its own: its entry may go to the newest install. A signature that
+		// a listed copy also has stays live.
+		std::set<std::string> listedSignatures;
+		for (size_t i = 0; i < all.size(); i++)
+			if (into[i] == i)
+				listedSignatures.insert(PinSignature(all[i].revision, files(all[i])));
+		for (size_t i = 0; i < all.size(); i++)
+			if (into[i] != i && files(all[i]) != files(all[into[i]]))
+			{
+				const std::string signature = PinSignature(all[i].revision, files(all[i]));
+				if (!listedSignatures.count(signature))
+					result.live.erase(signature);
+			}
 	}
 	std::set<std::string> grouped;
 	for (size_t i = 0; i < all.size(); i++)
@@ -2047,6 +2507,12 @@ bool ApplyStoreDescriptor(const StorePublication::Descriptor &d, const StorePubl
 	if (d.kind == 3)
 	{
 		HideRelicOnlyDescriptor(d.key, d.revision, d.json);
+		return true;
+	}
+	if (d.kind == 5)
+	{
+		if (from.listed.count(d.keeper))
+			RetireExactBuild(d.key, d.revision, d.json);
 		return true;
 	}
 	if (d.kind == 0)
@@ -2440,10 +2906,21 @@ extern "C" int AP_Solo_TrackKeepLaps(int index)
 	    nlohmann::json::parse(ReadSmallPlainFile(dir / fs::u8path(name), kDescriptorMax), nullptr, false);
 	if (!AP_SoloNeedsLapsDescriptor(d, name))
 		return 0;
+	// PS2: the waiting file still holds the build the row showed.
+	if (g_tracks[index].build[0] && AP_SoloBuildTag(d.value("files", nlohmann::json())) != g_tracks[index].build)
+		return 0;
 	std::string json = AP_SoloDescriptorWithLaps(d, g_tracks[index].laps);
 	if (!json.empty())
 		json = WithModePair(nlohmann::json::parse(json), nlohmann::json()).dump();
-	if (json.empty() || !KeepDescriptorFile("tracks", name, json))
+	// PS2: solo/tracks may hold another build's complete entry under this
+	// name (left by an older client): this build then keeps its own file.
+	std::string target = name;
+	const auto kept = nlohmann::json::parse(
+	    ReadSmallPlainFile(fs::u8path(SoloPath("tracks")) / fs::u8path(name), kDescriptorMax), nullptr, false);
+	if (kept.is_object() && kept.contains("files") && kept["files"] != d["files"])
+		target = AP_SoloBuildDescriptorFileName(AP_SoloJsonString(d, "content_id"), AP_SoloJsonString(d, "revision"),
+		                                        AP_SoloBuildTag(d["files"]));
+	if (json.empty() || target.empty() || !KeepDescriptorFile("tracks", target, json))
 		return 0;
 	DropNeedsLaps(name);
 	return 1;
@@ -2487,9 +2964,14 @@ extern "C" int AP_Solo_ExportTrackYaml(const CustomTrackLibraryEntry *entry, int
 	auto descriptor = nlohmann::json::parse(json);
 	if (kind == 2)
 	{
-		const auto kept = nlohmann::json::parse(
-			ReadSmallPlainFile(fs::u8path(SoloPath("tracks/" + descriptorName)), kDescriptorMax), nullptr, false);
-		descriptor = AP_SoloMergeNeedsLaps(kept, descriptor);
+		// PS2: the laps of a build beside another one are under its build name.
+		nlohmann::json merged;
+		for (const std::string &name : {descriptorName, AP_SoloBuildDescriptorFileName(key, revision,
+		                                     AP_SoloBuildTag(descriptor.value("files", nlohmann::json())))})
+			if (merged.is_null() && !name.empty())
+				merged = AP_SoloMergeNeedsLaps(nlohmann::json::parse(
+					ReadSmallPlainFile(fs::u8path(SoloPath("tracks/" + name)), kDescriptorMax), nullptr, false), descriptor);
+		descriptor = merged;
 		if (descriptor.is_null())
 		{
 			std::snprintf(out, size, "This copy has no lap count for export. "
