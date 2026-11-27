@@ -1593,7 +1593,7 @@ struct StorePublication
 	std::vector<Descriptor> descriptors;
 	std::vector<Descriptor> hidden; // kind 3: Relic pairs of known race pairs (MR2), never listed
 	std::vector<APSoloModePair> modePairs; // registry mode_pairs, then the built-in table
-	std::map<std::string, std::string> versionByPins; // uuid|lev|bytes|vrm|bytes -> version ("" when two differ)
+	std::map<std::string, std::string> versionByPins; // lev|bytes|vrm|bytes -> version ("" when two differ)
 	std::set<std::string> live; // StoreSignature of every verified package
 	mutable std::set<std::string> listed; // pins whose descriptor was written
 	std::vector<std::string> notes; // log lines from the worker, written on the game thread
@@ -1658,8 +1658,8 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 			entry->displayTitle[0] ? entry->displayTitle : entry->manifest.title, entry->pin});
 }
 
-// "<uuid>|<lev sha>|<bytes>|<vrm sha>|<bytes>" of an installed package, the
-// identity a room's relic_files lookup uses besides the version.
+// "<lev sha>|<bytes>|<vrm sha>|<bytes>" of an installed package: with the
+// version, what a room's relic_files lookup needs (the uuid is only preferred).
 std::string PairPinsKey(const CustomPackageManifest &m)
 {
 	const CustomPackageFile *lev = nullptr, *vrm = nullptr;
@@ -1670,8 +1670,7 @@ std::string PairPinsKey(const CustomPackageManifest &m)
 	}
 	if (!lev || !vrm)
 		return std::string();
-	return std::string(m.uuid) + "|" + lev->sha256 + "|" + std::to_string(lev->bytes) + "|" + vrm->sha256 + "|" +
-	       std::to_string(vrm->bytes);
+	return std::string(lev->sha256) + "|" + std::to_string(lev->bytes) + "|" + vrm->sha256 + "|" + std::to_string(vrm->bytes);
 }
 
 // solo/pairs/mode-pairs.json for the solo runtime: every known Relic pair,
@@ -1691,8 +1690,9 @@ std::string ModePairsFile(const std::vector<APSoloModePair> &pairs)
 // Merged mode builds (MR2), after the scan and before one copy per entry is
 // kept: a race pair gets its Relic pair, a Relic pair is never a row of its
 // own. relic_revision is the installed Relic package's own version when one
-// with the same uuid is installed (a room finds the pair by version, uuid and
-// pins), else the pair's label.
+// is installed (a room finds the pair by version and pins; a Saphi Library
+// install keeps Saphi's version, 1.0.0 for Sunken Sprint's Relic build where
+// the registry says 1.0.0-relic), else the pair's label.
 void ApplyModePairs(StorePublication &result)
 {
 	std::vector<StorePublication::Descriptor> kept;
@@ -1711,7 +1711,7 @@ void ApplyModePairs(StorePublication &result)
 		if (paired == AP_SOLO_PAIR_MERGED)
 		{
 			const auto &r = body["relic_files"];
-			const auto installed = result.versionByPins.find(AP_SoloJsonString(body, "uuid") + "|" +
+			const auto installed = result.versionByPins.find(
 				r[0].value("sha256", "") + "|" + std::to_string(r[0].value("bytes", 0ull)) + "|" +
 				r[1].value("sha256", "") + "|" + std::to_string(r[1].value("bytes", 0ull)));
 			if (installed != result.versionByPins.end() && !installed->second.empty() &&
