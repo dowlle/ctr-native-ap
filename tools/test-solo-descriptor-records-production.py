@@ -53,6 +53,10 @@ fixture = r'''
 #include "ap/ap_track_key_aliases.hpp"
 #include "include/platform/native_custom_package.h"
 #include "include/platform/native_custom_track_visibility.h"
+#ifndef CTR_AP
+#define CTR_AP 1 // the client builds ap_solo.cpp with it; the SHA-256 helpers need it
+#endif
+#include "include/platform/native_sha256.h"
 namespace fs = std::filesystem;
 #define AP_SOLO_GETPID() getpid()
 static const size_t kDescriptorMax = 64 * 1024;
@@ -253,7 +257,7 @@ int main(int, char **argv) {
     // build that holds the plain name keeps it; the other gets its own file.
     const std::string hexA = descriptor("Nina", pins(std::string(64, 'a').c_str(), std::string(64, 'b').c_str()));
     const std::string hexB = descriptor("Nina", pins(std::string(64, 'c').c_str(), std::string(64, 'd').c_str()));
-    const std::string buildB = "nina__1.0.0@ccccccccdddddddd.json", buildA = "nina__1.0.0@aaaaaaaabbbbbbbb.json";
+    const std::string buildB = "nina__1.0.0@ccccccccccccccccdddddddddddddddd.json", buildA = "nina__1.0.0@aaaaaaaaaaaaaaaabbbbbbbbbbbbbbbb.json";
     const std::set<std::string> liveHex = {"1.0.0|lev:" + std::string(64, 'a') + ":100|vrm:" + std::string(64, 'b') + ":200",
                                            "1.0.0|lev:" + std::string(64, 'c') + ":100|vrm:" + std::string(64, 'd') + ":200"};
     clean(); write(std::string("tracks/") + name, hexA);
@@ -554,7 +558,7 @@ int main(int, char **argv) {
         write(std::string("tracks/") + name, relicRow);
         assert(ApplyStoreDescriptor(entry(1, "Nina", raceRow, "a"), full, message));
         assert(read(std::string("tracks/") + name) == relicRow);
-        assert(read("tracks/nina__1.0.0@aaaaaaaabbbbbbbb.json") == raceRow);
+        assert(read("tracks/nina__1.0.0@aaaaaaaaaaaaaaaabbbbbbbbbbbbbbbb.json") == raceRow);
         // The pair's Relic row never replaces another race build's row, and
         // never takes that build's own file either.
         clean(); loose();
@@ -563,24 +567,29 @@ int main(int, char **argv) {
         write(std::string("tracks/") + name, relicRow);
         assert(ApplyStoreDescriptor(entry(1, "Nina", otherRace, "e"), full, message));
         assert(read(std::string("tracks/") + name) == relicRow);
-        assert(read("tracks/nina__1.0.0@eeeeeeeebbbbbbbb.json") == otherRace);
+        assert(read("tracks/nina__1.0.0@eeeeeeeeeeeeeeeebbbbbbbbbbbbbbbb.json") == otherRace);
         g_pairs.clear();
     }
     // PS2: a Saphi download and an LRG2Pancho import of one track: same key
     // and version, other files. Every writer, both install orders, the room
-    // check, the heal of an old client's state and a folded re-cut.
+    // check, the heal of an old client's state and a folded re-cut. The
+    // loose files' bytes hash to the pins, so "installed" is checked by hash.
     {
-        const std::string a = std::string(64, 'a'), b = std::string(64, 'b'), c = std::string(64, 'c'), d = std::string(64, 'd');
+        const std::string a = "f73e275ca463c6c2fea00d4e2cefaaca0795ba520bd725a86988f625d38b4a84", b = "ca9a62692f0dcf43e1fdc03fdc03b47e97613f7b791fe3a17f7c6cb29d79121f", c = "8e9d44da1cd3339b33b8fa50ef68a47498cd18ab902666ee79f1be49432c0e73", d = "4464fd9544c57c5d17e1204046ca73f4cc976088abe8c9018f3f5a2a8adb9ea0";
         const std::string saphi = descriptor("Big Forest", pins(a.c_str(), b.c_str()));
         const std::string lrg2 = descriptor("Big Forest", pins(c.c_str(), d.c_str()));
         const std::string lrg2Wait = descriptor("Big Forest", pins(c.c_str(), d.c_str()), 0);
-        const std::string sb = "nina__1.0.0@aaaaaaaabbbbbbbb.json", lb = "nina__1.0.0@ccccccccdddddddd.json";
+        const std::string sb = AP_SoloBuildDescriptorFileName("nina", "1.0.0", AP_SoloBuildTag(nlohmann::json::parse(pins(a.c_str(), b.c_str()))));
+        const std::string lb = AP_SoloBuildDescriptorFileName("nina", "1.0.0", AP_SoloBuildTag(nlohmann::json::parse(pins(c.c_str(), d.c_str()))));
+        assert(lb == "nina__1.0.0@" + c.substr(0, 16) + d.substr(0, 16) + ".json" && sb != lb);
         const std::string n = name;
-        // Loose files of both sizes: the other build counts as installed.
+        // Loose files of both builds: either counts as installed.
         const auto installed = [&] {
             fs::create_directories(assets + "/tracks/nina/original");
-            std::ofstream(assets + "/tracks/nina/original/n.lev") << std::string(100, 'x');
-            std::ofstream(assets + "/tracks/nina/original/n.vrm") << std::string(200, 'x');
+            std::ofstream(assets + "/tracks/nina/original/s.lev") << std::string(100, 'L');
+            std::ofstream(assets + "/tracks/nina/original/s.vrm") << std::string(200, 'V');
+            std::ofstream(assets + "/tracks/nina/original/p.lev") << std::string(100, 'M');
+            std::ofstream(assets + "/tracks/nina/original/p.vrm") << std::string(200, 'W');
         };
         StorePublication full;
         full.live = {"1.0.0|lev:" + a + ":100|vrm:" + b + ":200", "1.0.0|lev:" + c + ":100|vrm:" + d + ":200"};
@@ -679,21 +688,76 @@ int main(int, char **argv) {
         StorePublication recut; recut.assets = assets; recut.live = full.live;
         recut.descriptors = {oldCut, newCut};
         KeepOneCopyPerEntry(recut);
-        assert(recut.descriptors.size() == 1 && recut.descriptors[0].pin == newCut.pin);
+        assert(recut.descriptors.size() == 2 && recut.descriptors[0].pin == newCut.pin && recut.descriptors[1].kind == 5);
         assert(!recut.live.count("1.0.0|lev:" + a + ":100|vrm:" + b + ":200"));
-        assert(ApplyStoreDescriptor(recut.descriptors[0], recut, message));
+        for (const auto &e : recut.descriptors) assert(ApplyStoreDescriptor(e, recut, message));
         assert(read("tracks/" + n) == newCut.json && !fs::exists(base + "/solo/tracks/" + lb));
+
+        // j) Loose files of the right sizes but other bytes are not the other
+        // build: a fresh install takes the name over, as before PS2.
+        clean(); write("tracks/" + n, saphi);
+        fs::create_directories(assets + "/tracks/nina/original");
+        std::ofstream(assets + "/tracks/nina/original/x.lev") << std::string(100, 'x');
+        std::ofstream(assets + "/tracks/nina/original/x.vrm") << std::string(200, 'x');
+        assert(AP_Solo_RecordImportedTrack("nina", "1.0.0", lrg2.c_str(), 0));
+        assert(read("tracks/" + n) == lrg2 && !fs::exists(base + "/solo/tracks/" + lb));
+
+        // k) A newer cut of the same package (one uuid, other files) installed
+        // while the older cut is still there takes the name over (A3-29).
+        clean(); installed();
+        {
+            auto older = nlohmann::json::parse(saphi), newer = nlohmann::json::parse(lrg2);
+            older["uuid"] = newer["uuid"] = "u-same";
+            write("tracks/" + n, older.dump());
+            assert(AP_Solo_RecordImportedTrack("nina", "1.0.0", newer.dump().c_str(), 0));
+            assert(read("tracks/" + n) == newer.dump() && !fs::exists(base + "/solo/tracks/" + lb));
+            assert(loggedFile("a newer cut of the same package was just installed"));
+            // The full scan after an older client already gave the newer cut
+            // its own file: the older cut's entry goes once the newer is listed.
+            clean(); installed();
+            write("tracks/" + n, older.dump()); write("tracks/" + lb, newer.dump());
+            StorePublication recut2; recut2.assets = assets; recut2.live = full.live;
+            recut2.descriptors = {entry(1, "Big Forest", older.dump(), "a"), entry(1, "Big Forest", newer.dump(), "c")};
+            KeepOneCopyPerEntry(recut2);
+            assert(recut2.descriptors.size() == 2 && recut2.descriptors[1].kind == 5);
+            for (const auto &e : recut2.descriptors) assert(ApplyStoreDescriptor(e, recut2, message));
+            assert(!fs::exists(base + "/solo/tracks/" + n) && read("tracks/" + lb) == newer.dump());
+            assert(loggedFile("a newer cut of the same package is listed"));
+        }
+
+        // l) A3-20 laps moved to a replacement key whose plain name holds
+        // another build's complete entry: the laps go to the keeper's own
+        // build file, the other build's entry and laps stay.
+        clean(); installed();
+        {
+            auto oldCopy = nlohmann::json::parse(descriptor("Generic", pins(c.c_str(), d.c_str()), 4));
+            oldCopy["id"] = "package/generic-slot/1.0.0"; oldCopy["content_id"] = "generic-slot"; oldCopy["uuid"] = "u-lrg2";
+            auto keeperWait = nlohmann::json::parse(lrg2Wait); keeperWait["uuid"] = "u-lrg2";
+            write("tracks/generic-slot__1.0.0.json", oldCopy.dump());
+            write("tracks/" + n, descriptor("Big Forest", pins(a.c_str(), b.c_str()), 6));
+            write("needs-laps/" + n, keeperWait.dump());
+            std::string why2;
+            assert(AP_Solo_RetireReplacedTrack("generic-slot", "1.0.0", "u-lrg2", "nina", "1.0.0"));
+            assert(nlohmann::json::parse(read("tracks/" + n))["laps"] == 6);
+            assert(nlohmann::json::parse(read("tracks/" + n))["files"] == nlohmann::json::parse(pins(a.c_str(), b.c_str())));
+            const auto moved = nlohmann::json::parse(read("tracks/" + lb));
+            assert(moved["laps"] == 4 && moved["files"] == keeperWait["files"]);
+            assert(!fs::exists(base + "/solo/needs-laps/" + n) && !fs::exists(base + "/solo/tracks/generic-slot__1.0.0.json"));
+        }
 
         // i) The build file name: the tag of the LEV and VRM pins, whatever
         // their order, and none for pins that are not SHA-256 hashes.
-        assert(AP_SoloBuildTag(nlohmann::json::parse(pins(c.c_str(), d.c_str()))) == "ccccccccdddddddd");
+        assert(AP_SoloBuildTag(nlohmann::json::parse(pins(c.c_str(), d.c_str()))) == c.substr(0, 16) + d.substr(0, 16));
+        assert(AP_SoloBuildTag(nlohmann::json::parse("[{\"role\":\"vrm\",\"sha256\":\"" + d + "\",\"bytes\":2},"
+                                                     "{\"role\":\"lev\",\"sha256\":\"" + c + "\",\"bytes\":1}]")) ==
+               c.substr(0, 16) + d.substr(0, 16));
         assert(AP_SoloBuildTag(nlohmann::json::parse(pins("ca", "cb"))).empty());
-        assert(AP_SoloBuildDescriptorFileName("big-forest", "1.0.0", "6598755f53bbf192") == "big-forest__1.0.0@6598755f53bbf192.json");
-        assert(AP_SoloBuildDescriptorFileName("Big", "1.0.0", "6598755f53bbf192").empty());
-        assert(AP_SoloBuildDescriptorFileName("big-forest", "1.0.0", "../../../etc/pas").empty());
-        assert(AP_SoloBuildDescriptorFileName("big-forest", "1.0.0", "6598755F53BBF192").empty());
-        assert(AP_SoloBuildRowId("package/big-forest/1.0.0", "6598755f53bbf192") == "package/big-forest/1.0.0@6598755f53bbf192");
-        assert(AP_SoloRowBaseId("package/big-forest/1.0.0@6598755f53bbf192") == "package/big-forest/1.0.0");
+        assert(AP_SoloBuildDescriptorFileName("big-forest", "1.0.0", "6598755fd3d9b31753bbf1926ecb8b85") == "big-forest__1.0.0@6598755fd3d9b31753bbf1926ecb8b85.json");
+        assert(AP_SoloBuildDescriptorFileName("Big", "1.0.0", "6598755fd3d9b31753bbf1926ecb8b85").empty());
+        assert(AP_SoloBuildDescriptorFileName("big-forest", "1.0.0", "../../../../../../../../etc/pass").empty());
+        assert(AP_SoloBuildDescriptorFileName("big-forest", "1.0.0", "6598755FD3D9B31753BBF1926ECB8B85").empty());
+        assert(AP_SoloBuildRowId("package/big-forest/1.0.0", "6598755fd3d9b31753bbf1926ecb8b85") == "package/big-forest/1.0.0@6598755fd3d9b31753bbf1926ecb8b85");
+        assert(AP_SoloRowBaseId("package/big-forest/1.0.0@6598755fd3d9b31753bbf1926ecb8b85") == "package/big-forest/1.0.0");
     }
     puts("PASS: stale descriptors are replaced, live ones are named and kept, every refusal logs its file");
 }

@@ -109,10 +109,10 @@ enum APSoloTrackPick
 
 struct APSoloTrackInfo
 {
-	char id[96];               /* package/<track key>/<revision>, "@<build>" when two builds share it (PS2) */
-	char title[AP_SOLO_TEXT];  /* with "(Saphi)", "(<patch> patch)" ... when two builds share the id */
-	char build[17];            /* build tag: 8 hex of the LEV and 8 of the VRM SHA-256, or "" */
-	char file[96];             /* its descriptor file in solo/tracks or solo/needs-laps, or "" */
+	char id[112];              /* package/<track key>/<revision>, "@<build>" when two builds share it (PS2) */
+	char title[AP_SOLO_TEXT];  /* with " - Saphi", " - <patch> patch" ... when two builds share the id */
+	char build[33];            /* build tag: 16 hex of the LEV and 16 of the VRM SHA-256, or "" */
+	char file[176];            /* its descriptor file in solo/tracks or solo/needs-laps, or "" */
 	char revision[32];
 	char author[AP_SOLO_TEXT];
 	char creditLev[65], creditVrm[65], creditSource[65];

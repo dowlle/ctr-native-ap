@@ -119,7 +119,7 @@ static nlohmann::json runtimeRow(const std::string &id, const std::string &build
 }
 int main(int, char **argv) {
     base = argv[1];
-    const std::string saphiTag = "aaaaaaaabbbbbbbb", patchTag = "ccccccccdddddddd";
+    const std::string saphiTag = "aaaaaaaaaaaaaaaabbbbbbbbbbbbbbbb", patchTag = "ccccccccccccccccdddddddddddddddd";
     const auto saphi = descriptor(hex('a'), hex('b'), true, false);
     const auto patchWait = descriptor(hex('c'), hex('d'), false, true);
     const std::string patchFile = "big-forest__1.0.0@" + patchTag + ".json";
@@ -156,6 +156,12 @@ int main(int, char **argv) {
     assert(std::string(g_tracks[1].file) == patchFile && std::string(g_tracks[1].creditLev) == hex('c'));
     assert(std::string(g_tracks[1].modes) == "Trophy, CTR" && g_tracks[0].modes[0] == '\0');
 
+    // 2b. A pick survives the row id gaining or losing its build suffix.
+    g_tracks[1].pick = 2;
+    ParseTracks({{"tracks", {runtimeRow("package/big-forest/1.0.0", patchTag,
+                                        {{"kind", "patch"}, {"patch_sha256", "@PATCH@"}}, "[\"trophy\",\"ctr\"]")}}});
+    assert(g_tracks.size() == 1 && g_tracks[0].pick == 2);
+
     // 3. Install order import then Saphi: the waiting LRG2 build holds the
     // plain name, the runtime lists the Saphi build from its build name.
     clean();
@@ -189,6 +195,13 @@ int main(int, char **argv) {
     }
     LabelBuilds(rows, {{rows[0].id, {{"kind", "local"}}}, {rows[1].id, {{"kind", "local"}}}});
     assert(std::string(rows[0].title) == "Fixture - local files aaaaaaaa" && std::string(rows[1].title) == "Fixture - local files cccccccc");
+    // Two local builds that share a LEV: the VRM part tells them apart.
+    CopyText(rows[0].title, sizeof rows[0].title, "Fixture");
+    CopyText(rows[1].title, sizeof rows[1].title, "Fixture");
+    CopyText(rows[1].build, sizeof rows[1].build, std::string(16, 'a') + std::string(16, 'e'));
+    LabelBuilds(rows, {{rows[0].id, {{"kind", "local"}}}, {rows[1].id, {{"kind", "local"}}}});
+    assert(std::string(rows[0].title) == "Fixture - local files bbbbbbbb" && std::string(rows[1].title) == "Fixture - local files eeeeeeee");
+    CopyText(rows[1].build, sizeof rows[1].build, patchTag);
     assert(BuildSourceLabel({{"kind", "patch"}, {"patch_sha256", hex('e')}}) == "patch");
     assert(BuildSourceLabel(nlohmann::json()).empty());
     // A long title is cut so the source still fits, never inside UTF-8.

@@ -375,7 +375,7 @@ static inline std::string AP_SoloDescriptorFileName(const std::string &key, cons
 	return key + "__" + revision + ".json";
 }
 
-// PS2: the build tag of a descriptor's file pins, the first 8 hex digits of
+// PS2: the build tag of a descriptor's file pins, the first 16 hex digits of
 // its LEV SHA-256 and then of its VRM SHA-256, or "" when the pins are not
 // one LEV and one VRM with lower-case hex hashes. Two installs of one track
 // key and version with other files (a Saphi download beside a patch import)
@@ -401,7 +401,7 @@ static inline std::string AP_SoloBuildTag(const nlohmann::json &files)
 		else
 			return std::string();
 	}
-	return lev.substr(0, 8) + vrm.substr(0, 8);
+	return lev.substr(0, 16) + vrm.substr(0, 16);
 }
 
 // PS2: solo/tracks/<track key>__<revision>@<build tag>.json, where a build
@@ -412,7 +412,7 @@ static inline std::string AP_SoloBuildDescriptorFileName(const std::string &key,
                                                          const std::string &tag)
 {
 	const std::string plain = AP_SoloDescriptorFileName(key, revision);
-	if (plain.empty() || tag.size() != 16 ||
+	if (plain.empty() || tag.size() != 32 ||
 	    !std::all_of(tag.begin(), tag.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); }))
 		return std::string();
 	return plain.substr(0, plain.size() - 5) + "@" + tag + ".json";
