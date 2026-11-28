@@ -16,7 +16,6 @@ extern "C" {
 #define AP_CONTENT_MODE_CTR 1
 #define AP_CONTENT_MODE_RELIC 2
 #define AP_CONTENT_MODE_COUNT 3
-#define AP_CONTENT_TRACK_FILL_NEEDS_OPT_IN "track fill rooms require CTR_TRACK_FILL=1"
 /* Ordinary pickup checks, resolved from the room's exact LEV revision. */
 typedef struct ctr_content_sanity {
     char track_id[65], lev_sha256[65];

@@ -33,6 +33,8 @@
 namespace content_plan {
 using J = nlohmann::json;
 static constexpr const char *kTrackFill = "track_fill_v1";
+// Bundled fills outside a room (offline custom track select) stay behind
+// CTR_TRACK_FILL=1; a room's frozen fill does not read it.
 static bool fill_enabled() {
     const char *value = std::getenv("CTR_TRACK_FILL");
     return value && std::strcmp(value, "1") == 0;
@@ -3603,8 +3605,9 @@ static int parse_content_plan(const nlohmann::json &j) {
         need(j.is_object() && j.size() == 3u + (traps ? 1u : 0u) + (hit_block ? 1u : 0u) + (win_block ? 1u : 0u) &&
              j.contains("schema_version") &&
              j.contains("content_plan") && j.contains("ctr_options"), "unsupported or incomplete record fields");
+        // Schema 19 carries `track_fill_v1`: the room is the opt-in, so a
+        // release client applies its frozen fill without a launch switch.
         const int schema_version = number(j["schema_version"], 18, 19);
-        need(schema_version != 19 || fill_enabled(), AP_CONTENT_TRACK_FILL_NEEDS_OPT_IN);
         const J &co = j["ctr_options"];
         J base=co;
         for(const char *key:{"include_battle_arenas","include_arcade_arenas","crystalsanity"})base.erase(key);

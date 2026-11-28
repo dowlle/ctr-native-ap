@@ -124,8 +124,11 @@ int main(int argc, char **argv) {
             else unsetenv("CTR_TRACK_FILL");
 #endif
         };
+        // The room's track_fill_v1 is the opt-in: no launch switch needed.
         set_fill_switch(false);
-        refuse(fill, "the default client refuses a schema-19 track fill room");
+        expect(parse(fill) && bind_room(fill) && ctr_cfg.schema_version == 19 && ap_content_plan_package(0) &&
+               ap_content_plan_package(0)->fill_crate_count == 66,
+               "a client without CTR_TRACK_FILL applies the fill of a track_fill_v1 room");
         set_fill_switch(true);
         const bool loaded = parse(fill) && bind_room(fill);
         expect(loaded && ctr_cfg.schema_version == 19, "the opted-in client accepts the apworld fill fixture");
@@ -294,7 +297,9 @@ int main(int argc, char **argv) {
                no_fruit_sanity->counts[2] == 0 && no_fruit_checks == 4,
                "its four free filled crates are Weapon Crate checks, its unstated fruit none");
         set_fill_switch(false);
-        refuse(day, "the default client refuses the Day weapon fill room");
+        expect(parse(day) && bind_room(day) && ap_content_plan_package(0) &&
+               ap_content_plan_package(0)->fill_weapon_count == 27,
+               "a client without CTR_TRACK_FILL applies the Day weapon fill room");
     }
     {
         std::ifstream fixture("tools/fixtures/content-plan/oxide-pickups.jsonl");
