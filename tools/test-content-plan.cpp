@@ -5,6 +5,7 @@
 #include "ap_content_modes.h"
 #include "ap_content_object_rulings.hpp"
 #include "ap_trap_items.h"
+#include "../include/platform/native_sha256.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <iostream>
@@ -300,6 +301,84 @@ int main(int argc, char **argv) {
         expect(parse(day) && bind_room(day) && ap_content_plan_package(0) &&
                ap_content_plan_package(0)->fill_weapon_count == 27,
                "a client without CTR_TRACK_FILL applies the Day weapon fill room");
+    }
+    {
+        // JB1: a hand-placed weapon-only fill has no donor; `source` names its
+        // review and is allowed and required only then (apworld track_fill).
+        std::ifstream input("tools/fixtures/content-plan/jb1-authored-fill.json");
+        const J room = J::parse(input);
+        int jb = -1;
+        const auto &packages = room.at("content_plan").at("packages");
+        for (size_t i = 0; i < packages.size(); ++i)
+            if (packages[i].at("id") == "package/jungle-boogie-n-gage/1.0.0") jb = (int)i;
+        expect(jb >= 0, "the JB1 room carries Jungle Boogie N-Gage");
+        auto rehash = [](J &fill) {
+            J data = fill;
+            data.erase("fill_sha256");
+            const std::string canonical = data.dump();
+            NativeSha256Ctx ctx;
+            unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
+            char hex[NATIVE_SHA256_HEX_BYTES];
+            NativeSha256_Init(&ctx);
+            NativeSha256_Update(&ctx, canonical.data(), canonical.size());
+            NativeSha256_Final(&ctx, digest);
+            NativeSha256_ToHex(digest, hex);
+            fill["fill_sha256"] = std::string(hex);
+        };
+        auto refuse_for = [&](const std::function<void(J &)> &change, const char *reason, const std::string &why) {
+            J changed = room;
+            J &fill = changed["content_plan"]["packages"][jb]["fill"];
+            change(fill);
+            rehash(fill);
+            refuse(changed, why);
+            expect(std::strstr(ap_seedcfg_reject_reason(), reason) != nullptr,
+                   why + " (reason: " + ap_seedcfg_reject_reason() + ")");
+        };
+#ifdef _WIN32
+        _putenv_s("CTR_TRACK_FILL", "");
+#else
+        unsetenv("CTR_TRACK_FILL");
+#endif
+        const bool loaded = jb >= 0 && parse(room) && bind_room(room);
+        const auto *pkg = loaded ? ap_content_plan_package(jb) : nullptr;
+        expect(loaded && ctr_cfg.schema_version == 19 && pkg && pkg->fill_weapon_count == 16 &&
+               pkg->fill_crate_count == 0,
+               "the generated JB1 room with 16 authored crates is accepted without CTR_TRACK_FILL");
+        if (jb >= 0) {
+            J same = room["content_plan"]["packages"][jb]["fill"];
+            rehash(same);
+            expect(same == room["content_plan"]["packages"][jb]["fill"],
+                   "the native fill hash covers the authored source like the apworld");
+            {
+                J changed = room;
+                changed["content_plan"]["packages"][jb]["fill"]["source"]["provenance"] = "jb1-other";
+                refuse(changed, "the fill digest covers the authored source");
+            }
+            refuse_for([](J &f) {
+                f["donors"] = J::array({{{"lev_sha256", std::string(64, 'a')}, {"road_sha256", std::string(64, 'b')},
+                                         {"kind", "identical"}, {"overlap", 100000}}});
+            }, "unsupported or incomplete record fields", "a fill with donors refuses an authored source");
+            refuse_for([](J &f) { f.erase("source"); }, "unsupported or incomplete record fields",
+                       "empty donors without an authored source are refused");
+            refuse_for([](J &f) { f["source"]["kind"] = "ruled"; }, "invalid authored track fill source",
+                       "an authored source must say authored");
+            refuse_for([](J &f) { f["source"]["provenance"] = "JB1 Jungle"; }, "invalid authored track fill source",
+                       "an authored provenance is a lowercase hyphenated key");
+            refuse_for([](J &f) { f["source"]["provenance"] = std::string(65, 'a'); }, "invalid authored track fill source",
+                       "an authored provenance has at most 64 characters");
+            refuse_for([](J &f) { f["source"]["reviewer"] = "x"; }, "unsupported or incomplete record fields",
+                       "an authored source has exactly kind and provenance");
+            refuse_for([](J &f) {
+                f["families"]["weapon_crates"][0]["rank_source"] = "donor_ruling";
+            }, "an authored track fill requires weapon crates ranked on the target alone",
+               "an authored crate cannot take a donor_ruling rank");
+            refuse_for([](J &f) {
+                f["families"]["time_crates"] = J::array({{{"pos", J::array({0, 0, 0})}, {"type", 1}}});
+                f["counts"]["time_crates"] = 1;
+                f["relic_targets"] = nullptr;
+            }, "an authored track fill requires weapon crates ranked on the target alone",
+               "an authored fill cannot carry a time crate");
+        }
     }
     {
         std::ifstream fixture("tools/fixtures/content-plan/oxide-pickups.jsonl");

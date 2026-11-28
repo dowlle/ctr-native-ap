@@ -236,10 +236,28 @@ static void fill_position(const J &pos, int16_t (&xyz)[3]) {
         xyz[axis] = (int16_t)number(pos[axis], -32768, 32767);
 }
 
+// The apworld's TRACK_KEY: lowercase words joined by single hyphens, at most 64.
+static bool authored_provenance(const std::string &value) {
+    if (value.empty() || value.size() > 64 || value.front() == '-' || value.back() == '-') return false;
+    for (size_t i = 0; i < value.size(); ++i) {
+        const char c = value[i];
+        if (c == '-') { if (value[i - 1] == '-') return false; }
+        else if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) return false;
+    }
+    return true;
+}
+
 static void fill_record(const J &fill, const J &lev, int laps, const int (&targets)[3],
                         std::vector<ctr_content_fill_crate> &out, std::vector<ctr_content_fill_weapon> &weapons_out) {
-    fields(fill, {"schema", "lev_sha256", "generator", "donors", "families",
-                  "counts", "relic_targets", "fill_sha256"});
+    // JB1: a hand-placed layout has no donor and names its review in
+    // `source` instead; `source` is allowed and required only then.
+    const bool authored = fill.is_object() && fill.contains("donors") && fill.at("donors") == J::array();
+    if (authored)
+        fields(fill, {"schema", "lev_sha256", "generator", "donors", "families",
+                      "counts", "relic_targets", "fill_sha256", "source"});
+    else
+        fields(fill, {"schema", "lev_sha256", "generator", "donors", "families",
+                      "counts", "relic_targets", "fill_sha256"});
     number(fill.at("schema"), 1, 1);
     need(fill.at("lev_sha256") == lev, "track fill LEV hash differs from the package pin");
     const auto &generator = fill.at("generator");
@@ -247,7 +265,16 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
     need(generator.at("name") == "ctr-track-fill", "unsupported track fill generator");
     number(generator.at("version"), 1, 1);
     const auto &donors = fill.at("donors");
-    need(donors.is_array() && !donors.empty() && donors.size() <= 2, "track fill donor count");
+    if (authored) {
+        const auto &source = fill.at("source");
+        fields(source, {"kind", "provenance"});
+        const auto &provenance = source.at("provenance");
+        need(source.at("kind") == "authored" && provenance.is_string() &&
+             authored_provenance(provenance.get_ref<const std::string &>()),
+             "invalid authored track fill source");
+    } else {
+        need(donors.is_array() && !donors.empty() && donors.size() <= 2, "track fill donor count");
+    }
     std::set<std::string> seen{lev.get<std::string>()};
     bool has_ruled_donor = false;
     for (const auto &donor : donors) {
@@ -315,6 +342,12 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
          "track fill time crate count");
     need(!has_ruled_donor || (donors.size() == 1 && crates.empty() && grid.is_null()),
          "a ruled weak donor requires a weapon-only fill");
+    // An authored fill is weapon-only and ranks every crate on the target.
+    need(!authored || (crates.empty() && grid.is_null() && !weapons.empty() &&
+                       std::all_of(weapons.begin(), weapons.end(), [](const J &crate) {
+                           return crate.at("rank_source") == "start_ground" || crate.at("rank_source") == "default_usf";
+                       })),
+         "an authored track fill requires weapon crates ranked on the target alone");
     const int count = (int)crates.size();
     number(counts.at("time_crates"), count, count);
     out.reserve(count);
