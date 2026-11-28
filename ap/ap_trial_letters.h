@@ -6,6 +6,7 @@ struct GameTracker;
 // Called before offering CTR Challenge; failure leaves Trophy/Relic available.
 int AP_TrialLetters_Prepare(void);
 void AP_TrialLetters_Register(struct GameTracker *gGT);
+int AP_TrialLetters_ReplaceBaked(struct GameTracker *gGT);
 void AP_TrialLetters_Spawn(struct GameTracker *gGT);
 #endif
 #endif

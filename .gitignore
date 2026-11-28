@@ -12,10 +12,6 @@ assets/tracks/*
 !assets/tracks/cortex-vortex/CVortex Arcade All.sca
 !assets/tracks/cortex-vortex/CVortex Relic.lev
 !assets/tracks/cortex-vortex/CVortex Relic.vrm
-!assets/looks/
-assets/looks/*
-!assets/looks/komodo-moe/
-!assets/looks/komodo-moe/komodo_moe_hi.bin
 debug/
 *.exe
 *.o

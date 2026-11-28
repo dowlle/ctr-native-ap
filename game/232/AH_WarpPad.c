@@ -7,6 +7,9 @@
 #ifdef CTR_AP
 #include "../../ap/ap_warppad_digits_logic.h"
 #endif
+#if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
+#include "../../ap/ap_pad_title_wrap.h"
+#endif
 
 #if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
 static int AH_WarpPad_TextWidth(const struct GameTracker *gGT, int center, int y, int width)
@@ -22,6 +25,48 @@ static int AH_WarpPad_TextWidth(const struct GameTracker *gGT, int center, int y
 	const int mapWidth = topWidth > bottomWidth ? topWidth : bottomWidth;
 	const int clearWidth = 2 * (AH_MAP_RIGHT - mapWidth - 16 - center);
 	return clearWidth < width ? clearWidth : width;
+}
+
+static int AH_WarpPad_TitleWidth(const char *text, int len, int font)
+{
+	return DecalFont_GetLineWidthStrlen((char *)text, len, font);
+}
+
+// A custom track or custom cup pad: its name comes from the room, not from the
+// retail tables, and can be as long as a room title (CN1).
+static int AH_WarpPad_CustomPadTitle(int levelID)
+{
+	if (!ap_content_plan_active())
+		return 0;
+	return ap_content_pad_custom_title(ap_content_plan_pad(levelID));
+}
+
+// CN1: the whole custom name at once. `bottomY` is where the single big line
+// always stood; a long name wraps and grows upward from there, and the extra
+// height (the rows above must lift by it) is returned.
+static int AH_WarpPad_DrawCustomTitle(const char *name, int x, int bottomY, int width)
+{
+	ap_pad_title_layout layout;
+	char line[ 644 ];
+	const int bigH = data.font_charPixHeight[FONT_BIG];
+	ap_pad_title_layout_for(name, width, FONT_BIG, FONT_SMALL, AH_WarpPad_TitleWidth, &layout);
+	const int glyphH = data.font_charPixHeight[layout.font];
+	const int pitch = ap_pad_title_pitch(glyphH);
+	const int lastTop = bottomY + (bigH - glyphH);
+	const int total = (int)strlen(name);
+	for (int i = 0; i < layout.count; i++)
+	{
+		int len = layout.len[i];
+		if (layout.overflow && i == layout.count - 1)
+			len = total - layout.start[i]; // the box shows the rest with "..."
+		if (len > (int)sizeof line - 1)
+			len = (int)sizeof line - 1;
+		memcpy(line, name + layout.start[i], (size_t)len);
+		line[len] = 0;
+		DecalFont_DrawLineBox(line, x, lastTop - (layout.count - 1 - i) * pitch, width, layout.font,
+		                      JUSTIFY_CENTER | ORANGE, TEXT_ELLIPSIS, TEXT_SLOT_PAD_TITLE, NULL);
+	}
+	return ap_pad_title_extra_lift(&layout, glyphH, bigH);
 }
 #endif
 
@@ -225,7 +270,7 @@ CTR_STATIC_ASSERT(offsetof(struct WarpPad, levelID) == 0x6c);
 // reuse the exact birth logic. Forward-declared here because AH_WarpPad_ThTick (the
 // re-birth caller, CTR_AP) is defined before it. Declared in both builds since
 // AH_WarpPad_LInB calls it unconditionally.
-static void AH_WarpPad_BuildInstances(struct Thread *t);
+static int AH_WarpPad_BuildInstances(struct Thread *t, int rebuilding);
 #ifdef CTR_AP
 static struct Instance *AH_WarpPad_ApFilterOf(struct Thread *t);
 static void AH_WarpPad_ApRefreshCopies(struct GameTracker *gGT);
@@ -275,6 +320,98 @@ static int AH_WarpPad_PhysOf(struct Thread *t)
 		levelID = levelID * 10 + t->inst->name[i] - '0';
 	return levelID;
 }
+
+static void AH_WarpPad_RecordChildSlots(struct WarpPad *wp)
+{
+	wp->childSlots = 0;
+	for (int i = 0; i < WPIS_NUM_INSTANCES; i++)
+		if (wp->inst[i] != NULL)
+			wp->childSlots |= 1u << i;
+}
+
+// Compare against the taken list before dereferencing a cached child. A
+// recycled slot can still have its old thread pointer while on the free list.
+static int AH_WarpPad_LiveInstances(struct Thread *t, struct Instance **live, int hideRejected)
+{
+	static const char *const names[WPIS_NUM_INSTANCES] = {
+		"reqObj", "x", "warpnum", "warpnum", "beam",
+		"bottomRing", "bottomRing", "prize", "prize", "prize",
+	};
+	const struct WarpPad *wp = t->object;
+	const struct JitPool *pool = &sdata->gGT->JitPools.instance;
+	struct Instance *inst;
+	unsigned slots = 0;
+	int i, valid = 1, hasFilter = 0;
+
+	for (i = 0; i < WPIS_NUM_INSTANCES; i++)
+		live[i] = NULL;
+
+	for (inst = (struct Instance *)pool->taken.first; inst != NULL; inst = inst->next)
+	{
+		int slot = -1;
+
+		if (inst->thread != t || inst == t->inst)
+			continue;
+		if (strcmp(inst->name, "beamFilter") == 0)
+		{
+			hasFilter = 1;
+			continue;
+		}
+		for (i = 0; i < WPIS_NUM_INSTANCES; i++)
+		{
+			if (wp->inst[i] == inst)
+			{
+				if (slot >= 0)
+				{
+					slot = -1;
+					break;
+				}
+				slot = i;
+			}
+		}
+		if (slot == WPIS_CLOSED_1S || slot == WPIS_CLOSED_10S)
+		{
+			int digit = slot == WPIS_CLOSED_1S ? wp->digit1s : wp->digit10s;
+			if (inst->model == NULL || inst->model->id != ap_warppad_digit_model(digit))
+				slot = -1;
+		}
+		if (slot < 0 || strncmp(inst->name, names[slot], strlen(names[slot])) != 0)
+		{
+			valid = 0;
+			if (hideRejected)
+				inst->flags |= HIDE_MODEL;
+		}
+		else
+		{
+			live[slot] = inst;
+			slots |= 1u << slot;
+		}
+	}
+
+	for (i = 0; i < WPIS_NUM_INSTANCES; i++)
+		if (wp->inst[i] != live[i])
+			return 0;
+	return valid && slots == wp->childSlots && (!hasFilter || live[WPIS_OPEN_BEAM] != NULL);
+}
+
+static int AH_WarpPad_RebuildHasRoom(struct Thread *t, int needed)
+{
+	const struct JitPool *pool = &sdata->gGT->JitPools.instance;
+	struct Instance *inst;
+	int available = pool->free.count;
+	for (inst = (struct Instance *)pool->taken.first; inst != NULL && available < needed; inst = inst->next)
+		if (inst->thread == t && inst != t->inst)
+			available++;
+	return available >= needed;
+}
+
+static int AH_WarpPad_TryRebuild(struct Thread *t)
+{
+	if (!AH_WarpPad_BuildInstances(t, 1))
+		return 0;
+	AH_WarpPad_RecordChildSlots(t->object);
+	return 1;
+}
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abbdc-0x800abd80.
@@ -300,8 +437,13 @@ void AH_WarpPad_AllWarppadNum()
 		// count of 20 or more pushed past the eight digit headers.
 		{
 			int header;
+			struct Instance *live[WPIS_NUM_INSTANCES];
 
-			inst = wp->inst[WPIS_CLOSED_1S];
+			if (wp->inst[WPIS_CLOSED_1S] == NULL && wp->inst[WPIS_CLOSED_10S] == NULL)
+				continue;
+			AH_WarpPad_LiveInstances(t, live, 0);
+
+			inst = live[WPIS_CLOSED_1S];
 			if ((inst != 0) && (inst->model != 0) && (inst->model->id == AP_WARPPAD_DIGIT_MODEL_1TO8))
 			{
 				header = ap_warppad_digit_header(wp->digit1s, inst->model->numHeaders);
@@ -309,7 +451,7 @@ void AH_WarpPad_AllWarppadNum()
 					AH_WarpPad_SetNumModelData(inst, &inst->model->headers[header]);
 			}
 
-			inst = wp->inst[WPIS_CLOSED_10S];
+			inst = live[WPIS_CLOSED_10S];
 			if ((inst != 0) && (inst->model != 0) && (inst->model->id == AP_WARPPAD_DIGIT_MODEL_1TO8))
 			{
 				header = ap_warppad_digit_header(wp->digit10s, inst->model->numHeaders);
@@ -478,6 +620,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	struct Instance *warppadInst;
 	struct Instance **visInstSrc;
 	struct Instance **instArr;
+#ifdef CTR_AP
+	struct Instance *live[WPIS_NUM_INSTANCES];
+#endif
 
 	struct Driver *driver;
 	struct Instance *driverInst;
@@ -522,14 +667,30 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	visInstSrc = gGT->cameraDC[0].visInstSrc;
 
 #ifdef CTR_AP
+	if (!AH_WarpPad_LiveInstances(t, live, 1))
+	{
+		if (live[WPIS_OPEN_BEAM] == NULL)
+		{
+			struct Instance *filter = AH_WarpPad_ApFilterOf(t);
+			if (filter != NULL)
+				filter->flags |= HIDE_MODEL;
+		}
+		if (!warppadObj->boolEnteredWarppad)
+		{
+			AH_WarpPad_TryRebuild(t);
+			return;
+		}
+		// An active warp uses the remaining live visuals and keeps its
+		// progress. Its pad was open when the warp started.
+		live[WPIS_CLOSED_1S] = NULL;
+	}
+
 	// AP live pad refresh: the locked/open/done look + gate instances are latched at
 	// birth. When an AP event changes THIS pad's state while the player is in the hub
 	// (a received gate item opens it; the last location checked makes it done),
 	// AP_StateGen() bumps. Re-derive by tearing down and rebuilding via the exact
-	// birth logic -- only on an actual AP_PadState change, and never mid-warp. Mid-
-	// tick INSTANCE_Death is already the norm in this proc (the locked-digit teardown
-	// below); the rebuild adds the matching births. AP_PadState is recomputed only on
-	// a gen change, so the steady-state cost is one integer compare per pad per frame.
+	// birth logic when the birth key changes. AP_PadState is recomputed only on
+	// a generation change, and a rebuild waits until the pad is out of its warp.
 	if (ctr_cfg_active() && warppadObj->boolEnteredWarppad == 0)
 	{
 		int rbPhys = AH_WarpPad_PhysOf(t);
@@ -539,13 +700,13 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			if (s_padRebirthGen[rbPhys] != rbGen)
 			{
 				int rbState = AH_WarpPad_RebirthKey(rbPhys, warppadObj->levelID);
-				s_padRebirthGen[rbPhys] = rbGen;
 				if (rbState != s_padRebirthState[rbPhys])
 				{
-					AH_WarpPad_ThDestroy(t);       // free current child instances
-					AH_WarpPad_BuildInstances(t);  // rebuild for the new state
-					return; // render fresh next frame; instArr is now the new set
+					if (AH_WarpPad_TryRebuild(t))
+						s_padRebirthGen[rbPhys] = rbGen;
+					return; // retry next tick if the instance pool was full
 				}
+				s_padRebirthGen[rbPhys] = rbGen;
 			}
 		}
 	}
@@ -569,8 +730,11 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		}
 	}
 
-	// array of instances in warppad object
+#ifdef CTR_AP
+	instArr = live;
+#else
 	instArr = &warppadObj->inst[0];
+#endif
 	warppadMatrix = &warppadInst->matrix;
 
 	// make instances visible
@@ -762,16 +926,30 @@ void AH_WarpPad_ThTick(struct Thread *t)
 #endif
 #if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
 				const char *credit = UI_TrackCredit(ap_content_plan_active() ? ctr_cfg_warp_phys(levelID) : levelID);
-				if (credit)
+				// CN1: rows above the name lift by the height a wrapped custom name adds.
+				int apTitleExtra = 0;
+				if (credit || AH_WarpPad_CustomPadTitle(levelID))
 				{
-					const int titleY = padBottom - apLift - 30 - 11;
-					const int creditY = padBottom - apLift - 23;
+					const int titleY = padBottom - apLift - 30 - (credit ? 11 : 0);
 					const int titleWidth = AH_WarpPad_TextWidth(gGT, padX, titleY, requirementWidth);
-					const int creditWidth = AH_WarpPad_TextWidth(gGT, padX, creditY, requirementWidth);
-					requirementWidth = AH_WarpPad_TextWidth(gGT, padX, requirementY, requirementWidth);
-					DecalFont_DrawLineBox(warppadLNG, padX, titleY, titleWidth,
-					                      FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_MARQUEE, TEXT_SLOT_PAD_TITLE, NULL);
-					UI_DrawTrackCredit(credit, padX, creditY, creditWidth, TEXT_MARQUEE);
+					if (credit)
+					{
+						const int creditY = padBottom - apLift - 23;
+						const int creditWidth = AH_WarpPad_TextWidth(gGT, padX, creditY, requirementWidth);
+						requirementWidth = AH_WarpPad_TextWidth(gGT, padX, requirementY, requirementWidth);
+						apTitleExtra = AH_WarpPad_DrawCustomTitle(warppadLNG, padX, titleY, titleWidth);
+						UI_DrawTrackCredit(credit, padX, creditY, creditWidth, TEXT_MARQUEE);
+					}
+					else
+					{
+						apTitleExtra = AH_WarpPad_DrawCustomTitle(warppadLNG, padX, titleY, titleWidth);
+					}
+					if (apTitleExtra > 0)
+					{
+						// the name block's top; a feed line must not climb into it
+						const int clearY = titleY - apTitleExtra - data.font_charPixHeight[FONT_SMALL] - 4;
+						if (clearY < apPadFeedY) apPadFeedY = clearY;
+					}
 				}
 				else
 #endif
@@ -852,6 +1030,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						int racerLift = apLift;
 #ifdef CTR_CUSTOM_PACKAGES
 						if (credit) racerLift += 11;
+						racerLift += apTitleExtra;
 #endif
 						char apRacerLine[32];
 						int apHave = AP_CharacterUnlocked(apLockRacer);
@@ -865,7 +1044,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						                     + gGT->pushBuffer[0].rect.h - 82 - racerLift);
 
 #ifdef CTR_CUSTOM_PACKAGES
-						if (credit)
+						if (credit || apTitleExtra > 0)
 						{
 							const int clearY = apCy - data.font_charPixHeight[FONT_SMALL] - 4;
 							if (clearY < apPadFeedY) apPadFeedY = clearY;
@@ -939,6 +1118,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			    // Dont have hint "you must have more trophies"
 			    (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_HINT_NEED_MORE_TROPHIES) == 0) &&
 
+#ifdef CTR_AP
+			    instArr[WPIS_CLOSED_ITEM] != NULL &&
+			    instArr[WPIS_CLOSED_ITEM]->model != NULL &&
+#endif
 			    // required item is not KEY
 			    (instArr[WPIS_CLOSED_ITEM]->model->id != STATIC_KEY))
 			{
@@ -977,6 +1160,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// if warppad is locked
 	if (instArr[WPIS_CLOSED_1S] != 0)
 	{
+#ifdef CTR_AP
+		// An incomplete lock display must still block entry.
+		if (instArr[WPIS_CLOSED_ITEM] == NULL || instArr[WPIS_CLOSED_ITEM]->model == NULL ||
+		    (instArr[WPIS_CLOSED_10S] != NULL && instArr[WPIS_CLOSED_X] == NULL))
+			return;
+#endif
 		angleCamToWarppad = ratan2(warppadMatrix->t[0] - gGT->pushBuffer[0].pos.x, warppadMatrix->t[2] - gGT->pushBuffer[0].pos.z);
 
 		angleCamToWarppad = -angleCamToWarppad;
@@ -1647,7 +1836,10 @@ WarpPad_AnimateOpen:
 			if (apBeam->model != sdata->gGT->modelPtr[STATIC_BEAM] || apFilter != 0)
 				AH_WarpPad_ApRefreshCopies(sdata->gGT);
 			if (apFilter != 0)
+			{
+				apFilter->flags &= ~HIDE_MODEL;
 				ConvertRotToMatrix(&apFilter->matrix, &warppadObj->spinRot_Beam);
+			}
 		}
 #endif
 	}
@@ -2094,6 +2286,7 @@ WarpPad_AnimateOpen:
 		warppadObj->spinRot_Rewards.y += 0x4;
 	}
 
+#ifndef CTR_AP
 	if (instArr[WPIS_CLOSED_1S] != 0)
 	{
 		INSTANCE_Death(instArr[WPIS_CLOSED_1S]);
@@ -2101,11 +2294,28 @@ WarpPad_AnimateOpen:
 		INSTANCE_Death(instArr[WPIS_CLOSED_X]);
 		INSTANCE_Death(instArr[WPIS_CLOSED_ITEM]);
 	}
+#endif
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800ad2c8-0x800ad3ec.
 void AH_WarpPad_ThDestroy(struct Thread *t)
 {
+#ifdef CTR_AP
+	struct WarpPad *wp = t->object;
+	struct Instance *inst = (struct Instance *)sdata->gGT->JitPools.instance.taken.first;
+
+	// This also frees the beam filter and any child whose cached slot was lost.
+	// Keep the level instance that owns the pad thread.
+	while (inst != NULL)
+	{
+		struct Instance *next = inst->next;
+		if (inst->thread == t && inst != t->inst)
+			INSTANCE_Death(inst);
+		inst = next;
+	}
+	memset(wp->inst, 0, sizeof(wp->inst));
+	wp->childSlots = 0;
+#else
 	int i;
 	struct Instance **instArr;
 	struct WarpPad *warppadObj;
@@ -2143,13 +2353,6 @@ void AH_WarpPad_ThDestroy(struct Thread *t)
 	{
 		INSTANCE_Death(instArr[WPIS_OPEN_BEAM]);
 		instArr[WPIS_OPEN_BEAM] = 0;
-#ifdef CTR_AP
-		{
-			struct Instance *apFilter = AH_WarpPad_ApFilterOf(t);
-			if (apFilter != 0)
-				INSTANCE_Death(apFilter);
-		}
-#endif
 	}
 
 	for (i = WPIS_OPEN_RING1; i < WPIS_OPEN_PRIZE1; i++)
@@ -2169,6 +2372,7 @@ void AH_WarpPad_ThDestroy(struct Thread *t)
 			instArr[i] = 0;
 		}
 	}
+#endif
 }
 
 static const s16 s_warpPadRewardModelIDs[3] = {STATIC_TROPHY, STATIC_RELIC, STATIC_TOKEN};
@@ -2407,14 +2611,40 @@ void AH_WarpPad_LInB(struct Instance *inst)
 
 	t->funcThDestroy = AH_WarpPad_ThDestroy;
 
-	AH_WarpPad_BuildInstances(t);
+	AH_WarpPad_BuildInstances(t, 0);
+#ifdef CTR_AP
+	AH_WarpPad_RecordChildSlots(t->object);
+#endif
 }
 
-// Build (or REBUILD) all of a warp pad's child instances for its CURRENT state.
-// Pure relocation of the original AH_WarpPad_LInB birth body -- the caller has set
-// up the thread already (LInB via a fresh thread; the ThTick re-birth path after
-// AH_WarpPad_ThDestroy) -- with inst / object recovered from the thread.
-static void AH_WarpPad_BuildInstances(struct Thread *t)
+// Check capacity before touching the old pad so a deferred refresh can retry.
+static int AH_WarpPad_BeginBirth(struct Thread *t, int levelID, int rebuilding, int needed)
+{
+	struct WarpPad *wp = t->object;
+#ifdef CTR_AP
+	if (rebuilding)
+	{
+		if (!AH_WarpPad_RebuildHasRoom(t, needed))
+			return 0;
+		AH_WarpPad_ThDestroy(t);
+	}
+	if (levelID >= 0 && levelID < 128)
+		s_padRebirthState[levelID] = ctr_cfg_active() ? AH_WarpPad_RebirthKey(levelID, levelID) : 0;
+#else
+	(void)rebuilding;
+	(void)needed;
+#endif
+	t->modelIndex = 0;
+	t->inst->flags |= HIDE_MODEL;
+	wp->levelID = levelID;
+	wp->boolEnteredWarppad = 0;
+	wp->framesWarping = 0;
+	memset(wp->inst, 0, sizeof(wp->inst));
+	return 1;
+}
+
+// Build the children for the current gate state with the existing birth logic.
+static int AH_WarpPad_BuildInstances(struct Thread *t, int rebuilding)
 {
 	int i;
 	int levelID;
@@ -2460,29 +2690,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 
 	gGT = sdata->gGT;
 
-	// 0 - locked
-	// 1 - open for trophy
-	// 2 - unlocked all
-	// 3 - open for relic/token
-	// 4 - purple token or SlideCol/TurboTrack
-
-	// locked
-	t->modelIndex = 0;
-
-	// make invisible
-	// this is the red triangle
-	// instance from DCxDemo's LEV Viewer
-	inst->flags |= HIDE_MODEL;
-
 	warppadObj = t->object;
-	warppadObj->levelID = 0; // this is dingo canyon
-	warppadObj->boolEnteredWarppad = 0;
-	warppadObj->framesWarping = 0;
-
-	for (i = 0; i < WPIS_NUM_INSTANCES; i++)
-	{
-		warppadObj->inst[i] = 0;
-	}
 
 	// each warppad has a name "warppad#xxx"
 	// "warppad#0" is dingo canyon, level ID 0
@@ -2496,16 +2704,6 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 	{
 		levelID = levelID * 10 + inst->name[i] - '0';
 	}
-
-	warppadObj->levelID = levelID;
-
-#ifdef CTR_AP
-	// Record the AP_PadState these instances are being built for, so ThTick re-births
-	// only on an actual state change (not on every unrelated location check). levelID
-	// = physical pad; warppadObj->levelID = destination (the AP_PadState location key).
-	if (levelID >= 0 && levelID < 128)
-		s_padRebirthState[levelID] = ctr_cfg_active() ? AH_WarpPad_RebirthKey(levelID, warppadObj->levelID) : 0;
-#endif
 
 	unlockItem_modelID = 0;
 	unlockItem_numOwned = 0;
@@ -2522,8 +2720,12 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 	// levelID = physical pad; warppadObj->levelID = destination (location key).
 	// One generator row 6: a replayable Done plan pad wears the same grey X
 	// (Rulebook, Closed and Done pads); AH_WarpPad_ThTick still takes the kart.
-	if (ctr_cfg_active() && AP_PadState(levelID, warppadObj->levelID) == 5)
+	if (ctr_cfg_active() && AP_PadState(levelID, levelID) == 5)
 	{
+		int doneBeam = AP_PadDoneBeam(AP_PadLook(levelID, levelID), AP_PadReplayable(levelID, levelID)) &&
+		               gGT->modelPtr[STATIC_BEAM] != NULL;
+		if (!AH_WarpPad_BeginBirth(t, levelID, rebuilding, 1 + doneBeam))
+			return 0;
 		warppadObj->digit1s = 0;
 		warppadObj->digit10s = 0;
 
@@ -2557,12 +2759,10 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 
 		// Replay availability is unchanged. Alpha4 makes this beam grey,
 		// matching the Done map dot and tracker, with no item glow or wisps.
-		if (AP_PadDoneBeam(AP_PadLook(levelID, warppadObj->levelID),
-		                   AP_PadReplayable(levelID, warppadObj->levelID)) &&
-		    gGT->modelPtr[STATIC_BEAM] != 0)
+		if (doneBeam)
 		{
-			struct Model *doneBeam = AH_WarpPad_ApBeamModel(gGT->modelPtr[STATIC_BEAM], AP_PAD_LOOK_DONE);
-			newInst = INSTANCE_Birth3D(doneBeam, "beam", t);
+			struct Model *doneModel = AH_WarpPad_ApBeamModel(gGT->modelPtr[STATIC_BEAM], AP_PAD_LOOK_DONE);
+			newInst = INSTANCE_Birth3D(doneModel, "beam", t);
 
 			// the pool can be full after the X: no beam then, never a crash
 			if (newInst != 0)
@@ -2581,7 +2781,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 				warppadObj->inst[WPIS_OPEN_BEAM] = newInst;
 			}
 		}
-		return;
+		return 1;
 	}
 #endif
 
@@ -2594,7 +2794,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		unlockItem_numNeeded = pad ? pad->keys : 2147483647;
 		// Which requirement the pad floats: the floor, its rule or its stage 2.
 		// The rebuild key reads the same choice (ap_pad_birth.h, A3-12).
-		int apGateLayer = ap_pad_gate_layer(pad, unlockItem_numOwned, AP_PadState(levelID, warppadObj->levelID));
+		int apGateLayer = ap_pad_gate_layer(pad, unlockItem_numOwned, AP_PadState(levelID, levelID));
 		// Manual rule (#463): once the hub Key floor is met, the pad advertises
 		// its own rule with the owned count, the same answer AP_ContentPadOpen
 		// gives the load gate.
@@ -2708,10 +2908,26 @@ ContentPad_BuildGate:
 	// if unlocked
 	if (unlockItem_numOwned >= unlockItem_numNeeded
 #ifdef CTR_AP
-	    || AP_PadReplayable(levelID, warppadObj->levelID)
+	    || AP_PadReplayable(levelID, levelID)
 #endif
 	   )
 	{
+		int needed = 0;
+#ifdef CTR_AP
+		int trial = levelID == AH_WP_SLIDE_COLISEUM || levelID == AH_WP_TURBO_TRACK;
+		int battle = ((u16)(levelID - AH_WP_NITRO_COURT)) < 2 || levelID == 21 || levelID == 23;
+		int cup = ((u16)(levelID - AH_WP_ADV_CUP)) < 5;
+		int allPrizes = ctr_cfg_active() && (trial || battle || cup);
+		int prizes = battle || cup ||
+		             (trial && !CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_SAPPHIRE_RELIC));
+		if (levelID < AH_WP_SLIDE_COLISEUM || allPrizes)
+			prizes = 3;
+		// The optional filter already leaves room for the prize births.
+		needed = (gGT->modelPtr[STATIC_BEAM] != NULL) +
+		         2 * (gGT->modelPtr[STATIC_BOTTOMRING] != NULL) + prizes;
+#endif
+		if (!AH_WarpPad_BeginBirth(t, levelID, rebuilding, needed))
+			return 0;
 		warppadObj->digit1s = 0;
 		t->modelIndex = 1;
 
@@ -2850,10 +3066,7 @@ ContentPad_BuildGate:
 		// trophy hub-arrow that modelIndex 1 would add). Races keep using their own
 		// proven branch below untouched. This also grants IDENTITY trials their
 		// Time-Trial relic glow for the first time (backlog: trial-pad reward GLOW).
-		if (ctr_cfg_active() &&
-		    (levelID == AH_WP_SLIDE_COLISEUM || levelID == AH_WP_TURBO_TRACK ||
-		     (((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || levelID == 21 || levelID == 23 ||
-		     (((u16)(levelID - AH_WP_ADV_CUP)) < 5)))
+		if (allPrizes)
 		{
 			// metaDataLEV is valid for track/trial/arena LevelIDs but NOT cup pads
 			// (100..104); a cup destination shows a gem (lightDirGem), never a token,
@@ -2912,7 +3125,7 @@ ContentPad_BuildGate:
 				rewardAngle += 0x555;
 			}
 
-			return;
+			return 1;
 		}
 #endif
 
@@ -3006,7 +3219,7 @@ ContentPad_BuildGate:
 					rewardAngle += 0x555;
 				}
 
-				return;
+				return 1;
 			}
 
 			// if relic not owned
@@ -3063,7 +3276,7 @@ ContentPad_BuildGate:
 			// if token owned
 			if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_CTR_TOKEN) != 0)
 			{
-				return;
+				return 1;
 			}
 
 			tokenGroupID = data.metaDataLEV[levelID].ctrTokenGroupID;
@@ -3106,7 +3319,7 @@ ContentPad_BuildGate:
 
 			warppadObj->inst[WPIS_OPEN_PRIZE2] = newInst;
 
-			return;
+			return 1;
 
 		SlideColTurboTrack:
 
@@ -3231,7 +3444,7 @@ ContentPad_BuildGate:
 				// beaten
 				t->modelIndex = 2;
 
-				return;
+				return 1;
 			}
 #else
 			// AP GLOW: ALWAYS birth the gem-cup prize slot (do NOT early-return on the
@@ -3265,10 +3478,13 @@ ContentPad_BuildGate:
 			goto SlideColTurboTrack;
 		}
 
-		return;
+		return 1;
 	}
 
 	// === if locked ===
+
+	if (!AH_WarpPad_BeginBirth(t, levelID, rebuilding, 3 + (unlockItem_numNeeded >= 10)))
+		return 0;
 
 #ifdef CTR_AP
 	// A5-1: a seed can ask for 20 or more; split into two real digits, capped
@@ -3500,4 +3716,5 @@ ContentPad_BuildGate:
 	}
 
 	warppadObj->inst[WPIS_CLOSED_1S] = newInst;
+	return 1;
 }

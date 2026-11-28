@@ -75,6 +75,7 @@ static void shop_tests(void) {
 
 tracker = r'''
 #include "ap/ap_pad_activity_logic.h"
+#include "ap/ap_tracker_card_focus.h"
 #include "ap/ap_tracker_tabs.h"
 #define TRACKER_W 1280
 #define TRACKER_H 800
@@ -83,7 +84,8 @@ typedef struct { int physical, destination, kind, x,y,cx,cy,cw,ch; } AP_TrackerN
 static struct {
     int open,hub,tab,focus,pinned,count,acts_open,acts_cursor,checks_open,checks_page,checks_detail,shop_open;
     float mouse_x,mouse_y; unsigned mouse_buttons;
-    ap_padact_list acts; AP_TrackerNode nodes[2];
+    ap_padact_list acts; AP_TrackerNode nodes[4];
+    AP_TrackerCardPosition cards[4];
 } ap_tracker;
 static int ap_tracker_request, launches, launchEnabled = 1;
 static int checksPages=4, rebuildPages;
@@ -100,7 +102,13 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu) {}
 int AP_TrackerLoadAssets(void) { return 1; }
 void AP_TrackerClose(void) { ap_tracker.open=0; ap_tracker.acts_open=0; ap_tracker.pinned=0; ap_tracker.checks_open=0; ap_tracker.shop_open=0; }
 void AP_TrackerShutdown(void) {}
-void AP_TrackerBuildNodes(void) { if(rebuildPages) { checksPages=rebuildPages; rebuildPages=0; } }
+void AP_TrackerBuildNodes(int resetFocus) {
+    if(rebuildPages) { checksPages=rebuildPages; rebuildPages=0; }
+    if(resetFocus) {
+        int first = AP_TrackerCardAt(ap_tracker.cards, ap_tracker.count, 0, 0);
+        ap_tracker.focus = first >= 0 ? first : 0;
+    }
+}
 void AP_TrackerDraw(void) {}
 void AP_LogLine(const char *s) {}
 void AP_TrackerActivitiesBuild(void) {
@@ -186,8 +194,25 @@ static void tracker_tests(void) {
     ap_tracker.tab=AP_TRACKER_TAB_ITEMS; sdata->buttonTapPerPlayer[0]=BTN_SQUARE;
     assert(AP_TrackerMenuFrame() && !ap_tracker.checks_open);
     ap_tracker.tab=0; sdata->buttonTapPerPlayer[0]=BTN_R1;
-    assert(AP_TrackerMenuFrame() && ap_tracker.tab==1);
+    ap_tracker.count=4;
+    ap_tracker.cards[0]=(AP_TrackerCardPosition){1,0};
+    ap_tracker.cards[1]=(AP_TrackerCardPosition){0,0};
+    ap_tracker.cards[2]=(AP_TrackerCardPosition){0,1};
+    ap_tracker.cards[3]=(AP_TrackerCardPosition){1,1};
+    assert(AP_TrackerMenuFrame() && ap_tracker.tab==1 && ap_tracker.focus==1);
+    ap_tracker.pinned=1; sdata->buttonTapPerPlayer[0]=BTN_LEFT;
+    assert(AP_TrackerMenuFrame() && ap_tracker.focus==1 && ap_tracker.pinned);
+    sdata->buttonTapPerPlayer[0]=BTN_RIGHT;
+    assert(AP_TrackerMenuFrame() && ap_tracker.focus==0 && !ap_tracker.pinned);
+    sdata->buttonTapPerPlayer[0]=BTN_DOWN;
+    assert(AP_TrackerMenuFrame() && ap_tracker.focus==3);
+    ap_tracker.pinned=1;
+    assert(AP_TrackerMenuFrame() && ap_tracker.focus==3 && ap_tracker.pinned);
+    sdata->buttonTapPerPlayer[0]=BTN_UP;
+    assert(AP_TrackerMenuFrame() && ap_tracker.focus==0 && !ap_tracker.pinned);
     sdata->buttonTapPerPlayer[0]=BTN_L1;
+    assert(AP_TrackerMenuFrame() && ap_tracker.tab==0 && ap_tracker.focus==1);
+    ap_tracker.count=0; sdata->buttonTapPerPlayer[0]=BTN_DOWN;
     assert(AP_TrackerMenuFrame() && ap_tracker.tab==0);
     ap_tracker.open=0; sdata->buttonTapPerPlayer[0]=BTN_START; sdata->AnyPlayerTap=BTN_START;
     assert(!AP_TrackerMenuFrame() && (sdata->AnyPlayerTap & BTN_START)); /* Retail keeps its Start. */

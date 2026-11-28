@@ -528,7 +528,7 @@ void RenderAllHUD(struct GameTracker *gGT)
 		// ignored right away instead of surfacing after the lights.
 #ifdef CTR_CUSTOM_PACKAGES
 		if (UI_TrackCredit(-1))
-			AP_FeedDrawRaceIntro();
+			AP_FeedDrawRaceIntro(UI_RaceIntroTitleLift());
 		else
 #endif
 			AP_FeedDrawRace();
@@ -593,9 +593,22 @@ void RenderAllHUD(struct GameTracker *gGT)
 								const int viewWidth = gGT->pushBuffer_UI.rect.w;
 								const int width = viewWidth - (gGT->numPlyrCurrGame == 2 ? 192 : 128);
 								const int x = viewWidth / 2;
-								DecalFont_DrawLineBox(UI_TrackName(-1), x, 76, width, FONT_BIG,
-								                      ORANGE | JUSTIFY_CENTER, TEXT_BANNER_MARQUEE, TEXT_SLOT_RACE_TITLE, NULL);
-								UI_DrawTrackCredit(credit, x, 94, width, TEXT_BANNER_MARQUEE);
+								if (UI_TrackNameIsCustom())
+								{
+									/* CN2: the whole custom name. A name that does not fit one big line
+									   wraps in the small font and grows downward; the credit line moves
+									   below it, and once it would reach the minimap (top y 106 at the
+									   right edge) it shortens to stay left of it. */
+									const int lift = UI_DrawRaceTitleDown(UI_TrackName(-1), x, 76, width);
+									const int creditWidth = (lift >= 5 && width > 198) ? 198 : width;
+									UI_DrawTrackCredit(credit, x, 94 + lift, creditWidth, TEXT_BANNER_MARQUEE);
+								}
+								else
+								{
+									DecalFont_DrawLineBox(UI_TrackName(-1), x, 76, width, FONT_BIG,
+									                      ORANGE | JUSTIFY_CENTER, TEXT_BANNER_MARQUEE, TEXT_SLOT_RACE_TITLE, NULL);
+									UI_DrawTrackCredit(credit, x, 94, width, TEXT_BANNER_MARQUEE);
+								}
 							}
 						}
 #endif

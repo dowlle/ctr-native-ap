@@ -196,14 +196,12 @@ void UI_RenderFrame_Racing()
 					UI_DrawSlideMeter(hudStructPtr[8].x + offset, hudStructPtr[8].y, playerStruct);
 
 #ifdef CTR_AP
-					// AP HUD: reserves bar 5px under the boost bar, plus a numeric
-					// speed readout below it (1P only). Sits inside the
-					// not-finished / not-battle gate so it inherits the boost
-					// bar's visibility (hidden after the finish line and in battle).
+					// AP HUD: reserves bar 5px under the boost bar (1P only). Sits
+					// inside the not-finished / not-battle gate so it inherits
+					// the boost bar's visibility (hidden after the finish line and in battle).
 					if (ctr_cfg_active() && numPlyr == 1)
 					{
 						UI_DrawReservesMeter(hudStructPtr[8].x + offset, hudStructPtr[8].y + 5, playerStruct);
-						UI_DrawSpeedNum(hudStructPtr[8].x + offset - 49, hudStructPtr[8].y + 9, playerStruct);
 					}
 #endif
 				}

@@ -59,15 +59,15 @@ assert "AP BOXES LEFT: %d" in draw
 # Item 4, the pad closes again and floats stage 2.
 closed = plan.index("AP_PadState(physLevelID, levelID) == 3")
 assert closed < plan.index("AH_WarpPad_WarpCapture(gGT)") and "!AP_PadReplayable(physLevelID, levelID)" in plan[closed:closed + 160]
-build = body(warp, "static void AH_WarpPad_BuildInstances(struct Thread *t)")
+build = body(warp, "static int AH_WarpPad_BuildInstances(struct Thread *t, int rebuilding)\n{")
 gate = warp[warp.index("if (apGateLayer == AP_PAD_GATE_STAGE2)"):]
 gate = gate[:gate.index("goto ContentPad_BuildGate;")]
 assert "AP_ContentMaskToReq(pad->stage2_mask, pad->stage2_count, &rule);" in gate
 assert "unlockItem_numNeeded = pad->stage2_count;" in gate and "AP_ContentStage2Owned(pad)" in gate
-assert "|| AP_PadReplayable(levelID, warppadObj->levelID)" in warp
+assert "|| AP_PadReplayable(levelID, levelID)" in build
 # A Done pad wears its grey X; a replayable one still takes the kart, an empty
 # pad does not. Finished Crystal Challenges can replay too.
-assert "AP_PadState(levelID, warppadObj->levelID) == 5)\n\t{\n\t\twarppadObj->digit1s = 0;" in warp
+assert "AP_PadState(levelID, levelID) == 5)" in build and "1 + doneBeam)" in build
 assert "!AP_PadReplayable(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID)" in tick
 assert body(gates, "int AP_ContentTrackPadState(").count("AP_ContentPadPlainLeft(pad)") == 1
 # A closing pad strands no check that belongs to no pad.
@@ -101,7 +101,7 @@ assert 'AP_DeathLinkRowValue(-1) != -1' in menu
 assert 'snprintf(buf, bufSize, "SEED: %s", Config_SeedValue(e))' in menu
 
 # Item 1, the tracker reads the pad on a plan and nothing changes without one.
-nodes = body(tracker, "static void AP_TrackerBuildNodes(void)")
+nodes = body(tracker, "static void AP_TrackerBuildNodes(")
 assert "if (ap_content_plan_active()) {" in nodes and "n->destination = physical;" in nodes
 assert "if (plan) { AP_TrackerDrawContentNode(n,x,y); return; }" in tracker
 node = body(tracker, "static void AP_TrackerDrawContentNode(")

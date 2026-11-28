@@ -250,7 +250,7 @@ check("A6-3: the hidden model ids are the engine's STATIC_WARPPAD and STATIC_SAV
       "STATIC_WARPPAD = 0x6C," in enum and "STATIC_SAVEOBJ = 0x72," in enum
       and "#define AP_HNE_MODEL_WARPPAD 0x6c" in logic and "#define AP_HNE_MODEL_SAVEOBJ 0x72" in logic)
 check("A6-3: retail births still hide the same two markers (what the backdrop copies)",
-      "inst->flags |= HIDE_MODEL;" in body(read("game/232/AH_WarpPad.c"), "static void AH_WarpPad_BuildInstances(struct Thread *t)\n{")
+      "t->inst->flags |= HIDE_MODEL;" in body(read("game/232/AH_WarpPad.c"), "static int AH_WarpPad_BeginBirth(")
       and "savInst->flags |= HIDE_MODEL;" in body(read("game/232/AH_SaveObj.c"), "void AH_SaveObj_LInB("))
 
 unity = read("game/game_unity.h")

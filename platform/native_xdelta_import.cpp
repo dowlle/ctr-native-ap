@@ -2607,13 +2607,13 @@ extern "C" int XdeltaImport_ListFolder(const char *assets, char names[][CTR_XDEL
 namespace {
 struct KeptDescriptor { std::string contentId, revision, json; bool needsLaps; };
 
-/* The Play Solo descriptors of the installed items `done`, one per track key
-   and version; `note` names the first track without one and why, otherwise
-   the first track whose laps the player picks. */
+/* The Play Solo descriptors of the installed items `done`, one per track key,
+   version and file pins; `note` names the first track without one and why,
+   otherwise the first track whose laps the player picks. */
 void collect_descriptors(const XdeltaImportScan *scan, const std::vector<unsigned int> &done,
                          std::vector<KeptDescriptor> &kept, std::string &note)
 {
-    std::set<std::pair<std::string, std::string>> names;
+    std::set<std::tuple<std::string, std::string, std::string>> names;
     std::string lapsNote;
     for (unsigned int i : done)
     {
@@ -2624,17 +2624,20 @@ void collect_descriptors(const XdeltaImportScan *scan, const std::vector<unsigne
         if (plan_descriptor(scan->summary, item, scan->built[i], json, why, needsLaps) &&
             CustomPackage_GetManifest(scan->built[i].owned, &manifest))
         {
-            /* One descriptor file per track key and version: a second track
-               with the same pair would replace the first, and one seed
-               cannot list both. The first keeps it. */
-            if (names.insert({item.trackKey, manifest.version}).second)
+            /* One descriptor per track key, version and files (PS2): two
+               slots with one key and version and other files are two builds,
+               and Play Solo lists both (the second under its own build
+               file name). The same files twice are one build. */
+            const auto parsed = nlohmann::json::parse(json, nullptr, false);
+            const std::string pins = parsed.is_object() && parsed.contains("files") ? parsed["files"].dump() : json;
+            if (names.insert({item.trackKey, manifest.version, pins}).second)
             {
                 kept.push_back({item.trackKey, manifest.version, json, needsLaps});
                 if (needsLaps && lapsNote.empty())
                     lapsNote = limit_codepoints(std::string(item.title), 40) + ": pick its laps in Play Solo";
                 continue;
             }
-            why = "another track in this patch has the same track key";
+            why = "another track in this patch has the same files";
         }
         if (note.empty())
             note = limit_codepoints(std::string(item.title), 40) + " is not on Play Solo: " + why;

@@ -1,16 +1,12 @@
-// Character looks (JL2): the pure rules and the model validator in
-// ap/ap_look_logic.h, checked against the bundled Komodo Moe file.
+// Character looks: exercise the retained selection rules without model assets.
 //
 // cc -std=c99 -Wall -Wextra -DCTR_AP -I ap -I include -o /tmp/test-character-looks tools/test-character-looks.c
 // && /tmp/test-character-looks
-//
-// Run from the repository root (reads assets/looks/komodo-moe/komodo_moe_hi.bin).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "ap_look_logic.h"
-#include <platform/native_sha256.h>
 
 static int fails;
 #define EXPECT(name, cond)                                                                                             \
@@ -25,56 +21,11 @@ static int fails;
 		}                                                                                                              \
 	} while (0)
 
-static unsigned char *read_file(const char *path, size_t *len)
-{
-	FILE *fp = fopen(path, "rb");
-	unsigned char *buf;
-	long n;
-	if (!fp)
-		return NULL;
-	fseek(fp, 0, SEEK_END);
-	n = ftell(fp);
-	fseek(fp, 0, SEEK_SET);
-	buf = (unsigned char *)malloc((size_t)n);
-	if (fread(buf, 1, (size_t)n, fp) != (size_t)n)
-	{
-		free(buf);
-		buf = NULL;
-	}
-	fclose(fp);
-	*len = (size_t)n;
-	return buf;
-}
-
-static void put_u32(unsigned char *b, size_t at, unsigned v)
-{
-	b[at] = (unsigned char)v;
-	b[at + 1] = (unsigned char)(v >> 8);
-	b[at + 2] = (unsigned char)(v >> 16);
-	b[at + 3] = (unsigned char)(v >> 24);
-}
-
-static int validates(const unsigned char *orig, size_t len, size_t patchAt, unsigned value, const char **why)
-{
-	unsigned char *copy = (unsigned char *)malloc(len);
-	int ok;
-	memcpy(copy, orig, len);
-	if (patchAt != (size_t)-1)
-		put_u32(copy, patchAt, value);
-	ok = AP_LookValidateModel(copy, len, NULL, why);
-	free(copy);
-	return ok;
-}
-
 int main(void)
 {
 	const AP_LookDef *moe = &AP_LOOKS[0];
 	const int joe = AP_LOOK_RACER_JOE;
 	const unsigned bit = 1u;
-	const char *why = "";
-	AP_LookModelInfo info;
-	size_t len = 0;
-	unsigned char *file;
 
 	// --- the table ---------------------------------------------------------
 	EXPECT("one look so far", AP_LOOK_COUNT == 1);
@@ -114,82 +65,9 @@ int main(void)
 	EXPECT("has-choice follows the owned bits", AP_LookRacerHasOwned(bit, joe) && !AP_LookRacerHasOwned(0, joe) &&
 	                                                !AP_LookRacerHasOwned(bit, 0));
 
-	// --- the bundled file ------------------------------------------------------
-	{
-		char path[256];
-		snprintf(path, sizeof path, "assets/%s", moe->assetRel);
-		file = read_file(path, &len);
-	}
-	EXPECT("bundled Komodo Moe file is present", file != NULL);
-	if (file == NULL)
-		return 1;
-	{
-		struct NativeSha256Ctx sha;
-		unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
-		char hex[NATIVE_SHA256_HEX_BYTES];
-		NativeSha256_Init(&sha);
-		NativeSha256_Update(&sha, file, len);
-		NativeSha256_Final(&sha, digest);
-		NativeSha256_ToHex(digest, hex);
-		EXPECT("bundled file matches its size and pin", len == moe->size && NativeSha256_HexEquals(moe->sha256, hex));
-	}
-	EXPECT("bundled file validates", AP_LookValidateModel(file, len, &info, &why));
-	printf("     validator says: %s\n", why);
-	EXPECT("717 untextured triangles", info.triangles == 717 && info.triangles == moe->triangles);
-	EXPECT("five pointers (headers, commands, frame, texture table, colours)", info.numPtrs == 5);
-	EXPECT("one header right after the model", info.headerOff == 0x18);
-	EXPECT("static frame after the command list", info.frameOff > info.commandOff && info.colorOff > info.frameOff);
-	EXPECT("header has no LOD limit (0xFFFF)", AP_LookS16(file + 4, info.headerOff + 0x14) == -1);
-
-	// --- refusals ---------------------------------------------------------------
-	{
-		const size_t data = 4, hdr = data + info.headerOff;
-		const size_t cmd = data + info.commandOff;
-		EXPECT("truncated file refused", !AP_LookValidateModel(file, len - 4, NULL, &why));
-		EXPECT("tiny file refused", !AP_LookValidateModel(file, 16, NULL, &why));
-		EXPECT("NULL refused", !AP_LookValidateModel(NULL, 0, NULL, &why));
-		EXPECT("pointer map offset past the end refused", !validates(file, len, 0, (unsigned)len, &why));
-		EXPECT("animation count refused", !validates(file, len, hdr + 0x34, 1, &why) && strcmp(why, "model is animated") == 0);
-		EXPECT("animation list refused", !validates(file, len, hdr + 0x38, 0x20, &why));
-		EXPECT("two headers refused", !validates(file, len, data + 0x10, 0x00020000u | 0xFFFFu, &why));
-		EXPECT("textured command refused", !validates(file, len, cmd + 8, 0x10580001u, &why) &&
-		                                       strcmp(why, "model is textured") == 0);
-		EXPECT("missing colour table refused", !validates(file, len, hdr + 0x2C, 0, &why));
-		EXPECT("a delta table on a static model refused", !validates(file, len, hdr + 0x30, 0x40, &why) &&
-		                                                     strcmp(why, "not a plain static frame") == 0);
-		EXPECT("an odd vertex offset refused", !validates(file, len, data + info.frameOff + 0x18, 0x20, &why));
-		EXPECT("a colour cache past the scratchpad refused", !validates(file, len, cmd, 177, &why) &&
-		                                                        strcmp(why, "colour cache larger than the scratchpad") == 0);
-		EXPECT("command list running into the map refused", !validates(file, len, hdr + 0x20, info.frameOff, &why));
-		EXPECT("pointer slot outside the data refused",
-		       !validates(file, len, data + info.dataLen + 4, info.dataLen + 8, &why));
-		EXPECT("pointer value outside the data refused", !validates(file, len, hdr + 0x2C, info.dataLen + 16, &why));
-		{
-			// Point the texture-table slot's map entry at the colour slot: the
-			// colour pointer is then listed twice and the texture one not at all.
-			const size_t map = data + info.dataLen + 4;
-			unsigned colourSlot = info.headerOff + 0x2C;
-			size_t entry = (size_t)-1;
-			for (unsigned k = 0; k < info.numPtrs; k++)
-				if (AP_LookU32(file, map + 4 * k) == info.headerOff + 0x28)
-					entry = map + 4 * k;
-			EXPECT("texture slot entry found", entry != (size_t)-1);
-			EXPECT("a slot listed twice refused", entry != (size_t)-1 && !validates(file, len, entry, colourSlot, &why) &&
-			                                          strcmp(why, "pointer map lists a slot twice") == 0);
-			for (unsigned k = 0; k < info.numPtrs; k++)
-				if (AP_LookU32(file, map + 4 * k) == info.headerOff + 0x24)
-					entry = map + 4 * k;
-			EXPECT("an unrelocated frame pointer refused", !validates(file, len, entry, info.headerOff + 0x30, &why) &&
-			                                                  strcmp(why, "a model pointer is not in the pointer map") == 0);
-		}
-	}
-	free(file);
-
-	if (fails)
-	{
-		printf("%d FAILED\n", fails);
-		return 1;
-	}
-	printf("PASS: character looks table, newest-wins state, OPTIONS ladder and the bundled model\n");
-	return 0;
+	const char *why;
+	unsigned char shortFile[16] = {0};
+	EXPECT("tiny file refused", !AP_LookValidateModel(shortFile, sizeof shortFile, NULL, &why));
+	EXPECT("NULL refused", !AP_LookValidateModel(NULL, 0, NULL, &why));
+	return fails != 0;
 }

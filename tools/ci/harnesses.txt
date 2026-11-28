@@ -37,6 +37,7 @@ tools/test-box-seat.c
 tools/test-box-seat-production.py
 tools/test-box-spots.cpp
 tools/test-alpha2-presentation-production.py
+tools/test-boss-garage-title-width.py
 tools/test-alpha4-small-fixes.py
 tools/test-client-user-agent.py
 tools/test-clip-record-space.py
@@ -184,6 +185,7 @@ tools/test-pad-logic-look-production.py
 tools/test-pad-rebuild-production.py
 tools/test-pad-stage2-line.c
 tools/test-pad-stage2-line-production.py
+tools/test-pad-title-wrap.py
 tools/test-picker-infoline.c
 tools/test-podium-skip.c
 tools/test-podium-trophy-presentation.c
@@ -206,6 +208,7 @@ tools/test-tracker-boss-node.c
 tools/test-tracker-markers.c
 tools/test-tracker-progress.c
 tools/test-tracker-checks.c
+tools/test-tracker-card-focus.c
 tools/test-tracker-node-logic.cpp
 cmd tracker-received-keys :: python3 tools/ci/tracker-received.py keys
 cmd tracker-received-second-stage :: python3 tools/ci/tracker-received.py second-stage
@@ -230,8 +233,10 @@ tools/test-solo-selection-production.py
 tools/test-hidden-patch-tracks-production.py
 tools/test-solo-publication-production.py
 tools/test-solo-descriptor-records-production.py
+tools/test-solo-duplicate-builds-production.py
 tools/test-solo-toggle-wording-production.py
 tools/test-solo-logic.cpp
+tools/test-solo-runtime-message.cpp
 tools/test-spu-memory.c
 tools/test-stat-ladder.c
 tools/test-editstat-rank.c
@@ -371,3 +376,4 @@ tools/test-hub-name-entry.c
 tools/test-hub-backdrop-pieces.c
 tools/test-hub-backdrop-pads.c
 tools/test-hub-name-entry-production.py
+tools/test-garage-open-notice-production.py

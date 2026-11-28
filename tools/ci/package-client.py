@@ -92,6 +92,18 @@ def require_release_title(binary):
         raise ValueError('Release build window title still contains the Internal dev marker')
 
 
+def require_no_character_models(root, binary):
+    looks = root / 'assets' / 'looks'
+    if looks.is_symlink() or any(file.is_file() or file.is_symlink() for file in looks.rglob('*')):
+        raise ValueError('Client package contains files under assets/looks/')
+    # Header signature of the previously embedded model, independent of the
+    # symbol table and of the model's former file hash.
+    old_model_header = bytes.fromhex(
+        '503d0000 66616b65 00000000 00000000 00000000 ffff0100 18000000 66616b65 5f686900')
+    if old_model_header in binary:
+        raise ValueError('Client executable contains the previously embedded character model')
+
+
 def verify(platform, exe, variant):
     debug = Path(str(exe) + '.debug')
     if not exe.is_file() or not debug.is_file():
@@ -209,13 +221,6 @@ def main():
                     raise ValueError(f'Bundled Cortex Vortex {file} hash mismatch')
             if digest(cortex / 'CVortex Arcade All.sca') != 'ddde81cf1be8042400c717edeeded0d8727e3bb8ba24f0100201708372ef8b1c':
                 raise ValueError('Bundled Cortex Vortex music hash mismatch')
-            # Character looks (JL2): Lockheart's Komodo Moe model, pinned like
-            # Cortex Vortex (ap/ap_look_logic.h AP_LOOK_KOMODO_MOE_SHA256).
-            looks = root / 'assets' / 'looks' / 'komodo-moe'
-            looks.mkdir(parents=True)
-            shutil.copy2(Path('assets/looks/komodo-moe/komodo_moe_hi.bin'), looks / 'komodo_moe_hi.bin')
-            if digest(looks / 'komodo_moe_hi.bin') != '45634686aaa0ede40a2fe7025911ba7cf89199212057d689bc2289795fb20724':
-                raise ValueError('Bundled Komodo Moe look hash mismatch')
         for file in (('support-bundle.bat', 'support-bundle.ps1') if platform == 'windows' else ('support-bundle.sh',)):
             shutil.copy2(file, root / file)
         (root / 'versions.txt').write_text(output('bash', 'tools/release-versions.sh'))
@@ -241,6 +246,7 @@ def main():
             (root / 'AUTHORING-BUILD.txt').write_text(AUTHORING_NOTICE)
         if variant == 'authoring-client':
             (root / 'AUTHORING-CLIENT.txt').write_text(AUTHORING_CLIENT_NOTICE)
+        require_no_character_models(root, (root / exe.name).read_bytes())
         archive = out / (name + ('.zip' if platform == 'windows' else '.tar.gz'))
         if platform == 'windows':
             with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as bundle:

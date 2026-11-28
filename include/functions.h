@@ -5,6 +5,11 @@ const char *UI_TrackName(int physicalPad);
 #ifdef CTR_CUSTOM_PACKAGES
 const char *UI_TrackCredit(int physicalPad);
 void UI_DrawTrackCredit(const char *credit, int x, int y, int width, int mode);
+int UI_TrackNameIsCustom(void);
+int UI_RaceTitleLiftUp(const char *name, int width);
+int UI_RaceIntroTitleLift(void);
+int UI_DrawRaceTitleUp(const char *name, int x, int bottomY, int width);
+int UI_DrawRaceTitleDown(const char *name, int x, int topY, int width);
 void UI_ResetTrackCreditBanner(void);
 int UI_TrackCreditNeedsCountdown(void);
 #endif
@@ -726,7 +731,6 @@ void UI_JumpMeter_Update(struct Driver *d);
 void UI_DrawSlideMeter(s16 posX, s16 posY, struct Driver *driver);
 #ifdef CTR_AP
 void UI_DrawReservesMeter(s16 posX, s16 posY, struct Driver *driver);
-void UI_DrawSpeedNum(s16 posX, s16 posY, struct Driver *driver);
 #endif
 u32 UI_VsQuipReadDriver(struct Driver *driver, int offset, int size);
 void UI_VsQuipAssign(struct Driver *driver, struct QuipMeta *meta, struct Driver *bestDriver, int characterID);

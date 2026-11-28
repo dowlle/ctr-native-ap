@@ -318,7 +318,7 @@ static void AP_FxApply(long long item)
 			AP_LogLine(msg);
 		}
 	}
-	else if (AP_LookForItem(idx) >= 0)
+	else if (CTR_AP_CHARACTER_LOOKS && AP_LookForItem(idx) >= 0)
 		AP_LooksReceiveNew(idx); // JL2: the newest look wins
 	else if (idx == AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX)
 		AP_WumpaReceive(3);

@@ -58,6 +58,9 @@ static ctr_content_pad pad;
 static ctr_content_package package;
 static int havePad=1, leg, active=1, garageRunning=-1;
 static int AP_ContentGarageCupRunning(void) { return garageRunning; }
+static int cupHeld[4], finalOpp=-1;
+const ctr_content_pad *ap_content_plan_pad(int i) { int g=i-AP_CONTENT_GARAGE_CUP_PAD; return g>=0&&g<4&&cupHeld[g] ? &pad : NULL; }
+int AP_BossFinalGarageOpponent(void) { return finalOpp; }
 static const ctr_content_pad *AP_ContentCupPad(void) { return havePad ? &pad : NULL; }
 static int AP_ContentCupLeg(void) { return leg; }
 const ctr_content_package *ap_content_plan_package(int i) { return i == 2 ? &package : NULL; }
@@ -86,6 +89,8 @@ fixture += "return ctCupName ? ctCupName : sdata->lngStrings[index]; }\n"
 gates = source("ap/ap_hooks_gates.c")
 fixture += function(gates, "int AP_BossRivalAdvert(int bossIdx, char *out, int cap)")
 fixture += function(gates, "int AP_BossChallengeTitle(int bossIdx, char *out, int cap)")
+fixture += function(gates, "int AP_BossGarageHoldsCup(int bossIdx)")
+fixture += function(gates, "int AP_BossGarageTitle(int bossIdx, char *out, int cap)")
 fixture += r'''
 int main(void) {
     for (int seated=0; seated<2; seated++) {
@@ -159,13 +164,33 @@ int main(void) {
     // N. Oxide's two races (bossID 4 and 5) keep their own banner (A2-44).
     assert(!AP_BossChallengeTitle(4,title,sizeof title) && !AP_BossChallengeTitle(5,title,sizeof title));
     assert(!AP_BossChallengeTitle(0,NULL,1) && !AP_BossRivalAdvert(0,title,0));
+    // BG1: the garage title. A single race is "<racer>'s Challenge", a boss cup
+    // "<racer>'s Boss Cup" (drawn racer, else the garage's own boss), N. Oxide
+    // takes the racer his final race drew, and a retail garage keeps its title.
+    ctr_boss_encounters.opponent[0]=3; ctr_boss_encounters.opponent[1]=-1;
+    data.MetaDataCharacters[3].name_LNG_long=6; data.MetaDataCharacters[2].name_LNG_long=7;
+    for(int c=0;c<16;c++) if(c!=3&&c!=2) data.MetaDataCharacters[c].name_LNG_long=5;
+    assert(AP_BossGarageTitle(0,title,sizeof title) && !strcmp(title,"DINGODILE's Challenge"));
+    cupHeld[0]=1; assert(AP_BossGarageHoldsCup(0) && !AP_BossGarageHoldsCup(1) && !AP_BossGarageHoldsCup(4));
+    assert(AP_BossGarageTitle(0,title,sizeof title) && !strcmp(title,"DINGODILE's Boss Cup"));
+    ctr_boss_encounters.opponent[0]=13; assert(AP_BossGarageTitle(0,title,sizeof title) && !strcmp(title,"Penta's Boss Cup"));
+    ctr_boss_encounters.opponent[0]=-1; data.metaDataLEV[AP_BOSS_VENUE_GARAGE[0].homeLevel].characterID_Boss=2;
+    assert(AP_BossGarageTitle(0,title,sizeof title) && !strcmp(title,"RIPPER ROO's Boss Cup"));
+    cupHeld[0]=0; assert(!AP_BossGarageTitle(0,title,sizeof title));
+    assert(!AP_BossGarageTitle(4,title,sizeof title));
+    finalOpp=3; assert(AP_BossGarageTitle(4,title,sizeof title) && !strcmp(title,"DINGODILE's Challenge"));
+    finalOpp=-1;
+    active=0; cupHeld[0]=1; assert(!AP_BossGarageHoldsCup(0) && !AP_BossGarageTitle(0,title,sizeof title)); active=1; cupHeld[0]=0;
+    assert(!AP_BossGarageTitle(0,NULL,1) && !AP_BossGarageTitle(-1,title,sizeof title) && !AP_BossGarageTitle(5,title,sizeof title));
     puts("PASS: seated boxes receive model lift; custom leg and cup/final titles stay distinct; rivals use full names and Penta's Challenge");
 }
 '''
 # Both garage title and the independent Oxide rival path must use these fixes.
 garage = source("game/232/AH_Garage.c")
-assert "AP_BossChallengeTitle(hubID - 1" in garage
+assert "AP_BossGarageTitle(levelID == GEM_STONE_VALLEY ? 4 : hubID - 1" in garage
 assert "data.MetaDataCharacters[c].name_LNG_short" not in garage
+# BG1: no rival row and no boss cup format row in the garage block, in any state.
+assert "AP_BossRivalAdvert" not in garage and '"Rival: ' not in garage
 # The race-start banner of a garage boss race names the same racer as the
 # garage title (A2-44): only the single-race banner, after its retail string.
 flow = source("game/UI/UI_RaceFlow.c")

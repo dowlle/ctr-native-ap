@@ -119,12 +119,8 @@ static const struct ApCreditLine AP_CREDITS_LINES[] = {
     {1, "CORTEX VORTEX TRACK"},
     // The track's own music (the .sca) ships too and is covered by the same
     // permission (THIRD_PARTY_NOTICES.md "Cortex Vortex track").
-    {0, CTR_CORTEX_CREDIT},
-    {0, ""},
-    // THIRD_PARTY_NOTICES.md "Komodo Moe driver model": the first character
-    // look (JL2), Lockheart's model, bundled unchanged with his permission.
-    {1, "CHARACTER LOOKS"},
-    {0, "KOMODO MOE MODEL - LOCKHEART"},
+    {0, CTR_CORTEX_TRACK_CREDIT},
+    {0, CTR_CORTEX_MUSIC_CREDIT},
     {0, ""},
     // Authors who said yes (2026-11-12 and 2026-11-13) to their tracks being
     // offered through the client's Project Saphi download or importer. Names as
@@ -137,6 +133,10 @@ static const struct ApCreditLine AP_CREDITS_LINES[] = {
     {0, "LOLOTHESAMURAI"},
     {0, "PANCHOPEW"},
     {0, "COCO TEAM RACING - FROSTEDWOMBAT"},
+    // Cubic Circuit is offered through the Saphi download, not bundled. The
+    // track is by MisterM and its music by Boxic (the registry credits both).
+    {0, "CUBIC CIRCUIT - MISTERM"},
+    {0, "CUBIC CIRCUIT MUSIC - BOXIC"},
     {0, "TRACK DOWNLOADS - PROJECT SAPHI"},
     {0, ""},
     {1, "LIBRARIES"},

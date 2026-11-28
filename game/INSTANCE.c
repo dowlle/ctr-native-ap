@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../ap/ap_trial_letters.h"
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80030778-0x8003086c.
 void INSTANCE_Birth(struct Instance *inst, struct Model *model, const char *name, struct Thread *th, int flags)
@@ -312,7 +315,9 @@ void INSTANCE_LevInitAll(struct InstDef *levInstDef, int numInst)
 	struct Instance *inst;
 	struct MetaDataMODEL *meta;
 	struct GameTracker *gGT = sdata->gGT;
+	int replaceBakedLetters = 0;
 #ifdef CTR_AP
+	replaceBakedLetters = AP_TrialLetters_ReplaceBaked(gGT);
 	// The loop below walks `levInstDef` forward, so keep the base for the AP
 	// hand-off at the end (#223 needs the whole array, not the last entry).
 	struct InstDef *apLevInstDefBase = levInstDef;
@@ -394,6 +399,15 @@ void INSTANCE_LevInitAll(struct InstDef *levInstDef, int numInst)
 		}
 
 		modelID = levInstDef->model->id;
+
+		if (replaceBakedLetters && (u32)(modelID - STATIC_C) < 3)
+		{
+			// Keep the instance references used by collision and visibility tables.
+			// The placed challenge supplies its own visible, collidable letter.
+			inst->flags = (inst->flags & ~DRAW_COLLISION_MASK) | HIDE_MODEL;
+			levInstDef++;
+			continue;
+		}
 
 		// can be -1
 		if ((s16)modelID > 0)

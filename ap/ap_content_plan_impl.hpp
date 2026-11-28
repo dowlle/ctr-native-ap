@@ -14,6 +14,8 @@
 #include "ap_named_blocks.h"
 #include "ap_content_object_rulings.hpp"
 #include "ap_box_spot_logic.h"
+#include "ap_placed_letters.h"
+#include "ap_box_seat_logic.h"
 #include "ap_arena_content.h"
 #include "ap_wumpa_shop.h"
 #include "../include/platform/native_tizi_madness.h"
@@ -79,6 +81,7 @@ struct State {
     // each spot box's number and position by location code (`spot`).
     struct SpotSet { int pool = 0; std::vector<int> picked; std::string lev_sha256; bool used = false; };
     std::map<std::string, SpotSet> spot_sets;
+    std::map<std::string, std::vector<int>> seat_spot_sets;
     struct CrateExclusions {
         std::string lev;
         std::vector<int> ordinals;
@@ -90,7 +93,7 @@ struct State {
     int track_ruling_version = 0;
     bool track_pickup_limits = false;
     bool pre_sunset_finish_ruling = false;
-    struct BoxSpot { int number = 0; bool seen = false; short x = 0, y = 0, z = 0, rot_y = 0; };
+    struct BoxSpot { int number = 0; bool seen = false; const J *reviewed = nullptr; short x = 0, y = 0, z = 0, rot_y = 0; };
     std::map<int64_t, BoxSpot> box_spots;
     // Boss garages (#133 PR 6): the `bosses` record and the venues its
     // encounters race (engine LevelIDs; the Final Challenge on Cortex Vortex
@@ -655,7 +658,9 @@ static std::map<int64_t, int> capability_rows(const ctr_content_capability &c) {
 // numbers are eligible only the apworld knows, so the client checks the shape
 // (ap_box_spot_logic.h) and that each named track exists with a box identity.
 static void item_box_settings(const J &t, State &out) {
-    need(t.is_object() && t.contains("shortcut_knowledge") && t.size() == 1u + t.count("spot_sets") + t.count("crate_exclusions") + t.count("box_count") + t.count("pickup_rules"),
+    need(t.is_object() && t.contains("shortcut_knowledge") &&
+         t.size() == 1u + t.count("spot_sets") + t.count("seat_spots") +
+                     t.count("crate_exclusions") + t.count("box_count") + t.count("pickup_rules"),
          "unsupported or incomplete record fields");
     if (t.contains("pickup_rules")) {
         const auto &ids = t["pickup_rules"];
@@ -695,6 +700,24 @@ static void item_box_settings(const J &t, State &out) {
                 ex.ordinals.push_back(n); ex.positions.push_back(pos);
             }
             need(out.crate_exclusions.emplace(set["track_id"].get<std::string>(), ex).second, "duplicate excluded track");
+        }
+    }
+    if (t.contains("seat_spots")) {
+        const auto &sets = t["seat_spots"];
+        need(sets.is_array() && !sets.empty() && sets.size() <= AP_CONTENT_MAX_PACKAGES,
+             "seat spots must be a nonempty list");
+        for (const auto &set : sets) {
+            fields(set, {"track_id", "picked"});
+            need(set["track_id"].is_string() && set["picked"].is_array() && !set["picked"].empty()
+                 && set["picked"].size() <= AP_NAMED_ITEM_BOX_SLOTS, "a seat spot set needs a track and picked numbers");
+            std::vector<int> picked;
+            for (const auto &value : set["picked"]) {
+                const int n = number(value, 1, AP_NAMED_ITEM_BOX_SLOTS);
+                need(picked.empty() || n > picked.back(), "seat spot numbers must be strictly increasing");
+                picked.push_back(n);
+            }
+            need(out.seat_spot_sets.emplace(set["track_id"].get<std::string>(), std::move(picked)).second,
+                 "duplicate fallback seat spot set");
         }
     }
     if (!t.contains("spot_sets")) return;
@@ -1028,7 +1051,7 @@ static bool repeatable_pickups(const J &p) {
     return has_feature(p, "repeatable_pickups_v1");
 }
 static constexpr char kCarriedRulings[] = "carried_track_rulings_v1";
-static constexpr int kTrackRulingVersion = 4;
+static constexpr int kTrackRulingVersion = 6;
 // These exact patch copies share the registry key, but keep their own pickups.
 static constexpr const char *kCocoPatchPins[] = {
     "af764b90d10fa952aac4502c89c5f0466dd4afdbaee7c3a65279624dfeb18aa2", // St. Patrick 55
@@ -1464,6 +1487,7 @@ static void validate(const J &p, State &out) {
     if(has_boxes&&p["item_boxes"].is_object()&&p["item_boxes"].contains("spot_sets"))features.push_back("box_spots_v1"); // A3-14
     if(has_boxes&&p["item_boxes"].is_object()&&p["item_boxes"].contains("crate_exclusions"))features.push_back("crate_exclusions_v1");
     if(has_boxes&&p["item_boxes"].is_object()&&p["item_boxes"].contains("box_count"))features.push_back("box_count_v1");
+    if(has_boxes&&p["item_boxes"].is_object()&&p["item_boxes"].contains("seat_spots"))features.push_back("seat_spots_v2");
     if(cups)features.push_back("cup_entries_v1");      // #133 PR 5
     if(has_bosses)features.push_back("boss_encounters_v1"); // #133 PR 6
     if(gem_cups)features.push_back("gem_cups_v1");          // one generator row 2
@@ -1488,6 +1512,8 @@ static void validate(const J &p, State &out) {
     if(plan_laps)features.push_back("lap_checks_v1");             // #344
     if (std::any_of(p["tracks"].begin(), p["tracks"].end(), [](const J &track) { return track.contains("letters"); }))
         features.push_back("origin_letters_v1");
+    if (std::any_of(p["tracks"].begin(), p["tracks"].end(), [](const J &track) { return track.contains("placed_letters"); }))
+        features.push_back("placed_track_letters_v1");
     const bool safe_pickups = repeatable_pickups(p);
     if(safe_pickups) {
         need(has_bosses && out.bosses.oxide_goal != 3 && (has_sanity || fam.wumpa == 2),
@@ -1639,6 +1665,7 @@ static void validate(const J &p, State &out) {
                 // A shared track keeps its standalone CTR Challenge code.
                 // The pad parser validates it. The cup only races the trophy leg.
                 base.erase("letters");
+                base.erase("placed_letters");
             }
             if (titled) base.erase("room_title");
             fields(base, {"id", "origin", "package_id", "custom_slot", "display_name", "laps", "modes", "capabilities", "field_size"});
@@ -1963,6 +1990,12 @@ static void validate(const J &p, State &out) {
             const bool titled = base.is_object() && base.contains("room_title");
             if (named) base.erase("named_block");
             if (titled) base.erase("room_title");
+            const bool placed = base.contains("placed_letters");
+            if (placed) {
+                need(base.at("placed_letters").is_boolean() && base.at("placed_letters") == true,
+                     "invalid placed letter flag");
+                base.erase("placed_letters");
+            }
             if (base.contains("letters")) {
                 const auto glyphs = text(base.at("letters"));
                 need(named && glyphs.size() == 3 &&
@@ -1983,8 +2016,17 @@ static void validate(const J &p, State &out) {
             // Trophy needs arcade, CTR arcade and the letters, Relic time
             // crates with targets on a timed lap graph.
             const unsigned caps = record.capabilities;
+            if (placed) {
+                const char *key = canonical_track_key(record.content_id);
+                need(named && (mode_bits & (1u << AP_CONTENT_MODE_CTR)) && (caps & AP_CONTENT_CAP_ARCADE) &&
+                     (!dest.letter_glyphs[0] || track.at("letters") == "CNK") &&
+                     AP_PlacedLetters_Find(key, record.lev_sha256, record.vrm_sha256),
+                     "invalid placed letter revision");
+                dest.placed_letters = 1;
+            }
             if (caps & AP_CONTENT_CAP_ARCADE) supported |= 1u << AP_CONTENT_MODE_TROPHY;
-            if ((caps & AP_CONTENT_CAP_ARCADE) && (caps & AP_CONTENT_CAP_CTR_TOKENS)) supported |= 1u << AP_CONTENT_MODE_CTR;
+            if ((caps & AP_CONTENT_CAP_ARCADE) && ((caps & AP_CONTENT_CAP_CTR_TOKENS) || placed))
+                supported |= 1u << AP_CONTENT_MODE_CTR;
             if ((caps & AP_CONTENT_CAP_RELIC) && (caps & AP_CONTENT_CAP_TIME_TRIAL) && record.has_relic_targets) supported |= 1u << AP_CONTENT_MODE_RELIC;
             used_packages.insert(package_id);
             dest.package_index = package_index.at(package_id); dest.custom_slot = slot;
@@ -2231,6 +2273,33 @@ static void validate(const J &p, State &out) {
                     dest.box_locations[b] = dest.named_block >= 0
                         ? ap_named_location_code(dest.named_block, AP_NAMED_OFF_ITEM_BOX_1 + b)
                         : 35017000 + 15 * (dest.custom_slot - 1) + b;
+                if (p["item_boxes"].contains("seat_spots")) {
+                    const auto replacements = out.seat_spot_sets.find(dest.track_id);
+                    const auto &catalog = registry.at("seat_spots_v2");
+                    const auto reviewed = catalog.find(pkg.lev_sha256);
+                    std::vector<int> picked;
+                    for (int b = 0; reviewed != catalog.end() && b < slots; ++b) {
+                        const int excluded_count = (int)(past_prefix - dest.box_excluded);
+                        const long ordinal = AP_BoxSeat_Original(
+                            (long)(((long long)b * (limit - excluded_count)) / slots),
+                            dest.box_excluded, excluded_count) + 1;
+                        const auto placement = reviewed->find(std::to_string(ordinal));
+                        if (placement == reviewed->end()) continue;
+                        picked.push_back(b + 1);
+                        dest.box_seat_spots |= 1u << b;
+                        State::BoxSpot spot;
+                        spot.number = b + 1;
+                        spot.reviewed = &*placement;
+                        need(out.box_spots.emplace(dest.box_locations[b], spot).second,
+                             "two box spots share a location");
+                    }
+                    if (replacements == out.seat_spot_sets.end()) {
+                        need(picked.empty(), "missing reviewed seat spots");
+                    } else {
+                        need(picked == replacements->second, "seat spots disagree with reviewed fallback seats");
+                        out.seat_spot_sets.erase(replacements);
+                    }
+                }
             }
             dest.box_count = slots;
             for (int b = 0; b < slots; ++b) {
@@ -2256,6 +2325,7 @@ static void validate(const J &p, State &out) {
         const J &track = *tracks.at(pair.first);
         const ctr_content_leg &leg = pair.second.leg;
         need(!track.contains("letters"), "origin letters require a standalone CTR Challenge");
+        need(!track.contains("placed_letters"), "placed letters require a standalone CTR Challenge");
         need(track.at("modes") == J::array({"trophy"}) && track.at("capabilities") == J::array({"trophy"}) &&
              track.at("field_size") == 8, "a track raced only in cups lists the trophy mode only");
         if (leg.retail_id >= 0) need(retail_ids.insert(leg.retail_id).second, "unknown or duplicate retail track");
@@ -2908,6 +2978,9 @@ static void validate(const J &p, State &out) {
             found->second.y = (short)number(spot["pos"][1], -32768, 32767);
             found->second.z = (short)number(spot["pos"][2], -32768, 32767);
             found->second.rot_y = (short)number(spot["rot_y"], -32768, 32767);
+            if (const J *reviewed = found->second.reviewed)
+                need(spot["pos"] == reviewed->at("pos") && spot["rot_y"] == reviewed->at("rot_y"),
+                     "box spot position disagrees with the reviewed fallback seat");
             found->second.seen = true;
             bare.erase("spot");
         }
@@ -2997,10 +3070,12 @@ static void validate(const J &p, State &out) {
         }
     }
     for (const auto &pair : out.crate_exclusions) need(pair.second.used, "crate exclusions name no fallback pad track");
+    need(out.seat_spot_sets.empty(), "seat spots name no fallback pad track");
     for (const auto &pair : out.box_spots) need(pair.second.seen, "a box spot check carries no spot");
     for (auto &pad : out.pads) {
-        if (!pad.box_spots) continue;
         for (int b = 0; b < pad.box_count && b < AP_BOX_SPOT_MAX_NUMBER; ++b) {
+            if (!pad.box_spots && (b >= AP_NAMED_ITEM_BOX_SLOTS || !(pad.box_seat_spots & (1u << b))))
+                continue;
             const auto &spot = out.box_spots.at(pad.box_locations[b]);
             pad.box_pos[b][0] = spot.x; pad.box_pos[b][1] = spot.y; pad.box_pos[b][2] = spot.z;
             pad.box_rot_y[b] = spot.rot_y;

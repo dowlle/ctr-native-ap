@@ -539,6 +539,19 @@ int AP_BossRivalAdvert(int bossIdx, char *out, int cap)
 	return 1;
 }
 
+// 1 when garage `bossIdx` holds a boss cup (the garage block names it in its
+// title; the tracker still says it as a venue line).
+int AP_BossGarageHoldsCup(int bossIdx)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	return ctr_cfg_active() && bossIdx >= 0 && bossIdx < 4 &&
+	       ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + bossIdx) != 0;
+#else
+	(void)bossIdx;
+	return 0;
+#endif
+}
+
 int AP_BossChallengeTitle(int bossIdx, char *out, int cap)
 {
 	int c;
@@ -550,6 +563,37 @@ int AP_BossChallengeTitle(int bossIdx, char *out, int cap)
 		return 0;
 	name = c == PENTA_PENGUIN ? "Penta" : sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_long];
 	snprintf(out, (size_t)cap, "%s's Challenge", name);
+	return 1;
+}
+
+// BG1: the title of the garage block. A racer's challenge for a single boss
+// race, the racer's boss cup for a garage holding one, and for N. Oxide the
+// racer the final race drew. Returns 0 when the garage keeps its retail title.
+// The racer is the garage's drawn opponent, or the garage's own boss when a
+// boss cup runs without a drawn opponent. Penta keeps his short name.
+int AP_BossGarageTitle(int bossIdx, char *out, int cap)
+{
+	int c, cup;
+	const char *name;
+
+	if (out == 0 || cap <= 0 || !ctr_cfg_active())
+		return 0;
+	if (bossIdx == 4)
+	{
+		c = AP_BossFinalGarageOpponent();
+		cup = 0;
+	}
+	else
+	{
+		cup = AP_BossGarageHoldsCup(bossIdx);
+		c = AP_BossEncounterOpponent(&ctr_boss_encounters, bossIdx);
+		if (c < 0 && cup)
+			c = data.metaDataLEV[AP_BOSS_VENUE_GARAGE[bossIdx].homeLevel].characterID_Boss;
+	}
+	if (c < 0 || c >= 16)
+		return 0;
+	name = c == PENTA_PENGUIN ? "Penta" : sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_long];
+	snprintf(out, (size_t)cap, cup ? "%s's Boss Cup" : "%s's Challenge", name);
 	return 1;
 }
 
@@ -1679,6 +1723,7 @@ static int ap_unlock_watch_valid = 0;
 static unsigned ap_unlock_held_pads[AP_UNLOCK_DOOR_COUNT];
 static unsigned ap_unlock_saved_pads[AP_UNLOCK_DOOR_COUNT];
 static unsigned ap_unlock_reported_pads;
+static AP_UnlockGarageHold ap_unlock_garage_hold;
 
 static void AP_UnlockReasonsConnectReset(int mayResume, int alreadyPending)
 {
@@ -1689,6 +1734,7 @@ static void AP_UnlockReasonsConnectReset(int mayResume, int alreadyPending)
 		memcpy(ap_unlock_saved_pads, ap_unlock_held_pads, sizeof ap_unlock_saved_pads);
 	memset(ap_unlock_held_pads, 0, sizeof ap_unlock_held_pads);
 	ap_unlock_reported_pads = 0;
+	AP_UnlockGarageConnectReset(&ap_unlock_garage_hold, mayResume, alreadyPending);
 }
 
 static void AP_UnlockReasonsResolveReconnect(int sameRoom)
@@ -1696,6 +1742,7 @@ static void AP_UnlockReasonsResolveReconnect(int sameRoom)
 	if (sameRoom)
 		for (int d = 0; d < AP_UNLOCK_DOOR_COUNT; ++d)
 			ap_unlock_held_pads[d] |= ap_unlock_saved_pads[d] & ~ap_unlock_reported_pads;
+	AP_UnlockGarageResolveReconnect(&ap_unlock_garage_hold, sameRoom);
 }
 
 // What a pad leads to this seed, same naming as the tracker's map nodes: the
@@ -1801,11 +1848,12 @@ static void AP_UnlockWatchCapture(AP_UnlockWatch *w)
 		if (AP_GateCount(AP_IDX_KEY) >= AP_DoorKeysPure(1u << d))
 			w->doorsReady |= 1u << d;
 
+	// FN1: a garage is open for the feed only when it can be entered: its own
+	// gate (the one AH_Garage_ThTick asks) and its hub's door Keys, exactly the
+	// two gates of the tracker's garage row (AP_GarageActivities).
 	for (g = 0; g < AP_BOSS_VENUE_GARAGES && g < 4; g++)
-		if (AP_BossGarageOpen(g))
-			w->garagesOpen |= 1u << g;
-	if (AP_OxideGarageOpen())
-		w->garagesOpen |= 1u << 4;
+		AP_UnlockGarageClassify(w, g, AP_BossGarageOpen(g), AP_GateCount(AP_IDX_KEY));
+	AP_UnlockGarageClassify(w, 4, AP_OxideGarageOpen(), AP_GateCount(AP_IDX_KEY));
 
 	// The lifetime total lives in room storage; until its Get reply lands the
 	// shop watch stays unknown so the first resolved read becomes the silent
@@ -1870,9 +1918,27 @@ static void AP_UnlockReasonsUpdate(int mode)
 		count = AP_UnlockEventsOnly(ev, count, AP_UNLOCK_SHOP);
 	if (ap_feed_primed && ap_content_plan_active())
 	{
-		unsigned foldedPads = 0, foldedDoors = 0;
+		AP_UnlockEvent keep[sizeof ev / sizeof ev[0]];
+		unsigned foldedPads = 0, foldedDoors = 0, garagesRose = 0, garages;
 		int remaining = 0;
 		const int feedMode = AP_ItemFeedMode();
+		// FN1: each garage that became enterable gets its own held line (like
+		// a door releasing held pads), once, also when its hub door opened
+		// while the client was away. Garages leave the ordinary summary.
+		for (int i = 0; i < count; ++i)
+			if (ev[i].kind == AP_UNLOCK_GARAGE)
+				garagesRose |= 1u << ev[i].index;
+		garages = AP_UnlockGarageAnnounce(&ap_unlock_garage_hold, &now, garagesRose);
+		if (feedMode != AP_ITEM_FEED_OFF)
+			ap_unlock_garage_hold.queued |= garages;
+		for (int g = 0; g < AP_UNLOCK_GARAGE_COUNT; ++g)
+			if ((garages & (1u << g)) && feedMode != AP_ITEM_FEED_OFF)
+			{
+				char line[AP_FEED_TEXT_CAP];
+				AP_UnlockReasonLine(line, sizeof line, AP_UNLOCK_GARAGE,
+				                    ap_unlock_garage_names[g], 0, 0);
+				AP_FeedEnqueueHeld(line, (int)strlen(ap_unlock_garage_names[g]), LIGHT_GREEN, 1);
+			}
 		for (int d = 0; d < AP_UNLOCK_DOOR_COUNT; ++d)
 		{
 			unsigned opened = AP_UnlockHeldForDoor(&ap_unlock_held_pads[d], &now, d);
@@ -1892,20 +1958,22 @@ static void AP_UnlockReasonsUpdate(int mode)
 		for (int i = 0; i < count; ++i)
 		{
 			const AP_UnlockEvent e = ev[i];
-			if (((e.kind == AP_UNLOCK_PAD || e.kind == AP_UNLOCK_STAGE2) &&
+			if (e.kind == AP_UNLOCK_GARAGE ||
+			    ((e.kind == AP_UNLOCK_PAD || e.kind == AP_UNLOCK_STAGE2) &&
 			     (foldedPads & (1u << e.index))) ||
 			    (e.kind == AP_UNLOCK_DOOR && (foldedDoors & (1u << e.index))) ||
 			    (e.kind == AP_UNLOCK_SHOP && feedMode == AP_ITEM_FEED_IMPORTANT))
 				continue;
-			ev[remaining++] = e;
+			if (remaining < (int)(sizeof keep / sizeof keep[0]))
+				keep[remaining++] = e;
 		}
 		if (remaining > 0 && feedMode != AP_ITEM_FEED_OFF)
 		{
 			char line[AP_FEED_TEXT_CAP];
-			AP_UnlockReasonLine(line, sizeof line, ev[0].kind,
-			                    AP_UnlockEventName(&ev[0]), remaining - 1, 0);
+			AP_UnlockReasonLine(line, sizeof line, keep[0].kind,
+			                    AP_UnlockEventName(&keep[0]), remaining - 1, 0);
 			AP_FeedLinesEnqueue(&ap_feed, line, LIGHT_GREEN, 1)->unimportant =
-				ev[0].kind == AP_UNLOCK_SHOP;
+				keep[0].kind == AP_UNLOCK_SHOP;
 		}
 	}
 

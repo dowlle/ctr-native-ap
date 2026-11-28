@@ -45,7 +45,10 @@ for header, text in rows:
 assert all(len(r.replace("~00", "").replace("~04", "")) <= width for r in rendered)
 joined = "\n".join(rendered)
 assert "ALWAYS JUMPING TRAP - ALIENGENIE" in joined
-assert "Track and music by Lockheart" in joined
+assert "Track by Lockheart" in joined
+assert "Music by arbee" in joined
+assert "CUBIC CIRCUIT - MISTERM" in joined
+assert "CUBIC CIRCUIT MUSIC - BOXIC" in joined
 assert "~00" in joined and "~04" in joined
 
 (out_dir / "credits-roll.txt").write_text(joined + "\n", encoding="utf-8")

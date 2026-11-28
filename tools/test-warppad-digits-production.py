@@ -16,6 +16,8 @@ that:
 2. the per-frame pass only ever selects one of the eight headers, the header
    for that digit, and leaves the "0" and "9" models alone;
 3. counts 0 to 19 split exactly as retail did.
+4. refresh and teardown use the live instance list when cached children
+   have been freed, reused by another pad or replaced by an invalid pointer.
 
 It also pins the engine text that uses the helper. It cannot run the engine:
 the drawn digits need a played hub. Run from the repository root.
@@ -44,17 +46,80 @@ assert 'INSTANCE_Birth3D(gGT->modelPtr[ap_warppad_digit_model(warppadObj->digit1
 assert "i = ap_warppad_digit_model(warppadObj->digit1s);" in warp
 assert '#include "../../ap/ap_warppad_digits_logic.h"' in warp
 assert "MainFrame_RenderFrame" not in digit_pass and "ap_warppad_digit_header(" in digit_pass
+assert warp.count("AH_WarpPad_RecordChildSlots(t->object);") == 2
 
 program = r"""
 #include <stdio.h>
+#include <assert.h>
+#include <stdint.h>
 #include <string.h>
 #include "ap_warppad_digits_logic.h"
+#define CTR_AP 1
+#define HIDE_MODEL 0x80
 
-enum { WPIS_CLOSED_ITEM = 0, WPIS_CLOSED_X, WPIS_CLOSED_1S, WPIS_CLOSED_10S, WPIS_COUNT = 8 };
+enum { WPIS_CLOSED_ITEM, WPIS_CLOSED_X, WPIS_CLOSED_1S, WPIS_CLOSED_10S,
+       WPIS_OPEN_BEAM, WPIS_OPEN_RING1, WPIS_OPEN_RING2,
+       WPIS_OPEN_PRIZE1, WPIS_OPEN_PRIZE2, WPIS_OPEN_PRIZE3, WPIS_NUM_INSTANCES };
 struct ModelHeader { int tag; };
 struct Model { short id; short numHeaders; struct ModelHeader *headers; };
-struct Instance { struct Model *model; int shownHeader; };
-struct WarpPad { struct Instance *inst[WPIS_COUNT]; short digit10s; short digit1s; };
+struct Instance {
+	struct Model *model;
+	int shownHeader;
+	struct Instance *next;
+	struct Thread *thread;
+	const char *name;
+	unsigned flags;
+};
+struct WarpPad {
+	struct Instance *inst[WPIS_NUM_INSTANCES];
+	unsigned short childSlots;
+	short digit10s;
+	short digit1s;
+};
+struct Thread { struct WarpPad *object; struct Instance *inst; };
+struct JitPool {
+	struct { struct Instance *first; } taken;
+	struct { int count; } free;
+};
+static struct GameTracker { struct { struct JitPool instance; } JitPools; } tracker;
+static struct { struct GameTracker *gGT; } data = { &tracker }, *sdata = &data;
+static struct Instance **taken = &tracker.JitPools.instance.taken.first;
+static int rebuilds;
+
+static void INSTANCE_Death(struct Instance *inst)
+{
+	struct Instance **link = taken;
+	while (*link != inst)
+	{
+		assert(*link != NULL);
+		link = &(*link)->next;
+	}
+	*link = inst->next;
+	inst->next = NULL;
+	tracker.JitPools.instance.free.count++;
+}
+
+""" + (
+    body(warp, "static int AH_WarpPad_RebuildHasRoom(")
+    + body(warp, "void AH_WarpPad_ThDestroy(struct Thread *t)\n")
+) + r"""
+
+static int AH_WarpPad_BuildInstances(struct Thread *t, int rebuilding)
+{
+	assert(rebuilding);
+	if (!AH_WarpPad_RebuildHasRoom(t, WPIS_NUM_INSTANCES - WPIS_OPEN_BEAM))
+		return 0;
+	AH_WarpPad_ThDestroy(t);
+	assert(t->object->childSlots == 0);
+	rebuilds++;
+	return 1;
+}
+
+""" + (
+    body(warp, "static void AH_WarpPad_RecordChildSlots(")
+    + body(warp, "static int AH_WarpPad_LiveInstances(")
+    + body(warp, "static int AH_WarpPad_TryRebuild(")
+) + r"""
 
 static struct ModelHeader g_big1Headers[8];
 static struct Model g_models[3];
@@ -79,11 +144,86 @@ static struct Model *model_of(int id)
 	return 0;
 }
 
-static void digit_pass(struct WarpPad *wp)
+static void digit_pass(struct Thread *t)
 {
-	struct Instance *inst;
-	struct ModelHeader *mh = 0;
+	for (; t; t = NULL)
+	{
+		struct WarpPad *wp = t->object;
+		struct Instance *inst;
+		struct ModelHeader *mh = 0;
 """ + digit_pass + r"""
+	}
+}
+
+static void verify_pad_lifetime(void)
+{
+	struct WarpPad changed = {0}, other = {0};
+	struct Thread pad = {&changed, NULL}, neighbour = {&other, NULL};
+	struct Instance mesh = {.thread = &pad, .name = "warppad#3"};
+	struct Instance filter = {.thread = &pad, .name = "beamFilter", .next = &mesh};
+	struct Instance ring = {.thread = &pad, .name = "bottomRing", .next = &filter};
+	struct Instance reused = {.thread = &neighbour, .name = "warpnum", .next = &ring};
+	struct Instance freed = {.thread = &pad, .name = "warpnum"};
+	struct Instance cross = {.thread = &pad, .name = "x", .next = &mesh};
+	struct Instance requirement = {.thread = &pad, .name = "reqObj", .next = &cross};
+	struct Instance prize = {.thread = &pad, .name = "prize1", .next = &mesh};
+	struct Instance *live[WPIS_NUM_INSTANCES];
+
+	pad.inst = &mesh;
+	*taken = &reused;
+	changed.inst[WPIS_CLOSED_ITEM] = &freed;
+	changed.inst[WPIS_CLOSED_X] = &reused;
+	changed.inst[WPIS_CLOSED_1S] = (struct Instance *)(uintptr_t)0xffff;
+	changed.inst[WPIS_CLOSED_10S] = &mesh;
+	changed.inst[WPIS_OPEN_RING1] = &ring;
+	changed.inst[WPIS_OPEN_RING2] = &ring;
+	changed.inst[WPIS_OPEN_PRIZE1] = &filter;
+	assert(!AH_WarpPad_LiveInstances(&pad, live, 1));
+	assert((ring.flags & HIDE_MODEL) && !(reused.flags & HIDE_MODEL));
+	for (int i = 0; i < WPIS_NUM_INSTANCES; i++)
+		assert(live[i] == NULL);
+	digit_pass(&pad);
+	tracker.JitPools.instance.free.count = 0;
+	assert(AH_WarpPad_RebuildHasRoom(&pad, 2));
+	assert(!AH_WarpPad_RebuildHasRoom(&pad, 3));
+	tracker.JitPools.instance.free.count = 1;
+	assert(AH_WarpPad_RebuildHasRoom(&pad, 3));
+	assert(!AH_WarpPad_RebuildHasRoom(&pad, 4));
+	tracker.JitPools.instance.free.count = 3;
+	assert(!AH_WarpPad_TryRebuild(&pad));
+	assert(rebuilds == 0 && reused.next == &ring);
+	tracker.JitPools.instance.free.count++;
+	assert(AH_WarpPad_TryRebuild(&pad) && rebuilds == 1);
+	assert(*taken == &reused && reused.next == &mesh && mesh.next == NULL);
+	assert(AH_WarpPad_LiveInstances(&pad, live, 0));
+	for (int i = 0; i < WPIS_NUM_INSTANCES; i++)
+		assert(live[i] == NULL);
+
+	*taken = &requirement;
+	changed.inst[WPIS_CLOSED_ITEM] = &requirement;
+	changed.inst[WPIS_CLOSED_X] = &cross;
+	changed.inst[WPIS_CLOSED_1S] = &freed;
+	AH_WarpPad_RecordChildSlots(&changed);
+	*taken = &cross;
+	changed.inst[WPIS_CLOSED_ITEM] = NULL;
+	changed.inst[WPIS_CLOSED_1S] = NULL;
+	assert(!AH_WarpPad_LiveInstances(&pad, live, 0));
+	assert(live[WPIS_CLOSED_X] == &cross);
+
+	*taken = &prize;
+	changed.inst[WPIS_CLOSED_X] = NULL;
+	changed.inst[WPIS_OPEN_PRIZE1] = &prize;
+	AH_WarpPad_RecordChildSlots(&changed);
+	assert(AH_WarpPad_LiveInstances(&pad, live, 0));
+	*taken = &mesh;
+	changed.inst[WPIS_OPEN_PRIZE1] = NULL;
+	assert(!AH_WarpPad_LiveInstances(&pad, live, 0));
+
+	*taken = &filter;
+	AH_WarpPad_RecordChildSlots(&changed);
+	assert(!AH_WarpPad_LiveInstances(&pad, live, 0));
+	*taken = NULL;
+	puts("warppad lifetime: stale slots, aliases and incomplete child sets rejected; rebuild checks pool capacity");
 }
 
 /* The digit an instance draws: its model, or its STATIC_BIG1 header. */
@@ -98,6 +238,7 @@ static int drawn(const struct Instance *inst)
 int main(void)
 {
 	int fail = 0, n;
+	verify_pad_lifetime();
 	g_models[0].id = AP_WARPPAD_DIGIT_MODEL_1TO8; g_models[0].numHeaders = 8; g_models[0].headers = g_big1Headers;
 	g_models[1].id = AP_WARPPAD_DIGIT_MODEL_0; g_models[1].numHeaders = 1; g_models[1].headers = g_big1Headers;
 	g_models[2].id = AP_WARPPAD_DIGIT_MODEL_9; g_models[2].numHeaders = 1; g_models[2].headers = g_big1Headers;
@@ -106,6 +247,7 @@ int main(void)
 	{
 		struct WarpPad wp;
 		struct Instance ones, tens;
+		struct Thread pad = {&wp, NULL};
 		int want = n < 0 ? 0 : (n > 99 ? 99 : n), shown;
 		memset(&wp, 0, sizeof(wp));
 		memset(&ones, 0, sizeof(ones));
@@ -115,16 +257,23 @@ int main(void)
 		/* Birth: ones always, tens only when nonzero; each starts on header 0. */
 		ones.model = model_of(ap_warppad_digit_model(wp.digit1s));
 		ones.shownHeader = 0;
+		ones.thread = &pad;
+		ones.name = "warpnum";
+		*taken = &ones;
 		wp.inst[WPIS_CLOSED_1S] = &ones;
 		if (wp.digit10s != 0)
 		{
 			tens.model = model_of(ap_warppad_digit_model(wp.digit10s));
 			tens.shownHeader = 0;
+			tens.thread = &pad;
+			tens.name = "warpnum";
+			ones.next = &tens;
 			wp.inst[WPIS_CLOSED_10S] = &tens;
 		}
 
-		digit_pass(&wp);
-		digit_pass(&wp); /* every frame: stable */
+		AH_WarpPad_RecordChildSlots(&wp);
+		digit_pass(&pad);
+		digit_pass(&pad); /* every frame: stable */
 
 		shown = drawn(&ones);
 		if (wp.digit10s != 0)
@@ -133,6 +282,14 @@ int main(void)
 		{
 			printf("FAIL count %d shows %d, want %d\n", n, shown, want);
 			fail = 1;
+		}
+		if (n == 10)
+		{
+			struct Instance *live[WPIS_NUM_INSTANCES];
+			wp.inst[WPIS_CLOSED_1S] = &tens;
+			wp.inst[WPIS_CLOSED_10S] = &ones;
+			assert(!AH_WarpPad_LiveInstances(&pad, live, 0));
+			assert(live[WPIS_CLOSED_1S] == NULL && live[WPIS_CLOSED_10S] == NULL);
 		}
 
 		/* Retail split for the counts retail could ask for. */
@@ -153,13 +310,18 @@ int main(void)
 		struct Model small = { AP_WARPPAD_DIGIT_MODEL_1TO8, 3, few };
 		struct WarpPad wp;
 		struct Instance ones;
+		struct Thread pad = {&wp, NULL};
 		memset(&wp, 0, sizeof(wp));
 		memset(&ones, 0, sizeof(ones));
 		ones.model = &small;
+		ones.thread = &pad;
+		ones.name = "warpnum";
+		*taken = &ones;
 		ones.shownHeader = -7; /* untouched marker: the pass must skip it */
 		wp.inst[WPIS_CLOSED_1S] = &ones;
+		AH_WarpPad_RecordChildSlots(&wp);
 		wp.digit1s = 7;
-		digit_pass(&wp);
+		digit_pass(&pad);
 		if (ones.shownHeader != -7)
 		{
 			printf("FAIL short model: header %d selected\n", ones.shownHeader);
@@ -167,7 +329,7 @@ int main(void)
 		}
 		/* and a digit the short model has is still selected */
 		wp.digit1s = 2;
-		digit_pass(&wp);
+		digit_pass(&pad);
 		if (ones.shownHeader != 1)
 		{
 			printf("FAIL short model: digit 2 gave header %d\n", ones.shownHeader);

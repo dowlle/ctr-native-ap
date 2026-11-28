@@ -298,10 +298,11 @@ you would fill them in:
   lap checks, item boxes, Itemsanity and more).
 - **Items and traps, characters and stats, boost, DeathLink, display.**
 
-Every option explains itself in the Builder and in the generated template. Three
+Every option explains itself in the Builder and in the generated template. Four
 presets give you a start: **Quick** (a short goal with few locks), **Standard**
-(the defaults) and **Full Adventure** (everything on, every location
-reachable). They are the same three that Play Solo offers.
+(the defaults), **Full Adventure** (everything on, every location reachable) and
+**Trophy Hunt** (a trophy-gated 101% run with chaotic bosses and many checks).
+They are the same four that Play Solo offers.
 
 Old YAMLs: option names that 0.3.0 no longer has are ignored without a message.
 That does not make a v0.2.x YAML safe to reuse: the defaults changed, and some
@@ -350,7 +351,7 @@ From 0.3.0 the client can make and host a single-player seed itself. Choose
 **PLAY SOLO** on the title screen, or open **Options > Connection > Play Solo**:
 
 - **New solo seed** offers the bundled presets (Quick, Standard, Full
-  Adventure), any YAML you imported, and any YAML you drop into the `solo/inbox`
+  Adventure, Trophy Hunt), any YAML you imported, and any YAML you drop into the `solo/inbox`
   folder next to the game (the screen shows the path). A preset opens an
   options screen with every setting of the world, in groups (Goal, Cups and
   Arenas, Bosses and so on). Cross opens a group, Left and Right change a
