@@ -93,7 +93,6 @@ Archipelago Logo Marker (AP build and authoring client)	MMRECOMPRANDO;KRISTA COR
 CTR ModSDK Retro-Fueled mechanics and Blue Fire palette (AP build only)	THEREDHOTBR;AVERY
 AP Box Texture (AP build only)	JURNTHREINAL;KRISTA CORKOS;CHRISTOPHER WILSON
 Cortex Vortex track (AP build only)	LOCKHEART
-Komodo Moe driver model (AP build only)	LOCKHEART
 SDL3	SDL3;SAM LANTINGA
 CTR Native Expanded controls	THECODINGBOB
 Always Jumping trap (AP build only)	ALIENGENIE
@@ -195,7 +194,8 @@ GRAPHICS OPTIONS - THECODINGBOB
 RESERVES METER - SUPERSTARXALIEN
 ALWAYS JUMPING TRAP - ALIENGENIE
 ARCHIPELAGO - LLCOOLDAVE
-TRACK AND MUSIC BY LOCKHEART
+TRACK BY LOCKHEART
+MUSIC BY ARBEE
 EOF
 
 # --- 4. Glyph set + line width ----------------------------------------------

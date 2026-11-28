@@ -1,0 +1,25 @@
+/* Merged mode builds (MR2): tracks whose race modes are in one Project Saphi
+   LEV/VRM pair and whose Relic Race is in another. Built-in fallback for the
+   registry's `mode_pairs` (dowlle/ctr-track-registry), used when the client
+   has no registry copy. Same rows as the registry on 2026-11-27.
+   MP(track key, race revision, race LEV sha256, bytes, race VRM sha256, bytes,
+      relic revision, relic LEV sha256, bytes, relic VRM sha256, bytes,
+      sapphire, gold, platinum ticks at 960 per second) */
+MP("country-speedway", "1.3.0", "9fa73436daaf91434ede1d6fb036a8e6dff225c55533cc0be5723d229b5e53bd", 818324, "e02c94ff5fd7685c63ba107581b0bc8625cd50e6f601f6fbae0bf1b71af7ef8e", 458808,
+   "1.3.1", "504946fdd87d040cce6dfadcf158759b53962d2a08b41002ad97949051b3d996", 814372, "0e99718c43d5c612128f29750f29b1fd9d9399c8ad13026361e5fae24f308d60", 458808,
+   72000, 57600, 43200)
+MP("cubic-circuit", "1.1.2", "fbb293328e461bf8ebcaa2ed15605f584eeb3e4cf805dae29869cc9f85a15e09", 234272, "fe23e4362eb43761df60e82190b805da417159ae255232d67c90558e7cb22536", 458808,
+   "1.1.2-relic", "dee426c85d71a460914a4f69e2293c1a664ab274fe98776ed19e15c9fdb18d6d", 222400, "aaea72b8dfea5381554e9164b53bda613cbed86191f26b12e08e8a326fdd339c", 458808,
+   38400, 28800, 19200)
+MP("pepsi-city", "1.1.0", "c3a5a77e754ca7754466d1fc55ced1ebd226e403bb1725eb59398fb45dd387f4", 849176, "408e07d3bb5eae351b82b8669f6125bab7e27240210beed6fd26d6e897d13b32", 458808,
+   "1.1.1", "f9dd02599eee3941a6cf8d2151e3b9530f18643ca8542bef175566aeb7751865", 847400, "fdcedfedcd3ac2743b8545b4cfaadc2589485454eb023dfd53ccb0f1d7f4a0c9", 458808,
+   86400, 67200, 48000)
+MP("sunken-sprint", "1.0.0", "286d6574d87e158d78cc89986f16b8b51e5b94f1b153574ea9358582e32c6ba1", 939640, "bc19e0e64c89c4c6b7afbf3e33225bc640aeb10cf64f58a0cde7089620b016c4", 458808,
+   "1.0.0-relic", "5d9f0d66fdc01d269f968267f1714a9f92890251140c1ed2a1d6dd5feffd3694", 937632, "ab5d35e75c6cb31ed4a379ab8d614986fa5c5230957058ffe30e2138e8ec5b26", 458808,
+   153600, 115200, 91200)
+MP("toasty-terrace", "1.3.0", "2b18c6305d3cfe591e979eabe42e7815fe475479d49f59d5b7b50b06f701ac5d", 1088620, "8e27716ee9fac0f4734a86eca5266fdffa149dee691149023bf464e822817a30", 458808,
+   "1.3.1", "db74f5ae84d1b57cef68fde1af498b799e8c0bc04262a7fefdfe47c4f5ea181e", 1085668, "5d71c8083bef9cdf16312c879da4431fa61129fe83bb26622ed60d1dd991f673", 458808,
+   86400, 67200, 62400)
+MP("nina-s-nightmare", "1.0.3", "7fc42abb12130c546a7b500815a3d3a372c4178f4f063b56460730443f4ea0a0", 1574284, "b5a9905448bbd18cb26609c778f93f6cc8d9dad155a955d143b091db0a80e784", 458808,
+   "1.0.2", "1d6cd638c004cce3be2b018bc9fb6579cbca99f7474ae821e86b69061331ef10", 1547912, "d430ba4b735c52e7cf1a0adb0f3a6bbbd66f7cde5c429e9f7b90c9638974ebea", 458808,
+   57600, 43200, 28800)

@@ -796,8 +796,8 @@ static void TestInstallSet()
 		      !IsInstallPath("assets/ctr-u.bin", p) && !IsInstallPath("assets/tracks/cortex-vortex/", p) &&
 		      !IsInstallPath("assets/tracks/cortex-vortex/a/b", p) && !IsInstallPath("LICENSE", p) &&
 		      !IsInstallPath("Assets/tracks/cortex-vortex/x", p));
-		// Character looks (JL2): files one folder under assets/looks/, no deeper.
-		CHECK(IsInstallPath("assets/looks/komodo-moe/komodo_moe_hi.bin", p));
+		// Older bundles must not install character look files.
+		CHECK(!IsInstallPath("assets/looks/komodo-moe/komodo_moe_hi.bin", p));
 		CHECK(!IsInstallPath("assets/looks/komodo-moe/", p) && !IsInstallPath("assets/looks/x.bin", p) &&
 		      !IsInstallPath("assets/looks//x.bin", p) && !IsInstallPath("assets/looks/a/b/c.bin", p) &&
 		      !IsInstallPath("assets/looks/", p) && !IsInstallPath("Assets/looks/komodo-moe/x", p));

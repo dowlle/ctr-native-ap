@@ -227,7 +227,10 @@ assert 'ctr_boss_encounters.custom[bossIdx]' in adv and 'pkg->display_name' in a
 rival = extract(gates, 'int AP_BossRivalAdvert(int bossIdx, char *out, int cap)\n{')
 assert 'ap_content_plan' not in rival and 'AP_BossEncounterOpponent(&ctr_boss_encounters, bossIdx)' in rival
 assert 'ap_content_plan' not in extract(gates, 'int AP_BossKitAdvert(int bossIdx, char *out, int cap)\n{')
-assert re.search(r'AP_BossRivalAdvert\(advertBoss, rivalLine.*\n.*\n\s*if \(AP_BossKitAdvert\(advertBoss, kitLine', garage)
+# BG1: the garage block has no rival or boss cup row; the title names both.
+assert 'AP_BossRivalAdvert' not in garage and 'Rival: ' not in garage
+assert 'AP_BossGarageHoldsCup(advertBoss)' in garage and 'AP_BossKitAdvert(advertBoss, kitLine' in garage
+assert 'AP_BossGarageTitle(levelID == GEM_STONE_VALLEY ? 4 : hubID - 1' in garage
 tracker = text('ap/ap_tracker.c')
 assert 'AP_BossRivalAdvert(ap_tracker.hub - 1, n->rival' in tracker and 'AP_BossFinalGarageOpponent()' in tracker
 assert 'AP_TrackerText(n->rival,' in extract(tracker, 'static void AP_TrackerDrawNode(int index)\n{')

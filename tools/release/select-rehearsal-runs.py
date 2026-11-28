@@ -54,7 +54,10 @@ def choose_native(repo: str, source: str, pr_number: str, pr_head: str) -> int |
     return None
 
 
-def choose_apworld(repo: str, branch: str, companion: str = '', required: bool = False) -> tuple[int, str]:
+def choose_apworld(
+    repo: str, branch: str, companion: str = '', required: bool = False,
+    *, allow_pull_request: bool = False,
+) -> tuple[list[int], str]:
     expected_sha = None
     if companion:
         # Paired PRs can rehearse together before either side merges. Only a
@@ -73,14 +76,39 @@ def choose_apworld(repo: str, branch: str, companion: str = '', required: bool =
                 raise RuntimeError(f"could not resolve companion branch on {repo}: {ref}")
         else:
             branch, expected_sha = companion, ref['object']['sha']
-    for run in runs(repo, "ctr-world.yml", urlencode({"branch": branch, "status": "success"})):
-        if (run.get("event") not in ("push", "workflow_dispatch", "schedule")
+    query = {"branch": branch, "status": "success"}
+    events = {"push", "workflow_dispatch", "schedule"}
+    prefer_pr = allow_pull_request and expected_sha is not None
+    if prefer_pr:
+        events.add("pull_request")
+        query["head_sha"] = expected_sha
+    pr_runs = []
+    other_runs = []
+    for run in runs(repo, "ctr-world.yml", urlencode(query)):
+        if (run.get("event") not in events
                 or run.get("head_branch") != branch or run.get("conclusion") != "success"):
             continue
         if expected_sha and run.get('head_sha') != expected_sha:
             continue
-        if has_artifacts(repo, run["id"], {"ctr.apworld"}):
-            return run["id"], run["head_sha"]
+        is_pr_run = run.get("event") == "pull_request"
+        if is_pr_run and (run.get("head_repository") or {}).get("full_name") != repo:
+            continue
+        try:
+            available = has_artifacts(repo, run["id"], {"ctr.apworld"})
+        except subprocess.CalledProcessError:
+            if not prefer_pr:
+                raise
+            print(f"Could not look up ctr.apworld for run {run['id']}", file=sys.stderr)
+            continue
+        if available:
+            if not prefer_pr:
+                return [run["id"]], run["head_sha"]
+            if is_pr_run:
+                pr_runs.append(run["id"])
+            else:
+                other_runs.append(run["id"])
+    if (pr_runs or other_runs) and expected_sha:
+        return pr_runs + other_runs, expected_sha
     raise RuntimeError(f"no successful ctr-world run with ctr.apworld on {repo}:{branch}")
 
 
@@ -99,10 +127,11 @@ def main() -> None:
     elif mode == "rehearsal":
         repo = os.environ["GITHUB_REPOSITORY"]
         apworld_repo = os.environ["APWORLD_REPO"]
-        world_id, world_sha = choose_apworld(
+        world_ids, world_sha = choose_apworld(
             apworld_repo, os.environ["APWORLD_BRANCH"],
             os.environ.get("APWORLD_COMPANION_BRANCH", ""),
             os.environ.get("APWORLD_COMPANION_REQUIRED", "false").lower() == "true",
+            allow_pull_request=bool(os.environ["PR_NUMBER"]),
         )
         deadline = time.monotonic() + 55 * 60
         native_id = None
@@ -116,7 +145,8 @@ def main() -> None:
         selected = {
             "native_run_id": str(native_id),
             "native_source_commit": source,
-            "apworld_run_id": str(world_id),
+            "apworld_run_id": str(world_ids[0]),
+            "apworld_alternate_run_ids": " ".join(map(str, world_ids[1:])),
             "apworld_source_commit": world_sha,
         }
     else:

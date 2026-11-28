@@ -128,7 +128,8 @@ int main(void)
 			for (int r = 0; r < s_counts[p]; r++)
 				if (s_rows[p][r] == i)
 					seen++;
-		if (CTR_MenuSectionHidden(g_configEntries[i].section))
+		if (CTR_MenuSectionHidden(g_configEntries[i].section) ||
+		    (!CTR_AP_CHARACTER_LOOKS && strcmp(g_configEntries[i].key, "look_joe") == 0))
 		{
 			snprintf(label, sizeof label, "%s/%s is not on any page",
 				g_configEntries[i].section, g_configEntries[i].key);
@@ -212,7 +213,11 @@ int main(void)
 			"disable_split_screen_lod", NULL};
 		static const char *const gameplay[] = {
 			"skip_intro", "skip_hints", "race_type_selector", "skip_podium", "skip_cutscenes",
-			"boss_music", "look_joe", "ai_difficulty", "mute_when_unfocused", "device_aware_labels", "update_check", NULL};
+			"boss_music",
+#if CTR_AP_CHARACTER_LOOKS
+			"look_joe",
+#endif
+			"ai_difficulty", "mute_when_unfocused", "device_aware_labels", "update_check", NULL};
 		static const char *const controls[] = {NULL};
 		static const char *const connection[] = {"uri", "slot", "password", NULL};
 		static const char *const archipelago[] = {

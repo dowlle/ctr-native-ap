@@ -5911,6 +5911,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "name": "Acid Lake"
     },
     {
+      "key": "acropolis",
+      "block": 91,
+      "name": "Acropolis"
+    },
+    {
       "key": "ancient-lake",
       "block": 1,
       "name": "Ancient Lake"
@@ -6164,6 +6169,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "key": "neonstadion",
       "block": 52,
       "name": "Neonstadion"
+    },
+    {
+      "key": "nina-s-nightmare",
+      "block": 90,
+      "name": "Nina's Nightmare"
     },
     {
       "key": "north-pole",
@@ -8823,6 +8833,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       37200080,
       37200096
     ],
+    "Acropolis": [
+      37211648,
+      37211728,
+      37211744
+    ],
     "Ancient Lake": [
       37200128,
       37200208,
@@ -9077,6 +9092,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       37206656,
       37206736,
       37206752
+    ],
+    "Nina's Nightmare": [
+      37211520,
+      37211600,
+      37211616
     ],
     "North Pole": [
       37206784,
@@ -9919,6 +9939,138 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       3,
       0
     ]
+  },
+  "seat_spots_v2": {
+    "e3d765e824a2de96d06d1f34951b6d2ab51c027fb3353c62d8e7086b8ce1e33a": {
+      "4": {
+        "pos": [
+          -12314,
+          1551,
+          -7345
+        ],
+        "rot_y": 4096
+      },
+      "7": {
+        "pos": [
+          -12314,
+          1551,
+          -8209
+        ],
+        "rot_y": 4096
+      },
+      "17": {
+        "pos": [
+          -692,
+          1398,
+          -17085
+        ],
+        "rot_y": 4096
+      }
+    },
+    "17eafea4884285d2d1b6e684519081955347b96196783d06d984f06d72105e3c": {
+      "14": {
+        "pos": [
+          -17262,
+          534,
+          -751
+        ],
+        "rot_y": 4065
+      },
+      "22": {
+        "pos": [
+          2223,
+          150,
+          9895
+        ],
+        "rot_y": 4087
+      },
+      "17": {
+        "pos": [
+          -17648,
+          558,
+          -1836
+        ],
+        "rot_y": 4065
+      },
+      "25": {
+        "pos": [
+          2225,
+          152,
+          8810
+        ],
+        "rot_y": 4087
+      }
+    },
+    "5728e57919f873d84c84e8372db4b44bc104c9d7472e89be127def6012293ecf": {
+      "4": {
+        "pos": [
+          -4413,
+          -436,
+          1559
+        ],
+        "rot_y": -302
+      }
+    },
+    "db6f51a7857983771eba923883daafd696eaf0224a2d833528361f187a6d7115": {
+      "1": {
+        "pos": [
+          1353,
+          2035,
+          13150
+        ],
+        "rot_y": -1034
+      },
+      "3": {
+        "pos": [
+          8254,
+          1327,
+          6343
+        ],
+        "rot_y": 2045
+      },
+      "4": {
+        "pos": [
+          5171,
+          1333,
+          6528
+        ],
+        "rot_y": 2047
+      },
+      "5": {
+        "pos": [
+          5178,
+          1331,
+          6288
+        ],
+        "rot_y": 2047
+      },
+      "6": {
+        "pos": [
+          963,
+          1982,
+          12948
+        ],
+        "rot_y": -1034
+      },
+      "7": {
+        "pos": [
+          297,
+          2036,
+          13140
+        ],
+        "rot_y": -1035
+      }
+    },
+    "90120132367204ce293213ffe3d8e46b906d2a96dcc96b2db4a1485b690bdafa": {
+      "4": {
+        "pos": [
+          -4413,
+          -436,
+          1559
+        ],
+        "rot_y": -302
+      }
+    }
   }
 }
 )CTRREG";

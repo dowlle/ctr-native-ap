@@ -57,9 +57,16 @@ int AP_FastTravelPending(void)
 
 /* ── the hub selector ───────────────────────────────────────────────────────
  * A plain RectMenu in the pause menu's shape (menuQuit): one row per hub in
- * hub order, retail hub names, a locked row for a hub whose door Keys are
- * missing (the 0x8000 row bit: grey, womp, never confirmed). Row index == hub
- * index, so the proc needs no mapping. */
+ * menu order, retail hub names, a locked row for a hub whose door Keys are
+ * missing (the 0x8000 row bit: grey, womp, never confirmed). */
+static const int ap_ft_hubs_by_row[AP_FT_HUBS] = {
+	N_SANITY_BEACH - GEM_STONE_VALLEY,
+	GEM_STONE_VALLEY - GEM_STONE_VALLEY,
+	THE_LOST_RUINS - GEM_STONE_VALLEY,
+	GLACIER_PARK - GEM_STONE_VALLEY,
+	CITADEL_CITY - GEM_STONE_VALLEY,
+};
+
 static struct MenuRow ap_ft_rows[AP_FT_HUBS + 1];
 
 static void AP_FastTravelMenuProc(struct RectMenu *menu);
@@ -88,7 +95,7 @@ static void AP_FastTravelMenuProc(struct RectMenu *menu)
 	/* Back, or a begin that refused (the gate closed since the menu was
 	 * drawn): return to the pause menu. */
 	if (row < 0 || row >= AP_FT_HUBS || !ctr_cfg_active() ||
-	    !AP_FTBegin(AP_FTState(), row, AP_GateCount(AP_IDX_KEY), AP_TrackerLaunchPending()))
+	    !AP_FTBegin(AP_FTState(), ap_ft_hubs_by_row[row], AP_GateCount(AP_IDX_KEY), AP_TrackerLaunchPending()))
 	{
 		sdata->ptrDesiredMenu = MainFreeze_GetMenuPtr();
 		return;
@@ -104,8 +111,9 @@ void AP_FastTravelShowMenu(void)
 	int i, keys = AP_GateCount(AP_IDX_KEY), cursor = -1;
 	for (i = 0; i < AP_FT_HUBS; i++)
 	{
-		int open = AP_FT_HubOpen(i, keys);
-		ap_ft_rows[i].stringIndex = (s16)((open ? 0 : 0x8000) | (LNG_GEM_STONE_VALLEY + i));
+		int hub = ap_ft_hubs_by_row[i];
+		int open = AP_FT_HubOpen(hub, keys);
+		ap_ft_rows[i].stringIndex = (s16)((open ? 0 : 0x8000) | (LNG_GEM_STONE_VALLEY + hub));
 		ap_ft_rows[i].rowOnPressUp = (char)(i ? i - 1 : AP_FT_HUBS - 1);
 		ap_ft_rows[i].rowOnPressDown = (char)(i + 1 < AP_FT_HUBS ? i + 1 : 0);
 		ap_ft_rows[i].rowOnPressLeft = (char)i;

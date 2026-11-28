@@ -66,6 +66,8 @@ def main():
     cups = cup_pool(args.apworld)
     sanity = json.loads((args.apworld / "worlds/ctr/data/sanity_needs.json").read_text())
     exclusions = json.loads((args.apworld / "worlds/ctr/data/crate_exclusions.json").read_text())
+    seat_spots_path = args.apworld / "worlds/ctr/data/box_spots/seat-spots-v2.json"
+    seat_spots = json.loads(seat_spots_path.read_text())
     object_rulings = json.loads((args.apworld / "worlds/ctr/data/object_rulings.json").read_text())
     revisions_path = args.apworld / "worlds/ctr/data/track_ruling_revisions.json"
     revisions = json.loads(revisions_path.read_text()) if revisions_path.is_file() else registry.get("track_ruling_revisions", {})
@@ -79,7 +81,8 @@ def main():
     if (registry.get("named_blocks") == expected and registry.get("cups") == cups and registry.get("sanity") == sanity
             and registry.get("sanity_exclusions") == exclusions and registry.get("sanity_locations") == bases
             and registry.get("object_rulings") == object_rulings and registry.get("track_ruling_revisions") == revisions
-            and registry.get("pickup_ruling_counts") == pickup_counts):
+            and registry.get("pickup_ruling_counts") == pickup_counts
+            and registry.get("seat_spots_v2") == seat_spots):
         print(f"PASS named-block table and cup pool match the apworld ({len(expected)} blocks, {len(cups)} cups)")
         return 0
     if not args.write:
@@ -89,6 +92,7 @@ def main():
     registry["cups"] = cups
     registry["sanity"] = sanity
     registry["sanity_exclusions"] = exclusions
+    registry["seat_spots_v2"] = seat_spots
     registry["object_rulings"] = object_rulings
     registry["track_ruling_revisions"] = revisions
     registry["pickup_ruling_counts"] = pickup_counts

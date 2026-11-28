@@ -137,7 +137,7 @@ const char *AP_ContentCupTrackName(void)
 	const ctr_content_pad *pad = AP_ContentCupPad();
 	int leg = AP_ContentCupLeg();
 	const ctr_content_package *pkg;
-	if (!pad || leg < 0 || leg >= AP_CONTENT_CUP_LEGS || pad->legs[leg].retail_id >= 0)
+	if (!pad || leg < 0 || leg >= AP_CONTENT_CUP_LEGS || !ap_content_leg_custom_title(&pad->legs[leg]))
 		return NULL;
 	if (pad->legs[leg].cortex)
 	{

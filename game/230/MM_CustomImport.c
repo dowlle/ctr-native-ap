@@ -29,18 +29,36 @@
    track with one goes into solo/tracks, so the Play Solo Custom Tracks page
    lists it at once. A track without laps goes into solo/needs-laps: the page
    lists it too and asks the player for its laps first. */
+/* The package uuid in a descriptor's JSON ("uuid":"<36 characters>"), or "". */
+static void MM_CustomImport_DescriptorUuid(const char *json, char out[37])
+{
+    const char *at = strstr(json, "\"uuid\":\"");
+    out[0] = '\0';
+    if (at && strlen(at + 8) >= 37 && at[8 + 36] == '"')
+        snprintf(out, 37, "%.36s", at + 8);
+}
+
 static int MM_CustomImport_KeepSoloDescriptors(void)
 {
     static char json[16384];
     char contentId[65], revision[65];
-    static char kept[CTR_XDELTA_ITEM_MAX][65];
+    /* PS2: what was recorded, by key, version and package uuid: two slots
+       may share a key and version, and only the one that published may
+       retire its old copy's entry. */
+    static struct { char key[65], revision[65], uuid[37]; } kept[CTR_XDELTA_ITEM_MAX];
     int i, j, needsLaps, count = XdeltaImport_InstalledDescriptorCount(), ok = 1, keptCount = 0;
     for (i = 0; i < count; i++)
         if (XdeltaImport_InstalledDescriptor(i, contentId, revision, json, sizeof json, &needsLaps))
         {
             int recorded = AP_Solo_RecordImportedTrack(contentId, revision, json, needsLaps);
             ok &= recorded;
-            if (recorded && keptCount < CTR_XDELTA_ITEM_MAX) snprintf(kept[keptCount++], 65, "%s", contentId);
+            if (recorded && keptCount < CTR_XDELTA_ITEM_MAX)
+            {
+                snprintf(kept[keptCount].key, sizeof kept[keptCount].key, "%s", contentId);
+                snprintf(kept[keptCount].revision, sizeof kept[keptCount].revision, "%s", revision);
+                MM_CustomImport_DescriptorUuid(json, kept[keptCount].uuid);
+                keptCount++;
+            }
         }
         else ok = 0;
     /* An old slot-titled copy the install replaced (A3-20) stops listing its track. */
@@ -49,9 +67,11 @@ static int MM_CustomImport_KeepSoloDescriptors(void)
     {
         char oldKey[65], newKey[65], newRevision[65], uuid[37];
         if (!XdeltaImport_ReplacedCopy(i, oldKey, revision, uuid, newKey, newRevision)) continue;
-        /* The old key lists the track until the new one does. */
+        /* The old key lists the track until the new copy (same package) does. */
         for (j = 0; j < keptCount; j++)
-            if (!strcmp(kept[j], newKey)) { ok &= AP_Solo_RetireReplacedTrack(oldKey, revision, uuid, newKey, newRevision); break; }
+            if (!strcmp(kept[j].key, newKey) && !strcmp(kept[j].revision, newRevision) &&
+                (!kept[j].uuid[0] || !strcmp(kept[j].uuid, uuid)))
+            { ok &= AP_Solo_RetireReplacedTrack(oldKey, revision, uuid, newKey, newRevision); break; }
         if (j == keptCount) ok = 0;
     }
     return ok && XdeltaImport_InstalledDescriptorCount() > 0;

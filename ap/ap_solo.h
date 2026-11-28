@@ -109,8 +109,10 @@ enum APSoloTrackPick
 
 struct APSoloTrackInfo
 {
-	char id[72];               /* package/<track key>/<revision> */
-	char title[AP_SOLO_TEXT];
+	char id[112];              /* package/<track key>/<revision>, "@<build>" when two builds share it (PS2) */
+	char title[AP_SOLO_TEXT];  /* with " - Saphi", " - <patch> patch" ... when two builds share the id */
+	char build[33];            /* build tag: 16 hex of the LEV and 16 of the VRM SHA-256, or "" */
+	char file[176];            /* its descriptor file in solo/tracks or solo/needs-laps, or "" */
 	char revision[32];
 	char author[AP_SOLO_TEXT];
 	char creditLev[65], creditVrm[65], creditSource[65];
@@ -123,6 +125,9 @@ struct APSoloTrackInfo
 
 /* 1 when solo-runtime/ and its interpreter are present in the client folder. */
 int AP_Solo_RuntimePresent(void);
+/* NULL when Python, the solo script and ctr.apworld are all in the client
+   folder, else one plain sentence saying what is missing and what to do. */
+const char *AP_Solo_RuntimeProblem(void);
 
 /* Jobs. Start returns 0 when another job runs or the runtime is missing. */
 int AP_Solo_ListStart(void);

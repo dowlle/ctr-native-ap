@@ -109,6 +109,7 @@ typedef struct ctr_content_pad {
     int64_t letter_locations[3];
     int64_t letter_items[3];
     char letter_glyphs[3];     /* zero for the default C/T/R slots */
+    int placed_letters;        /* exact revision uses client-placed letter anchors */
     /* Relic Race Perfect (#133 PR 3c, #453): the check for breaking every time
      * crate in this pad's Relic Race; 0 when the seed or entry has none. */
     int64_t perfect_location;
@@ -161,6 +162,8 @@ typedef struct ctr_content_pad {
      * "Item Box <number>"), box_pos and box_rot_y where each stands (LEV
      * world units, engine angle). No weapon crate is hidden on such a track. */
     int box_spots;
+    /* Fallback seats with an individual authored spot (one bit per slot). */
+    unsigned int box_seat_spots;
     int box_number[50];
     short box_pos[50][3], box_rot_y[50];
     char entry_id[65], track_id[65], display_name[129];
@@ -393,6 +396,21 @@ typedef struct ctr_content_checks {
 static inline int ap_content_pad_host(const struct ctr_content_pad *pad)
 {
     return pad->retail_id >= 0 ? pad->retail_id : pad->cortex ? AP_CONTENT_CORTEX_HOST : AP_CONTENT_CUSTOM_HOST;
+}
+/* CN1: 1 when a pad's name comes from the room and can be longer than the
+ * retail tables allow, so the warp pad draws it whole. Every cup pad, Gem Cups
+ * included, has retail_id -1, so the cup test comes first: an original Gem Cup
+ * (gem_cup 100 to 104) keeps its retail title line, a custom cup does not. */
+static inline int ap_content_pad_custom_title(const struct ctr_content_pad *pad)
+{
+    return pad && pad->occupied && (pad->cup ? !pad->gem_cup : pad->retail_id < 0);
+}
+/* CN2: 1 when the race a cup leg runs carries a title from the room, so the
+ * fly-in and the race start banner draw it whole. A retail leg (every leg of an
+ * original Gem Cup) keeps the retail name; a custom or Cortex Vortex leg does not. */
+static inline int ap_content_leg_custom_title(const struct ctr_content_leg *leg)
+{
+    return leg && leg->retail_id < 0;
 }
 /* The engine LevelID a cup leg races on (#133 PR 5). */
 static inline int ap_content_leg_host(const struct ctr_content_leg *leg)

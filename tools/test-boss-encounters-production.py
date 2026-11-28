@@ -229,7 +229,7 @@ assert hub.count('data.characterIDs[1] =') == 1, 'one seat for the boss race and
 for stop in ('return;', 'MainRaceTrack_RequestLoad(', 'AP_ContentGarageCupPrepare(', 'AP_BossGarageVenue(hubID - 1)'):
     assert seat < hub.index(stop), f'the drawn racer is seated before {stop!r}'
 assert 'gGT->bossID = R232.bossIDs[hubID];' in garage
-require('game/232/AH_Garage.c', 'AP_BossRivalAdvert(advertBoss, rivalLine', 'AP_BossKitAdvert(advertBoss, kitLine',
+require('game/232/AH_Garage.c', 'AP_BossGarageTitle(', 'AP_BossKitAdvert(advertBoss, kitLine',
         'char advert[192];')
 
 assets = text('game/LOAD/LOAD_Assets.c')

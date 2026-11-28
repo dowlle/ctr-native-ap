@@ -31,18 +31,24 @@ def body(text, head):
     return text[at:text.index("\n}\n", at) + 3]
 
 
-build = body(warp, "static void AH_WarpPad_BuildInstances(struct Thread *t)\n{")
+build = body(warp, "static int AH_WarpPad_BuildInstances(struct Thread *t, int rebuilding)\n{")
 tick = body(warp, "void AH_WarpPad_ThTick(struct Thread *t)")
 rebirth = body(warp, "static int AH_WarpPad_RebirthKey(int physLevelID, int destLevelID)")
 phys = body(warp, "static int AH_WarpPad_PhysOf(struct Thread *t)")
+try_rebuild = body(warp, "static int AH_WarpPad_TryRebuild(struct Thread *t)")
+begin_birth = body(warp, "static int AH_WarpPad_BeginBirth(")
 
 # Engine text: the birth records the key, ThTick compares it under the same
 # physical index, and the birth's requirement choice is the key's.
-assert "s_padRebirthState[levelID] = ctr_cfg_active() ? AH_WarpPad_RebirthKey(levelID, warppadObj->levelID) : 0;" in build
+assert "s_padRebirthState[levelID] = ctr_cfg_active() ? AH_WarpPad_RebirthKey(levelID, levelID) : 0;" in begin_birth
 assert "int rbPhys = AH_WarpPad_PhysOf(t);" in tick and "ctr_cfg_warp_phys(warppadObj->levelID);\n\t\tif (rbPhys" not in tick
 assert "int rbState = AH_WarpPad_RebirthKey(rbPhys, warppadObj->levelID);" in tick
 assert "if (rbState != s_padRebirthState[rbPhys])" in tick
-assert "AH_WarpPad_ThDestroy(t);" in tick and "AH_WarpPad_BuildInstances(t);" in tick
+assert "if (AH_WarpPad_TryRebuild(t))" in tick
+assert "AH_WarpPad_BuildInstances(t, 1)" in try_rebuild
+assert begin_birth.index("AH_WarpPad_RebuildHasRoom(t, needed)") < begin_birth.index("AH_WarpPad_ThDestroy(t);")
+assert "AH_WarpPad_BeginBirth(t, levelID, rebuilding, 1 + doneBeam)" in build
+assert "AH_WarpPad_BeginBirth(t, levelID, rebuilding, 3 + (unlockItem_numNeeded >= 10))" in build
 assert "for (i = 8; inst->name[i] != 0; i++)" in build and "for (i = 8; t->inst->name[i] != 0; i++)" in phys
 assert "counts[i] = AP_GateCount(i);" in rebirth and "ap_pad_birth_key(ap_content_plan_pad(physLevelID), counts, state," in rebirth
 assert "AP_PadLook(physLevelID, destLevelID)" in rebirth and "AP_PadReplayable(physLevelID, destLevelID));" in rebirth
@@ -51,10 +57,10 @@ assert warp.count("ap_pad_gate_layer(") == 1 and warp.count("AH_WarpPad_RebirthK
 head = "if (ap_content_plan_active())\n\t{\n\t\tconst ctr_content_pad *pad = ap_content_plan_pad(levelID);"
 plan = build[build.index(head):]
 plan = plan[:plan.index("goto ContentPad_BuildGate;\n\t}") + len("goto ContentPad_BuildGate;\n\t}")]
-assert "ap_pad_gate_layer(pad, unlockItem_numOwned, AP_PadState(levelID, warppadObj->levelID))" in plan
+assert "ap_pad_gate_layer(pad, unlockItem_numOwned, AP_PadState(levelID, levelID))" in plan
 gate = build[build.index("ContentPad_BuildGate:"):]
 assert gate.index("if (unlockItem_numOwned >= unlockItem_numNeeded") < 120
-assert "|| AP_PadReplayable(levelID, warppadObj->levelID)" in gate[:200]
+assert "|| AP_PadReplayable(levelID, levelID)" in gate[:200]
 
 
 def function(text, signature):

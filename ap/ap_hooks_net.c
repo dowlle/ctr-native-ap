@@ -275,11 +275,13 @@ static void AP_NetTick(struct GameTracker *gGT)
 	AP_FmtState(gGT, st, sizeof st); // game-state breadcrumb for this drain (crash diag)
 	for (i = 0; i < n; i++)
 	{
+		long long idx = items[i] - AP_ITEM_BASE;
 		// Hub item feed: queue a toast for this receipt (sender, server index and
 		// AP classification flags from the aligned drain batch). Display-only;
-		// self-suppresses off-hub / unprimed.
-		AP_FeedOnItemReceived(items[i], ap_net_recv_batch_player(i),
-		                      ap_net_recv_batch_index(i), ap_net_recv_batch_flags(i));
+		// self-suppresses off-hub / unprimed. Parked look items have no toast.
+		if (CTR_AP_CHARACTER_LOOKS || AP_LookForItem(idx) < 0)
+			AP_FeedOnItemReceived(items[i], ap_net_recv_batch_player(i),
+			                      ap_net_recv_batch_index(i), ap_net_recv_batch_flags(i));
 
 		// Logic uses raw AP item IDs from this same replay. Location displays
 		// count all receipts, as the gate counters below do. Race stakes and
@@ -288,7 +290,6 @@ static void AP_NetTick(struct GameTracker *gGT)
 		                     ap_net_recv_batch_flags(i));
 
 		// Authoritative gate counter: tally by raw item TYPE index 0..14.
-		long long idx = items[i] - AP_ITEM_BASE;
 		// Sparse custom item addresses cannot index the legacy retail tally.
 		// Authoritative replay rebuilds this slot-owned set after reset above.
 		int customLetterSlot, customLetter;
@@ -475,7 +476,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// rebuilt by every replay (the OPTIONS row and the model read it), and
 		// the newest-wins choice goes through the effect marker, so only a copy
 		// new to this room changes the saved look; a reconnect never does.
-		else if (AP_LookForItem(idx) >= 0)
+		else if (CTR_AP_CHARACTER_LOOKS && AP_LookForItem(idx) >= 0)
 		{
 			AP_LooksReceiveOwned(idx);
 			AP_FxOffer(items[i], ap_net_recv_batch_index(i));

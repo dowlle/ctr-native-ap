@@ -299,34 +299,31 @@ LAB_800aec34:
 			                                    (int)sizeof advert);
 		// #169: a drawn boss track is named on the panel, open or shut,
 		// as the first line above any requirement.
-		if (advertBoss < 4 &&
-		    AP_BossVenueAdvert(advertBoss, venueLine, (int)sizeof venueLine))
+		// BG1: the title carries the racer and the boss cup, so the block
+		// holds only the track (when drawn), the kit and the requirement. A
+		// boss cup garage has no track row, and its kit row still shows.
+		if (advertBoss < 4)
 		{
-			char joined[192];
-			// #169 tiers 2 and 3: the drawn rival and kit follow the track.
-			char rivalLine[48], kitLine[96];
-			int used = snprintf(joined, sizeof joined, "%s", venueLine);
-			if (AP_BossRivalAdvert(advertBoss, rivalLine, (int)sizeof rivalLine) && used < (int)sizeof joined)
-				used += snprintf(joined + used, sizeof joined - used, "\r%s", rivalLine);
-			if (AP_BossKitAdvert(advertBoss, kitLine, (int)sizeof kitLine) && used < (int)sizeof joined)
-				used += snprintf(joined + used, sizeof joined - used, "\r%s", kitLine);
-			if (advertVisible && used < (int)sizeof joined)
-				snprintf(joined + used, sizeof joined - used, "\r%s", advert);
-			memcpy(advert, joined, sizeof advert);
-			advertVisible = 1;
-		}
-		// J03 (decision 7): N. Oxide's garage names the racer the final
-		// race drew, open or shut, as the first line.
-		if (advertBoss == 4 && AP_BossFinalGarageOpponent() >= 0)
-		{
-			char joined[192];
-			int c = AP_BossFinalGarageOpponent();
-			int used = snprintf(joined, sizeof joined, "Rival: %s",
-			                    sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_long]);
-			if (advertVisible && used < (int)sizeof joined)
-				snprintf(joined + used, sizeof joined - used, "\r%s", advert);
-			memcpy(advert, joined, sizeof advert);
-			advertVisible = 1;
+			int cup = AP_BossGarageHoldsCup(advertBoss);
+			int haveVenue = !cup && AP_BossVenueAdvert(advertBoss, venueLine, (int)sizeof venueLine);
+			if (cup || haveVenue)
+			{
+				char joined[192];
+				char kitLine[96];
+				int used = 0;
+				joined[0] = 0;
+				if (haveVenue)
+					used = snprintf(joined, sizeof joined, "%s", venueLine);
+				if (AP_BossKitAdvert(advertBoss, kitLine, (int)sizeof kitLine) && used < (int)sizeof joined)
+					used += snprintf(joined + used, sizeof joined - used, "%s%s", used ? "\r" : "", kitLine);
+				if (advertVisible && used < (int)sizeof joined)
+					used += snprintf(joined + used, sizeof joined - used, "%s%s", used ? "\r" : "", advert);
+				if (used > 0)
+				{
+					memcpy(advert, joined, sizeof advert);
+					advertVisible = 1;
+				}
+			}
 		}
 		// The chaos Final Challenge says so at the garage, open or shut.
 		if (advertBoss == 4)
@@ -358,8 +355,9 @@ LAB_800aec34:
 		const char *challenge = sdata->lngStrings[data.lng_challenge[R232.bossIDs[hubID]]];
 #ifdef CTR_AP
 		char drawnChallenge[96];
-		if (levelID != GEM_STONE_VALLEY &&
-		    AP_BossChallengeTitle(hubID - 1, drawnChallenge, sizeof drawnChallenge))
+		// BG1: "<RACER>'S CHALLENGE" or "<RACER>'S BOSS CUP", N. Oxide's
+		// included when his final race drew a racer.
+		if (AP_BossGarageTitle(levelID == GEM_STONE_VALLEY ? 4 : hubID - 1, drawnChallenge, sizeof drawnChallenge))
 			challenge = drawnChallenge;
 #endif
 		// draw string, lng_challenge

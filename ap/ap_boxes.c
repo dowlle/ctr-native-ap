@@ -835,6 +835,7 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 
 		if (code <= 0 || !AP_BoxInSeed(code, 0) || AP_BoxChecked(code, 0))
 			continue;
+		const int authored = (pad->box_seat_spots & (1u << i)) != 0;
 		def = AP_BoxesCrateDef(defs, count, AP_BoxSeat_Original(
 		    (long)(((long long)i * (limit - excluded)) / seats), pad->box_excluded, excluded));
 		if (def == 0)
@@ -843,11 +844,14 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 		s_live[i].slot = i;
 		s_live[i].code = code;
 		s_live[i].spawn = AP_SPAWN_INVALID;
-		s_live[i].x = def->pos.x;
-		s_live[i].y = def->pos.y;
-		s_live[i].z = def->pos.z;
-		s_live[i].rotY = def->rot.y;
+		s_live[i].x = authored ? pad->box_pos[i][0] : def->pos.x;
+		s_live[i].y = authored ? pad->box_pos[i][1] : def->pos.y;
+		s_live[i].z = authored ? pad->box_pos[i][2] : def->pos.z;
+		s_live[i].rotY = authored ? pad->box_rot_y[i] : def->rot.y;
 		s_live[i].ghostTouched = 0;
+		s_liveCount++;
+		if (authored)
+			continue;
 		s_live[i].seated = 1;
 		s_live[i].seatGen = AP_Spawn_Generation();
 		crate = def->ptrInstance;
@@ -865,16 +869,16 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 		s_live[i].seatFlags = crate != 0 ? (crate->flags & DRAW_COLLISION_MASK) : 0;
 		if (crate != 0)
 			crate->flags &= ~DRAW_COLLISION_MASK; // hidden and not collectable while its box stands
-		s_liveCount++;
 	}
 	for (i = 0; i < AP_BOX_LIVE_MAX; i++)
 		if (s_live[i].used)
 			AP_BoxesSpawnOne(gGT, i);
 
 	snprintf(msg, sizeof msg,
-	         "[AP BOX] level %d: custom track on pad %d, %d of %d Item Box(es) standing on its weapon crates "
+	         "[AP BOX] level %d: custom track on pad %d, %d of %d Item Box(es) standing %s "
 	         "(%ld crates)\n",
-	         s_level, race->physicalPad, s_liveCount, seats, crates);
+	         s_level, race->physicalPad, s_liveCount, seats,
+	         pad->box_seat_spots ? "at crate seats and authored spots" : "on its weapon crates", crates);
 	AP_LogLine(msg);
 	free(synth);
 }
