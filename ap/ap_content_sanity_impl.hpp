@@ -64,7 +64,7 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
     // main LEV; a room from before CV1 named the all-in-one build, whose
     // crates are 1.1.5's at the same places and in the same order, so it
     // keeps its own catalog row (CTR_CFG_CORTEX_LEGACY_LEV_SHA256).
-    auto inventory = [&](const J &track, const J *pin = nullptr) -> const J * {
+    auto measured_inventory = [&](const J &track, const J *pin = nullptr) -> const J * {
         std::string key;
         if (track["origin"] == "retail") key = "retail:" + std::to_string(number(track["retail_id"], 0, 17));
         else if (track["origin"] == "cortex_vortex") key = rules_version < 2 ? "cortex_vortex"
@@ -78,7 +78,15 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             const std::string source = ruling_pin(out, pkg, key,
                 [&](const std::string &pin) { return catalog.contains(pin) || reviewed_counts.contains(pin); });
             if (!inherited_ruling_history(out, pkg, key) && catalog.contains(key)) return &catalog.at(key);
-            const J &caps = pkg["capabilities"];
+            J caps = pkg["capabilities"];
+            // WF1b: a LEV measured without weapon crates whose frozen fill
+            // adds them has Weapon Crate checks also when the descriptor
+            // leaves its fruit counts out (apworld sanity._measured_inventory).
+            if (caps.value("weapon_crates", -1) == 0 && pkg.contains("fill") && pkg["fill"].is_object() &&
+                !pkg["fill"]["families"]["weapon_crates"].empty()) {
+                if (!caps.contains("fruit_crates")) caps["fruit_crates"] = 0;
+                if (!caps.contains("loose_fruit")) caps["loose_fruit"] = 0;
+            }
             if (caps.contains("weapon_crates") && caps.contains("fruit_crates") && caps.contains("loose_fruit")) {
                 const J needs = catalog.contains(source) ? catalog.at(source).at("needs") : J::object();
                 measured[key] = J{{"lev_sha256", key}, {"counts", J::array({caps["weapon_crates"], caps["fruit_crates"], caps["loose_fruit"]})}, {"needs", needs}};
@@ -87,6 +95,28 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             return nullptr;
         }
         return registry.at("sanity").contains(key) ? &registry.at("sanity").at(key) : nullptr;
+    };
+    // WF1: a frozen fill's weapon crates follow the LEV's own as ordinals
+    // count + 1 on, each with the `needs` of its fill row (apworld sanity.py).
+    auto with_fill = [&](const J &track, const J *inv) -> const J * {
+        if (!inv || !track.contains("named_block")) return inv;
+        const J &pkg = *packages.at(track["package_id"]);
+        if (!pkg.contains("fill") || pkg["fill"]["families"]["weapon_crates"].empty()) return inv;
+        static const char *const ranks[] = {"none", "boost", "usf"};
+        J adjusted = *inv;
+        const int lev = adjusted["counts"][0].get<int>();
+        const J &weapons = pkg["fill"]["families"]["weapon_crates"];
+        adjusted["counts"][0] = lev + (int)weapons.size();
+        if (!adjusted["needs"].contains("weapon_crate")) adjusted["needs"]["weapon_crate"] = J::object();
+        for (size_t i = 0; i < weapons.size(); ++i)
+            adjusted["needs"]["weapon_crate"][std::to_string(lev + 1 + (int)i)] =
+                J{{"needs", ranks[number(weapons[i]["rank"], 0, 2)]}};
+        const std::string key = "fill:" + text(track["id"]);
+        measured[key] = adjusted;
+        return &measured.at(key);
+    };
+    auto inventory = [&](const J &track, const J *pin = nullptr) -> const J * {
+        return with_fill(track, measured_inventory(track, pin));
     };
     std::set<std::string> wanted;
     for (const auto &t : tracks) {
@@ -139,6 +169,29 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             }
         }
         std::set<int> &excluded = excluded_by_kind[0];
+        if (track["origin"] == "custom" && pkg && pkg->contains("fill")) {
+            // Inherited exclusions name the LEV's own crates, never filled ones.
+            const int own = inv["counts"][0].get<int>() - (int)pkg->at("fill")["families"]["weapon_crates"].size();
+            excluded.erase(excluded.upper_bound(own), excluded.end());
+        }
+        if (track["origin"] == "custom" && pkg && pkg->contains("fill")) {
+            // WF1: an AP box standing at a filled weapon crate's exact
+            // position and angle takes that crate's seat (ap_boxes.c).
+            const J &weapons = pkg->at("fill")["families"]["weapon_crates"];
+            const int lev = inv["counts"][0].get<int>() - (int)weapons.size();
+            // The spot positions are this pad's box checks' `spot` fields; the
+            // check records are read after this section, so take them here.
+            for (const auto &pad : out.pads) if (standalone.count(tid) && tid == pad.track_id && pad.box_spots) {
+                const std::set<int64_t> codes(pad.box_locations, pad.box_locations + pad.box_count);
+                for (const auto &check : p.at("checks"))
+                    if (check.is_object() && check.contains("spot") && check.contains("location") &&
+                        check["location"].is_number_integer() && codes.count(check["location"].get<int64_t>()))
+                        for (size_t i = 0; i < weapons.size(); ++i)
+                            if (weapons[i]["pos"] == check["spot"].value("pos", J()) &&
+                                weapons[i]["rot"][1] == check["spot"].value("rot_y", J()))
+                                excluded.insert(lev + 1 + (int)i);
+            }
+        }
         if (track["origin"] == "custom") {
             for (const auto &pad : out.pads) if (standalone.count(tid) && tid == pad.track_id && !pad.box_spots) {
                 const std::set<int> carried(pad.box_excluded, pad.box_excluded + pad.box_excluded_count);
@@ -162,11 +215,17 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             std::set<int> pool;
             const J needs = inv.at("needs").value(kinds[f], J::object());
             int limit = std::min(dest.counts[f], budgets[f]);
-            if (reviewed_counts) limit = std::min(limit, reviewed_counts->at(f).get<int>());
+            // WF1: filled weapon crates of a LEV measured without its own sit
+            // outside a reviewed prefix and take their rank from the fill row.
+            const int filled = f == 0 && pkg && pkg->contains("fill") &&
+                pkg->at("capabilities").value("weapon_crates", -1) == 0
+                ? (int)pkg->at("fill")["families"]["weapon_crates"].size() : 0;
+            if (reviewed_counts && !filled) limit = std::min(limit, reviewed_counts->at(f).get<int>());
             for (int n = 1; n <= limit; ++n) {
                 const J row_rule = needs.value(std::to_string(n), J::object());
                 const J rule = row_rule.value("since", 0) <= rules_version ? row_rule : J::object();
-                if (!excluded_by_kind[f].count(n) && rule.value("shortcut", 0) <= tier && !ruled_out(kinds[f], n)) pool.insert(n);
+                if (!excluded_by_kind[f].count(n) && rule.value("shortcut", 0) <= tier &&
+                    (n <= dest.counts[f] - filled ? !ruled_out(kinds[f], n) : true)) pool.insert(n);
             }
             const int selected = f ? ((wumpa & f) ? (int)pool.size() : 0) : std::min((int)pool.size(), count);
             need(row[kinds[f]].is_array() && row[kinds[f]].size() == (size_t)selected, "sanity pick count mismatch");

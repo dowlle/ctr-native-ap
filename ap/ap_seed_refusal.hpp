@@ -89,8 +89,6 @@ inline bool expects_plan(const nlohmann::json &slot)
 
 inline std::string message(const nlohmann::json &slot, const std::string &checksum, const std::string &reason = {})
 {
-    if (reason == "content_plan: " AP_CONTENT_TRACK_FILL_NEEDS_OPT_IN)
-        return "TRACK FILL IS OFF. SEE LOG FOR LAUNCH SWITCH.";
     const auto plan = slot.find("content_plan");
     const auto options = slot.find("ctr_options");
     const bool has_options = options != slot.end() && options->is_object();

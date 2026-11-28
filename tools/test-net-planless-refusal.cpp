@@ -192,11 +192,12 @@ static void test_version_advice(void)
 	fill_room["schema_version"] = fill_room["ctr_options"]["schema_version"] = 19;
 	m = start();
 	m->emit_slot_connected(fill_room);
+	// The room's track_fill_v1 is the opt-in; no launch switch is asked for.
 	expect(ap_net_status() == AP_NET_STATUS_ERROR &&
-	       std::string(ap_net_last_error()) == "TRACK FILL IS OFF. SEE LOG FOR LAUNCH SWITCH.",
-	       "a disabled fill room gives the opt-in remedy on the connection screen");
-	expect(std::strstr(ap_seedcfg_reject_reason(), AP_CONTENT_TRACK_FILL_NEEDS_OPT_IN),
-	       "a disabled fill room keeps the exact launch switch in the diagnostic");
+	       std::string(ap_net_last_error()).find("LAUNCH SWITCH") == std::string::npos,
+	       "a schema-19 room never asks for a launch switch");
+	expect(!std::strstr(ap_seedcfg_reject_reason(), "CTR_TRACK_FILL"),
+	       "a refused schema-19 room names its own fault, not the launch switch");
 	room["build_version"] = "bad~00\n<script>";
 	room["ctr_options"] = 17;
 	expect(ap_seed_refusal::message(room, "").find("MATCHING CLIENT") != std::string::npos,

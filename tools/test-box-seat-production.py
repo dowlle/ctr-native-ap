@@ -103,6 +103,10 @@ long AP_ContentMainWeaponCrates(int packageIndex, short (**out)[4])
 	memcpy(*out, g_main_rows, sizeof g_main_rows);
 	return g_main_count;
 }
+/* WF1 filled weapon crates: none in these cases. */
+struct Instance *AP_TrackFillWeaponOrdinal(struct GameTracker *g, int index) { (void)g; (void)index; return 0; }
+struct Instance *AP_TrackFillWeaponAt(struct GameTracker *g, int x, int y, int z, int r)
+{ (void)g; (void)x; (void)y; (void)z; (void)r; return 0; }
 #define AP_PLACEMENT_SRC_FILE 1
 #define AP_PLACEMENT_FILE "ap-box-placements.json"
 static int g_placement_source;

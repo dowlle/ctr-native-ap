@@ -2308,7 +2308,8 @@ int NativeCheckpoint_Capture(void *dst, int dstSize)
 	header.psxRandSeed = PSX_BIOS_GetRandSeed();
 	header.activeMempackIndex = NativeCheckpoint_GetActiveMempackIndex();
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-	if (AP_TrackFillRaceActive(sdata->gGT))
+	// Time and weapon fills both own process-side model imports (WF1).
+	if (AP_TrackFillRaceActive(sdata->gGT) || AP_TrackFillWeaponRaceActive(sdata->gGT))
 		header.activeMempackIndex |= NATIVE_CHECKPOINT_FILL_INDEX_FLAG;
 #endif
 
@@ -2408,7 +2409,8 @@ int NativeCheckpoint_Restore(const void *src, int srcSize, int allowFillCheckpoi
 	}
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 	if ((header->activeMempackIndex & NATIVE_CHECKPOINT_FILL_INDEX_FLAG) &&
-	    (!allowFillCheckpoint || header->codeAnchor != liveHeader.codeAnchor || !AP_TrackFillRaceActive(sdata->gGT)))
+	    (!allowFillCheckpoint || header->codeAnchor != liveHeader.codeAnchor ||
+	     !(AP_TrackFillRaceActive(sdata->gGT) || AP_TrackFillWeaponRaceActive(sdata->gGT))))
 	{
 		Platform_Log("[CTR State] restore refused: a fill race requires its original client session\n");
 		return 0;
@@ -2503,6 +2505,7 @@ int NativeCheckpoint_Restore(const void *src, int srcSize, int allowFillCheckpoi
 	UI_Map_CustomAfterRestore(sdata->gGT);
 #ifdef CTR_AP
 	AP_TrackFillAfterCheckpointRestore(sdata->gGT);
+	AP_BoxesAfterCheckpointRestore(sdata->gGT);
 #endif
 #endif
 

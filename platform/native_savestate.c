@@ -161,7 +161,7 @@ internal int NativeSaveState_SnapshotIdentity(struct NativeSaveStateRaceIdentity
 	}
 #endif
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-	if (AP_TrackFillRaceActive(gt))
+	if (AP_TrackFillRaceActive(gt) || AP_TrackFillWeaponRaceActive(gt))
 		NativeSaveState_SetFillSession(id);
 #endif
 	return 1;
@@ -331,7 +331,7 @@ internal s32 NativeSaveState_LoadQuick(void)
 		return NativeSaveState_Refuse("STATE NOT LOADED: UNREADABLE", "quick state has no recognized race identity");
 	int allowFillCheckpoint = 0;
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-	if (AP_TrackFillRaceActive(sdata->gGT))
+	if (AP_TrackFillRaceActive(sdata->gGT) || AP_TrackFillWeaponRaceActive(sdata->gGT))
 	{
 		if (memcmp(saved.fillSession, live.fillSession, sizeof live.fillSession) != 0)
 			return NativeSaveState_Refuse("STATE NOT LOADED: OTHER SESSION", "a fill race requires its original client session");

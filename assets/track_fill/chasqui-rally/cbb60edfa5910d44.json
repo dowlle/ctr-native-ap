@@ -5,7 +5,7 @@
     "letters": 0,
     "loose_fruit": 0,
     "time_crates": 24,
-    "weapon_crates": 0
+    "weapon_crates": 8
   },
   "donors": [
     {
@@ -214,9 +214,122 @@
         "type": 3
       }
     ],
-    "weapon_crates": []
+    "weapon_crates": [
+      {
+        "pos": [
+          -4403,
+          -15,
+          16274
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          150,
+          289,
+          83
+        ]
+      },
+      {
+        "pos": [
+          -4284,
+          -57,
+          16536
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          72,
+          280,
+          23
+        ]
+      },
+      {
+        "pos": [
+          -4164,
+          -74,
+          16798
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          3,
+          279,
+          8
+        ]
+      },
+      {
+        "pos": [
+          -4045,
+          -75,
+          17060
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          2,
+          279,
+          3
+        ]
+      },
+      {
+        "pos": [
+          3710,
+          -73,
+          1487
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          0,
+          1316,
+          0
+        ]
+      },
+      {
+        "pos": [
+          3969,
+          -73,
+          1362
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          0,
+          1316,
+          0
+        ]
+      },
+      {
+        "pos": [
+          4229,
+          -72,
+          1238
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          -6,
+          1316,
+          18
+        ]
+      },
+      {
+        "pos": [
+          4488,
+          -70,
+          1113
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          -5,
+          1316,
+          15
+        ]
+      }
+    ]
   },
-  "fill_sha256": "ac4153b077b94710f02ab8cb5d6df0c9dde401dd1c8e264a6c272f1b06d90873",
+  "fill_sha256": "009132d5c61dfd89f99d035cf25833790b436356fa5b33d63eaa522e9042c6b2",
   "generator": {
     "name": "ctr-track-fill",
     "version": 1

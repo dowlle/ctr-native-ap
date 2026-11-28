@@ -745,7 +745,8 @@ int AP_ContentPadSharedChecks(const ctr_content_pad *pad, unsigned modes, ap_pad
 		++count;
 	}
 	package = ap_content_plan_package(pad->package_index);
-	if (package && package->weapon_crates == 0)
+	// WF1b: a filled LEV with a free filled crate still routes them.
+	if (package && package->weapon_crates == 0 && !pad->fill_weapon_route)
 		return count;
 	return count + AP_SharedWeaponChecks(ap_content_pad_host(pad), AP_HitEffectivePlayer(pad->physical),
 	                                     1, out ? out + count : NULL);

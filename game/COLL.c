@@ -140,6 +140,11 @@ void COLL_SearchBSP_CallbackPARAM(struct BSP *root, struct BoundingBox *bbox, Co
 
 		COLL_SearchBSP_CallbackPARAM_PushChildren(root, child, &bounds, &stackTop);
 	}
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	// Filled weapon crates have no hitbox in the LEV's BSP; their retail
+	// hitboxes are tested after the level's own leaves (WF1b).
+	AP_TrackFillWeaponSearch(root, callback, sps);
+#endif
 }
 
 

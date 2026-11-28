@@ -16,7 +16,6 @@ extern "C" {
 #define AP_CONTENT_MODE_CTR 1
 #define AP_CONTENT_MODE_RELIC 2
 #define AP_CONTENT_MODE_COUNT 3
-#define AP_CONTENT_TRACK_FILL_NEEDS_OPT_IN "track fill rooms require CTR_TRACK_FILL=1"
 /* Ordinary pickup checks, resolved from the room's exact LEV revision. */
 typedef struct ctr_content_sanity {
     char track_id[65], lev_sha256[65];
@@ -143,6 +142,10 @@ typedef struct ctr_content_pad {
      * (ap_box_seat_logic.h); box_crates is the package's measured weapon
      * crate count those seats are taken from (0 when it has no boxes). */
     int box_count, box_crates;
+    /* WF1b: 1 when the package states no weapon crates but its frozen fill
+     * adds some an AP box does not take over, so the pad still routes the
+     * Itemsanity and Hit Character checks. */
+    int fill_weapon_route;
     /* Reviewed prefix of the measured crate table when seating is capped. */
     int box_reviewed_crates;
     /* Reviewed fallback exclusions carried by the world, one-based original
@@ -217,6 +220,14 @@ typedef struct ctr_content_fill_crate {
     int16_t pos[3];
     uint8_t type;
 } ctr_content_fill_crate;
+/* WF1: a weapon crate a track fill adds to a LEV measured without any. Its
+ * sanity ordinal follows the LEV's own crates in fill order. */
+#define AP_CONTENT_MAX_FILL_WEAPONS 80
+typedef struct ctr_content_fill_weapon {
+    int16_t pos[3];
+    int16_t rot[3]; /* the donor InstDef rotation, x y z */
+    uint8_t rank; /* box spot `needs` scale: 0 none, 1 boost, 2 usf */
+} ctr_content_fill_weapon;
 
 typedef struct ctr_content_package {
     char id[65], content_id[65], uuid[37], revision[65];
@@ -234,6 +245,8 @@ typedef struct ctr_content_package {
     int relic_targets[3];  /* sapphire, gold, platinum */
     int fill_crate_count;
     const ctr_content_fill_crate *fill_crates; /* owned by the parsed room */
+    int fill_weapon_count;
+    const ctr_content_fill_weapon *fill_weapons; /* owned by the parsed room */
     int super_turbo_pads;  /* AP_CONTENT_SUPER_PADS_UNSTATED, 0 none, 1 at least one */
     /* Optional measured `weapon_crates` (#133 PR 4e): how many weapon crates
      * (PU_RANDOM_CRATE instances) the LEV holds, or

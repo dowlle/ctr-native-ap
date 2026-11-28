@@ -33,6 +33,8 @@
 namespace content_plan {
 using J = nlohmann::json;
 static constexpr const char *kTrackFill = "track_fill_v1";
+// Bundled fills outside a room (offline custom track select) stay behind
+// CTR_TRACK_FILL=1; a room's frozen fill does not read it.
 static bool fill_enabled() {
     const char *value = std::getenv("CTR_TRACK_FILL");
     return value && std::strcmp(value, "1") == 0;
@@ -52,6 +54,14 @@ struct State {
     std::array<ctr_content_pad, 27> pads{};
     std::array<ctr_content_package, AP_CONTENT_MAX_PACKAGES> packages{};
     std::array<std::vector<ctr_content_fill_crate>, AP_CONTENT_MAX_PACKAGES> fill_crates{};
+    std::array<std::vector<ctr_content_fill_weapon>, AP_CONTENT_MAX_PACKAGES> fill_weapons{};
+    // WF1b: the lowest rank among the filled weapon crates no AP box takes
+    // over, per track id of a LEV measured without crates (apworld
+    // content_global_checks.crate_rank). A track missing here needs rank 0.
+    std::map<std::string, int> fill_crate_rank;
+    // The same without any seat: a boss race on a custom garage venue stands
+    // no AP box (ap_boxes.c), so every filled crate is free there.
+    std::map<std::string, int> fill_crate_rank_unseated;
     // Each package's descriptor as the room sent it (#89: solo keeps it once
     // the files are verified, for its custom-track step).
     std::array<std::string, AP_CONTENT_MAX_PACKAGES> package_json{};
@@ -79,7 +89,8 @@ struct State {
     std::set<int64_t> stat_checks;
     // Hand-placed box spots (A3-14): `item_boxes.spot_sets` by track id, and
     // each spot box's number and position by location code (`spot`).
-    struct SpotSet { int pool = 0; std::vector<int> picked; std::string lev_sha256; bool used = false; };
+    // `capped` (WF1): fallback seats on filled weapon crates pick at most 15.
+    struct SpotSet { int pool = 0; std::vector<int> picked; std::string lev_sha256; bool used = false, capped = false; };
     std::map<std::string, SpotSet> spot_sets;
     std::map<std::string, std::vector<int>> seat_spot_sets;
     struct CrateExclusions {
@@ -226,7 +237,7 @@ static void fill_position(const J &pos, int16_t (&xyz)[3]) {
 }
 
 static void fill_record(const J &fill, const J &lev, int laps, const int (&targets)[3],
-                        std::vector<ctr_content_fill_crate> &out) {
+                        std::vector<ctr_content_fill_crate> &out, std::vector<ctr_content_fill_weapon> &weapons_out) {
     fields(fill, {"schema", "lev_sha256", "generator", "donors", "families",
                   "counts", "relic_targets", "fill_sha256"});
     number(fill.at("schema"), 1, 1);
@@ -238,6 +249,7 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
     const auto &donors = fill.at("donors");
     need(donors.is_array() && !donors.empty() && donors.size() <= 2, "track fill donor count");
     std::set<std::string> seen{lev.get<std::string>()};
+    bool has_ruled_donor = false;
     for (const auto &donor : donors) {
         fields(donor, {"lev_sha256", "road_sha256", "kind", "overlap"});
         const auto &sha = donor.at("lev_sha256");
@@ -245,10 +257,14 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
         need(sha.is_string() && lower_hex(sha.get<std::string>(), 64) &&
              road.is_string() && lower_hex(road.get<std::string>(), 64) &&
              seen.insert(sha.get<std::string>()).second, "invalid track fill donor identity");
-        const int overlap = number(donor.at("overlap"), 95000, 100000);
+        const int overlap = number(donor.at("overlap"), 1, 100000);
         const auto &kind = donor.at("kind");
-        need(kind == "similar>=0.95" || (kind == "identical" && overlap == 100000),
-             "track fill requires a same-road donor");
+        if (kind == "ruled" && overlap < 95000)
+            has_ruled_donor = true;
+        else
+            need((kind == "similar>=0.95" && overlap >= 95000) ||
+                 (kind == "identical" && overlap == 100000),
+                 "invalid track fill donor kind or overlap");
     }
 
     const auto &families = fill.at("families");
@@ -257,7 +273,7 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
     fields(counts, {"time_crates", "letters", "fruit_crates", "loose_fruit", "weapon_crates", "grid"});
     need(families.at("letters") == J::object(), "track fill letters are unsupported");
     number(counts.at("letters"), 0, 0);
-    for (const char *name : {"fruit_crates", "loose_fruit", "weapon_crates"}) {
+    for (const char *name : {"fruit_crates", "loose_fruit"}) {
         need(families.at(name) == J::array(), "unsupported track fill crate or fruit family");
         number(counts.at(name), 0, 0);
     }
@@ -273,9 +289,32 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
             number(spawn.at("rot_y"), -32768, 32767);
         }
     }
+    // WF1: weapon crates copied at their exact position and angle, each with
+    // its rank; native finds a spawned crate by position, so none repeat.
+    const auto &weapons = families.at("weapon_crates");
+    need(weapons.is_array() && weapons.size() <= AP_CONTENT_MAX_FILL_WEAPONS, "track fill weapon crate count");
+    number(counts.at("weapon_crates"), (int)weapons.size(), (int)weapons.size());
+    std::set<std::array<int16_t, 3>> weapon_positions;
+    weapons_out.reserve(weapons.size());
+    for (const auto &crate : weapons) {
+        fields(crate, {"pos", "rot", "rank", "rank_source"});
+        ctr_content_fill_weapon item{};
+        fill_position(crate.at("pos"), item.pos);
+        fill_position(crate.at("rot"), item.rot);
+        item.rank = (uint8_t)number(crate.at("rank"), 0, 2);
+        const auto &source = crate.at("rank_source");
+        need((source == "donor_ruling" || source == "start_ground" || source == "default_usf") &&
+             (source != "start_ground" || item.rank == 0) && (source != "default_usf" || item.rank == 2),
+             "invalid track fill weapon crate rank");
+        need(weapon_positions.insert({item.pos[0], item.pos[1], item.pos[2]}).second,
+             "track fill weapon crates repeat a position");
+        weapons_out.push_back(item);
+    }
     const auto &crates = families.at("time_crates");
-    need(crates.is_array() && !crates.empty() && crates.size() <= AP_CONTENT_MAX_FILL_CRATES,
+    need(crates.is_array() && crates.size() <= AP_CONTENT_MAX_FILL_CRATES && (!crates.empty() || !weapons.empty()),
          "track fill time crate count");
+    need(!has_ruled_donor || (donors.size() == 1 && crates.empty() && grid.is_null()),
+         "a ruled weak donor requires a weapon-only fill");
     const int count = (int)crates.size();
     number(counts.at("time_crates"), count, count);
     out.reserve(count);
@@ -287,12 +326,16 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
         out.push_back(item);
     }
     const auto &times = fill.at("relic_targets");
-    fields(times, {"sapphire", "gold", "platinum", "source", "laps"});
-    need(times.at("source") == "saphi" || times.at("source") == "author", "invalid track fill relic target source");
-    need(number(times.at("laps"), 1, 7) == laps, "track fill relic target laps differ from the package");
-    const char *tiers[] = {"sapphire", "gold", "platinum"};
-    for (int i = 0; i < 3; ++i)
-        number(times.at(tiers[i]), targets[i], targets[i]);
+    if (crates.empty()) {
+        need(times.is_null(), "track fill relic targets need time crates");
+    } else {
+        fields(times, {"sapphire", "gold", "platinum", "source", "laps"});
+        need(times.at("source") == "saphi" || times.at("source") == "author", "invalid track fill relic target source");
+        need(number(times.at("laps"), 1, 7) == laps, "track fill relic target laps differ from the package");
+        const char *tiers[] = {"sapphire", "gold", "platinum"};
+        for (int i = 0; i < 3; ++i)
+            number(times.at(tiers[i]), targets[i], targets[i]);
+    }
 
     const auto &pin = fill.at("fill_sha256");
     need(pin.is_string() && lower_hex(pin.get<std::string>(), 64), "invalid track fill SHA-256");
@@ -310,7 +353,8 @@ static void fill_record(const J &fill, const J &lev, int laps, const int (&targe
 }
 
 static void package_record(const J &pkg, ctr_content_package &target,
-                           std::vector<ctr_content_fill_crate> &crates) {
+                           std::vector<ctr_content_fill_crate> &crates,
+                           std::vector<ctr_content_fill_weapon> &weapons) {
     need(pkg.is_object(), "package record is not an object");
     J base = pkg;
     const bool targets = base.contains("relic_targets");
@@ -426,11 +470,17 @@ static void package_record(const J &pkg, ctr_content_package &target,
     pin_pair(pkg["files"], hashes, target.lev_bytes, target.vrm_bytes, "package must pin exactly the LEV then the VRM");
     const J &files = pkg["files"];
     if (has_fill) {
-        need(relic && (target.capabilities & AP_CONTENT_CAP_TIME_TRIAL) && !relic_files,
+        fill_record(pkg.at("fill"), files[0].at("sha256"), target.laps, target.relic_targets, crates, weapons);
+        need(crates.empty() || (relic && (target.capabilities & AP_CONTENT_CAP_TIME_TRIAL) && !relic_files),
              "track fill requires Relic Race on the main LEV and VRM pair");
-        fill_record(pkg.at("fill"), files[0].at("sha256"), target.laps, target.relic_targets, crates);
+        // The package keeps the measured count; weapon crates fill only a
+        // LEV measured without any (WF1).
+        need(weapons.empty() || (target.weapon_crates == 0 && !relic_files),
+             "weapon crates fill only a LEV measured without weapon crates");
         target.fill_crate_count = (int)crates.size();
         target.fill_crates = crates.data();
+        target.fill_weapon_count = (int)weapons.size();
+        target.fill_weapons = weapons.data();
     }
     // `relic_files` (merged mode builds): a second LEV then VRM pair served
     // only for a Relic Race, when one build carries the crate modes and a
@@ -733,8 +783,14 @@ static void item_box_settings(const J &t, State &out) {
         spots.pool = number(set["pool"], 0, AP_BOX_SPOT_MAX_NUMBER);
         need(set["picked"].is_array(), "box spot picks must be a list");
         for (const auto &n : set["picked"]) spots.picked.push_back(number(n, 1, AP_BOX_SPOT_MAX_NUMBER));
-        need(AP_BoxSpot_PickShapeCount(spots.pool, spots.picked.data(), (int)spots.picked.size(), out.item_boxes.box_count) != 0,
-             "box spot picks disagree with box_count or the pool");
+        const bool full = AP_BoxSpot_PickShapeCount(spots.pool, spots.picked.data(), (int)spots.picked.size(),
+                                                    out.item_boxes.box_count) != 0;
+        // WF1: spots that stand on filled weapon crates are fallback seats,
+        // at most 15; checked against the fill once the positions are read.
+        spots.capped = !full && out.item_boxes.box_count > AP_BOX_SPOT_PICK && spots.pool > AP_BOX_SPOT_PICK &&
+                       AP_BoxSpot_PickShapeCount(spots.pool, spots.picked.data(), (int)spots.picked.size(),
+                                                 AP_BOX_SPOT_PICK) != 0;
+        need(full || spots.capped, "box spot picks disagree with box_count or the pool");
         if (set.contains("lev_sha256")) {
             need(set["lev_sha256"].is_string() && lower_hex(set["lev_sha256"].get<std::string>(), 64), "a box spot LEV pin is a SHA-256");
             spots.lev_sha256 = set["lev_sha256"].get<std::string>();
@@ -1553,14 +1609,16 @@ static void validate(const J &p, State &out) {
         const int idx = out.package_count++;
         package_index.emplace(id, idx);
         auto &target = out.packages[idx];
-        package_record(pkg, target, out.fill_crates[idx]);
-        if (target.fill_crate_count) {
+        package_record(pkg, target, out.fill_crates[idx], out.fill_weapons[idx]);
+        if (pkg.contains("fill")) {
             // Solo's library remembers a YAML descriptor. A frozen room's
             // derived capability and fill must never turn into YAML inputs.
             J descriptor = pkg;
             descriptor.erase("fill");
-            descriptor.erase("relic_targets");
-            descriptor["capabilities"]["relic"] = false;
+            if (target.fill_crate_count) {
+                descriptor.erase("relic_targets");
+                descriptor["capabilities"]["relic"] = false;
+            }
             out.package_json[idx] = descriptor.dump();
         } else {
             out.package_json[idx] = pkg.dump();
@@ -1587,11 +1645,11 @@ static void validate(const J &p, State &out) {
     // Every Trophy Race and CTR Challenge (#133 PR 4d), an Itemsanity and Hit
     // route each. Since #133 PR 5b native seats the Hit Character draw on
     // every such race, custom-served included, so a guest routes from all.
-    struct RaceRoute { int physical; std::string entry, pad; unsigned modes; };
+    struct RaceRoute { int physical; std::string entry, pad; unsigned modes; std::string track; int package_index; };
     std::vector<RaceRoute> race_routes;
     // Every leg of every cup (#133 PR 5b): a Hit route each, the cup's frozen
     // field seated in every leg. A leg on a crateless custom track is none.
-    struct CupHitRoute { int physical; std::string entry, pad, leg; };
+    struct CupHitRoute { int physical; std::string entry, pad, leg; std::string track; int package_index; ctr_content_leg *dest; };
     std::vector<CupHitRoute> cup_hit_routes;
     std::map<int, ctr_content_pad *> manual_pad; // occupied pad per manual or stage 1 record
     std::map<int, ctr_content_pad *> stage2_pad; // pad whose later modes use each stage-2 record
@@ -1839,9 +1897,13 @@ static void validate(const J &p, State &out) {
                         wumpa_uses.push_back(RaceUse{dest.legs[n].track_id, title, entry_id, id, "cup", leg_id, "", dest.legs[n].wumpa});
                     if (fam.podium) rung_uses.push_back(RungUse{dest.legs[n].track_id, entry_id, id, leg_id});
                 }
-                if (dest.legs[n].package_index < 0 || out.packages[dest.legs[n].package_index].weapon_crates != 0) {
+                // WF1b: a crateless LEV whose fill adds crates is decided once
+                // every pad's AP box seats are known (fill_free_rank below).
+                if (dest.legs[n].package_index < 0 || out.packages[dest.legs[n].package_index].weapon_crates != 0 ||
+                    out.packages[dest.legs[n].package_index].fill_weapon_count) {
                     dest.legs[n].shared_weapon_route = 1;
-                    cup_hit_routes.push_back(CupHitRoute{physical, entry_id, id, leg_id});
+                    cup_hit_routes.push_back(CupHitRoute{physical, entry_id, id, leg_id, dest.legs[n].track_id,
+                                                         dest.legs[n].package_index, &dest.legs[n]});
                 }
             }
             dest.occupied = dest.cup = 1;
@@ -2169,8 +2231,11 @@ static void validate(const J &p, State &out) {
         const unsigned reach = mode_bits & ((1u << AP_CONTENT_MODE_TROPHY) | (1u << AP_CONTENT_MODE_CTR));
         // A custom track whose package states no weapon crates rolls no weapon,
         // so it is no Itemsanity or Hit route (#133 PR 4e).
-        const bool crateless = dest.package_index >= 0 && out.packages[dest.package_index].weapon_crates == 0;
-        if (reach && !crateless) race_routes.push_back(RaceRoute{physical, entry_id, id, reach});
+        // WF1b: unless its frozen fill adds crates, decided with the seats below.
+        const bool crateless = dest.package_index >= 0 && out.packages[dest.package_index].weapon_crates == 0 &&
+                               !out.packages[dest.package_index].fill_weapon_count;
+        if (reach && !crateless)
+            race_routes.push_back(RaceRoute{physical, entry_id, id, reach, dest.track_id, dest.package_index});
         if (fam.wumpa && fruit && reach) {
             dest.wumpa_modes = reach;
             if (fam.wumpa == 2) {
@@ -2260,15 +2325,20 @@ static void validate(const J &p, State &out) {
                 if (pkg.weapon_crates > 0 && has_sanity && p["sanity"].contains("exclusion_version")
                     && !inherited_ruling_history(out, descriptor, pkg.lev_sha256))
                     require_reviewed_fallback_exclusions(registry.at("sanity_exclusions"), pkg.lev_sha256, dest);
-                int limit = pkg.weapon_crates;
+                // WF1: a LEV measured without weapon crates seats its fallback
+                // boxes on the crates its frozen fill adds, at most 15.
+                const int seat_crates = pkg.weapon_crates == 0 && pkg.fill_weapon_count ? pkg.fill_weapon_count
+                                                                                         : pkg.weapon_crates;
+                int limit = seat_crates;
+                // A reviewed pickup prefix bounds the LEV's own crates only.
                 if (const auto *counts = reviewed_pickup_counts(out, descriptor, pkg.lev_sha256))
-                    limit = std::min(limit, counts->at(0).get<int>());
+                    if (seat_crates == pkg.weapon_crates) limit = std::min(limit, counts->at(0).get<int>());
                 const auto *past_prefix = std::upper_bound(dest.box_excluded,
                     dest.box_excluded + dest.box_excluded_count, limit);
                 slots = box_seats(limit - (int)(past_prefix - dest.box_excluded));
                 slots = std::min(slots, out.item_boxes.box_count);
-                dest.box_crates = slots ? pkg.weapon_crates : 0;
-                dest.box_reviewed_crates = slots && limit < pkg.weapon_crates ? limit : 0;
+                dest.box_crates = slots ? seat_crates : 0;
+                dest.box_reviewed_crates = slots && limit < seat_crates ? limit : 0;
                 for (int b = 0; b < slots; ++b)
                     dest.box_locations[b] = dest.named_block >= 0
                         ? ap_named_location_code(dest.named_block, AP_NAMED_OFF_ITEM_BOX_1 + b)
@@ -2828,6 +2898,80 @@ static void validate(const J &p, State &out) {
     // instead (A3-7, a 27-cup seed; apworld content_global_checks.checks).
     // The codes and names are the registry's (the apworld's frozen class
     // order).
+    // WF1b (dowlle, 2026-11-26: filled weapon crates "need to count for the
+    // logic for both"): a track whose package states no weapon crates but
+    // whose frozen fill adds some is a route through the filled crates no AP
+    // box takes over in this room, and none when every one is seated. The
+    // seats are the track's standalone pad's box checks: a hand-placed spot
+    // at a crate's exact place and angle, or a fallback box on the fill's
+    // spread seats (apworld content_item_boxes.free_fill_ranks). The lowest
+    // free rank is the route's boost term (content_verify).
+    auto fill_free_rank = [&](const std::string &tid, int package_index) -> int {
+        if (package_index < 0) return 0;
+        const ctr_content_package &pkg = out.packages[package_index];
+        if (pkg.weapon_crates != 0) return 0;
+        std::set<int> seated;
+        for (const auto &pad : out.pads) {
+            if (!pad.occupied || pad.cup || pad.crystal || !pad.box_count || tid != pad.track_id) continue;
+            if (pad.box_spots) {
+                const std::set<int64_t> codes(pad.box_locations, pad.box_locations + pad.box_count);
+                for (const auto &check : p.at("checks"))
+                    if (check.is_object() && check.contains("spot") && check["spot"].is_object() &&
+                        check.contains("location") && check["location"].is_number_integer() &&
+                        codes.count(check["location"].get<int64_t>()))
+                        for (int i = 0; i < pkg.fill_weapon_count; ++i) {
+                            const auto &crate = pkg.fill_weapons[i];
+                            if (check["spot"].value("pos", J()) == J::array({crate.pos[0], crate.pos[1], crate.pos[2]}) &&
+                                check["spot"].value("rot_y", J()) == J(crate.rot[1]))
+                                seated.insert(i);
+                        }
+            } else {
+                const std::set<int> carried(pad.box_excluded, pad.box_excluded + pad.box_excluded_count);
+                std::vector<int> pool;
+                for (int n = 1; n <= pad.box_crates; ++n) if (!carried.count(n)) pool.push_back(n);
+                const int seats = std::min((int)pool.size(), pad.box_count);
+                for (int i = 0; i < seats; ++i) seated.insert(pool[i * pool.size() / seats] - 1);
+            }
+        }
+        int best = -1;
+        for (int i = 0; i < pkg.fill_weapon_count; ++i)
+            if (!seated.count(i)) best = best < 0 ? pkg.fill_weapons[i].rank : std::min(best, (int)pkg.fill_weapons[i].rank);
+        if (best >= 0) out.fill_crate_rank[tid] = best;
+        return best;
+    };
+    out.fill_crate_rank.clear();
+    out.fill_crate_rank_unseated.clear();
+    race_routes.erase(std::remove_if(race_routes.begin(), race_routes.end(),
+                                     [&](const RaceRoute &r) { return fill_free_rank(r.track, r.package_index) < 0; }),
+                      race_routes.end());
+    for (const auto &r : race_routes)
+        for (auto &pad : out.pads)
+            if (pad.occupied && !pad.cup && r.pad == "pad:" + std::to_string(pad.physical) && r.package_index >= 0 &&
+                out.packages[r.package_index].weapon_crates == 0)
+                pad.fill_weapon_route = 1;
+    // Boss races and boss cups on a filled venue take its rank too
+    // (content_verify), also when the venue is raced nowhere else.
+    for (const auto &track : p.at("tracks"))
+        if (track.is_object() && track.value("origin", std::string()) == "custom" && track.contains("package_id") &&
+            package_index.count(track["package_id"].get<std::string>()))
+        {
+            const std::string tid = track.at("id").get<std::string>();
+            const ctr_content_package &pkg = out.packages[package_index.at(track["package_id"].get<std::string>())];
+            fill_free_rank(tid, package_index.at(track["package_id"].get<std::string>()));
+            for (int i = 0; pkg.weapon_crates == 0 && i < pkg.fill_weapon_count; ++i) {
+                const auto rank = out.fill_crate_rank_unseated.find(tid);
+                if (rank == out.fill_crate_rank_unseated.end() || pkg.fill_weapons[i].rank < rank->second)
+                    out.fill_crate_rank_unseated[tid] = pkg.fill_weapons[i].rank;
+            }
+        }
+    cup_hit_routes.erase(std::remove_if(cup_hit_routes.begin(), cup_hit_routes.end(),
+                                        [&](const CupHitRoute &r) {
+                                            // A leg track with no standalone pad has no seats.
+                                            if (fill_free_rank(r.track, r.package_index) >= 0) return false;
+                                            r.dest->shared_weapon_route = 0;
+                                            return true;
+                                        }),
+                         cup_hit_routes.end());
     std::sort(race_routes.begin(), race_routes.end(),
               [](const RaceRoute &a, const RaceRoute &b) { return a.physical < b.physical; });
     fam.itemsanity_cup_routes = out.itemsanity && race_routes.empty();
@@ -3073,13 +3217,35 @@ static void validate(const J &p, State &out) {
     need(out.seat_spot_sets.empty(), "seat spots name no fallback pad track");
     for (const auto &pair : out.box_spots) need(pair.second.seen, "a box spot check carries no spot");
     for (auto &pad : out.pads) {
+        // Fallback pads place only their reviewed seat spots here; the WF1
+        // filled-crate checks below cover hand-placed spot pads only.
+        int on_fill = 0;
+        const ctr_content_package *filled =
+            pad.box_spots && pad.package_index >= 0 ? &out.packages[pad.package_index] : nullptr;
+        std::set<int> claimed;
         for (int b = 0; b < pad.box_count && b < AP_BOX_SPOT_MAX_NUMBER; ++b) {
             if (!pad.box_spots && (b >= AP_NAMED_ITEM_BOX_SLOTS || !(pad.box_seat_spots & (1u << b))))
                 continue;
             const auto &spot = out.box_spots.at(pad.box_locations[b]);
             pad.box_pos[b][0] = spot.x; pad.box_pos[b][1] = spot.y; pad.box_pos[b][2] = spot.z;
             pad.box_rot_y[b] = spot.rot_y;
+            for (int i = 0; filled && i < filled->fill_weapon_count; ++i) {
+                const auto &crate = filled->fill_weapons[i];
+                if (crate.pos[0] == spot.x && crate.pos[1] == spot.y && crate.pos[2] == spot.z) {
+                    // One box per filled crate, at the crate's own angle.
+                    need(crate.rot[1] == spot.rot_y && claimed.insert(i).second,
+                         "box spot picks disagree with box_count or the pool");
+                    ++on_fill;
+                }
+            }
         }
+        // WF1: fallback seats on filled crates pick at most 15 and stand every
+        // box on a crate; spots that are not seats stand none on a crate.
+        const auto set = out.spot_sets.find(pad.track_id);
+        if (pad.box_spots && set != out.spot_sets.end())
+            need(set->second.capped ? on_fill == pad.box_count && pad.box_count > 0
+                                    : (on_fill == 0 || (on_fill == pad.box_count && pad.box_count <= AP_BOX_SPOT_PICK)),
+                 "box spot picks disagree with box_count or the pool");
     }
     for (auto &pad : out.pads) {
         if (!pad.occupied) continue;
@@ -3439,8 +3605,9 @@ static int parse_content_plan(const nlohmann::json &j) {
         need(j.is_object() && j.size() == 3u + (traps ? 1u : 0u) + (hit_block ? 1u : 0u) + (win_block ? 1u : 0u) &&
              j.contains("schema_version") &&
              j.contains("content_plan") && j.contains("ctr_options"), "unsupported or incomplete record fields");
+        // Schema 19 carries `track_fill_v1`: the room is the opt-in, so a
+        // release client applies its frozen fill without a launch switch.
         const int schema_version = number(j["schema_version"], 18, 19);
-        need(schema_version != 19 || fill_enabled(), AP_CONTENT_TRACK_FILL_NEEDS_OPT_IN);
         const J &co = j["ctr_options"];
         J base=co;
         for(const char *key:{"include_battle_arenas","include_arcade_arenas","crystalsanity"})base.erase(key);
@@ -3787,7 +3954,8 @@ extern "C" int ap_content_track_fill_bundled(const char *assets, const char *lev
                               number(times.at("platinum"), 1, 960 * 60 * 60)};
         need(ticks[0] > ticks[1] && ticks[1] > ticks[2], "invalid bundled track fill targets");
         std::vector<ctr_content_fill_crate> parsed;
-        fill_record(fill, lev_sha, entry->laps, ticks, parsed);
+        std::vector<ctr_content_fill_weapon> weapons; // seeds only, not offline
+        fill_record(fill, lev_sha, entry->laps, ticks, parsed, weapons);
         std::copy(parsed.begin(), parsed.end(), crates);
         std::copy(ticks, ticks + 3, targets);
         return (int)parsed.size();

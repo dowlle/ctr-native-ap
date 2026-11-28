@@ -71,6 +71,9 @@ static int AP_EmitClassCheck(long code, int ledger, int bit, int tag, int toast,
     }
     return 1;
 }
+/* WF1 filled weapon crates: none in these cases. */
+int AP_TrackFillWeaponCount(struct GameTracker *g) { (void)g; return 0; }
+struct Instance *AP_TrackFillWeaponOrdinal(struct GameTracker *g, int index) { (void)g; (void)index; return 0; }
 #include "ap_hooks_sanity.c"
 int main(void) {
     struct Model models[] = {{8}, {8}, {7}, {2}};

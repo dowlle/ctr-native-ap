@@ -1,0 +1,189 @@
+{
+  "counts": {
+    "fruit_crates": 0,
+    "grid": 0,
+    "letters": 0,
+    "loose_fruit": 0,
+    "time_crates": 0,
+    "weapon_crates": 11
+  },
+  "donors": [
+    {
+      "kind": "similar>=0.95",
+      "lev_sha256": "72bf846cd1932a058f5a379f577dd50624fa94527150a1d6fc3e29cdd73013f8",
+      "overlap": 96731,
+      "road_sha256": "79bbc2ddfb7d21cf68decf6c4af87c87741b583e56a2e41874dccefb23a13556"
+    }
+  ],
+  "families": {
+    "fruit_crates": [],
+    "grid": null,
+    "letters": {},
+    "loose_fruit": [],
+    "time_crates": [],
+    "weapon_crates": [
+      {
+        "pos": [
+          -5515,
+          3224,
+          -20763
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "pos": [
+          -5515,
+          3224,
+          -20475
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "pos": [
+          -5515,
+          3224,
+          -20187
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "pos": [
+          -5515,
+          3224,
+          -19899
+        ],
+        "rank": 2,
+        "rank_source": "default_usf",
+        "rot": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "pos": [
+          -1675,
+          3224,
+          -13755
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          0,
+          2048,
+          0
+        ]
+      },
+      {
+        "pos": [
+          -1675,
+          3224,
+          -14043
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          0,
+          2048,
+          0
+        ]
+      },
+      {
+        "pos": [
+          -1675,
+          3224,
+          -14331
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          0,
+          2048,
+          0
+        ]
+      },
+      {
+        "pos": [
+          -1675,
+          3224,
+          -14619
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          0,
+          2048,
+          0
+        ]
+      },
+      {
+        "pos": [
+          4606,
+          4058,
+          -6189
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "pos": [
+          4583,
+          4058,
+          -6592
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "pos": [
+          4585,
+          4058,
+          -7016
+        ],
+        "rank": 0,
+        "rank_source": "start_ground",
+        "rot": [
+          0,
+          0,
+          0
+        ]
+      }
+    ]
+  },
+  "fill_sha256": "3addf4140800a7b784caaf8464d17a3cfbd664ce69317a1bb188fccd30a9a029",
+  "generator": {
+    "name": "ctr-track-fill",
+    "version": 1
+  },
+  "lev_sha256": "8c343aa6723ee2dec99d54f815e77e9e20798f657d6f4464f312529ffe4698f4",
+  "relic_targets": null,
+  "schema": 1
+}

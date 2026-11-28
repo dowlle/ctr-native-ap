@@ -603,6 +603,9 @@ LAB_800aede8:
 #ifdef CTR_CUSTOM_PACKAGES
 			    || !CustomTrack_PrepareGarageVenueEntry(venue, gGT->bossID)
 #endif
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+			    || !AP_TrackFillBossVenueReady(venue, gGT->bossID)
+#endif
 			    )
 			{
 				sdata->Loading.OnBegin.RemBitsConfig0 &= ~ADVENTURE_ARENA;

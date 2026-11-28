@@ -1480,7 +1480,7 @@ int NativeReplayScheduler_BeginFrame(const struct NativeReplaySchedulerFrameInfo
 		s_startRequested = 0;
 		s_recordStartDeferredLogged = 0;
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-		if (AP_TrackFillRaceActive(sdata->gGT))
+		if (AP_TrackFillRaceActive(sdata->gGT) || AP_TrackFillWeaponRaceActive(sdata->gGT))
 		{
 			Platform_Log("[CTR Replay] a replay cannot start in an experimental fill race\n");
 			return 0;

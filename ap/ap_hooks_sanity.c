@@ -100,7 +100,9 @@ static int AP_SanityEnsure(struct GameTracker *gt)
         ap_sanity_epoch = epoch;
         ap_sanity_ready = ap_sanity_sent_count = 0;
     }
-    if (!row || !ap_sanity_defs || ap_sanity_defs_count < 0 || ap_sanity_defs_count > 512) return 0;
+    // A LEV without instances (Arabian Heights Day) can still carry filled
+    // weapon crates (WF1), so only a nonempty table needs its pointer.
+    if (!row || (!ap_sanity_defs && ap_sanity_defs_count) || ap_sanity_defs_count < 0 || ap_sanity_defs_count > 512) return 0;
     if (ap_sanity_ready) return ap_sanity_ready > 0;
     ap_sanity_size = 0;
     for (i = 0; i < ap_sanity_defs_count; ++i) {
@@ -123,6 +125,29 @@ static int AP_SanityEnsure(struct GameTracker *gt)
             ap_sanity_objects[n].alpha = d->ptrInstance->alphaScale;
         }
     }
+#ifdef CTR_CUSTOM_TRACKS
+    // WF1: a seed's filled weapon crates follow the LEV's own ordinals.
+    for (i = 0, f = AP_TrackFillWeaponCount(gt); i < f; ++i) {
+        struct Instance *inst = AP_TrackFillWeaponOrdinal(gt, i);
+        ++counts[0];
+        if (!inst) {
+            // A partial set would leave checks that cannot be reached here.
+            AP_AppendLog("[AP SANITY] filled weapon crates are missing; sanity disabled on this track\n");
+            ap_sanity_size = 0; ap_sanity_ready = -1; return 0;
+        }
+        if (counts[0] > 80) continue;
+        if (row->locations[0][counts[0] - 1] > 0 && ap_sanity_size < 512) {
+            int n = ap_sanity_size++;
+            ap_sanity_objects[n].inst = inst;
+            ap_sanity_objects[n].code = (long)row->locations[0][counts[0] - 1];
+            ap_sanity_objects[n].family = 0;
+            ap_sanity_objects[n].ordinal = (unsigned char)counts[0];
+            ap_sanity_objects[n].open = 0;
+            ap_sanity_objects[n].color = inst->colorRGBA;
+            ap_sanity_objects[n].alpha = inst->alphaScale;
+        }
+    }
+#endif
     if (memcmp(counts, row->counts, sizeof counts)) {
         AP_AppendLog("[AP SANITY] pickup counts differ from the room; sanity disabled on this track\n");
         ap_sanity_size = 0; ap_sanity_ready = -1; return 0;

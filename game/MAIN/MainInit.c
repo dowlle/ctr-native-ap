@@ -926,6 +926,7 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 	AP_ArcadeCrystals_Spawn(gGT);
 #ifdef CTR_CUSTOM_TRACKS
 	AP_TrackFillSpawn(gGT);
+	AP_TrackFillWeaponSpawn(gGT);
 #endif
 #endif
 

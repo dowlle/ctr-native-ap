@@ -81,6 +81,9 @@ static void test_font(char *text, int x, int y, s16 font, int style) {
 #define gte_SetRotMatrix(p) ((void)(p))
 #define gte_SetTransMatrix(p) ((void)(p))
 #define DecalFont_DrawLine test_font
+/* WF1 filled weapon crates: none in these cases. */
+int AP_TrackFillWeaponCount(struct GameTracker *g) { (void)g; return 0; }
+struct Instance *AP_TrackFillWeaponOrdinal(struct GameTracker *g, int index) { (void)g; (void)index; return 0; }
 #include "../ap/ap_hooks_sanity.c"
 
 static void draw(int expected) {

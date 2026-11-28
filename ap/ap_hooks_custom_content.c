@@ -600,6 +600,9 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		             ap_content_files[packageIndex].relicLevPath[0];
 		if (pkg->fill_crate_count && race->mode == AP_CONTENT_MODE_RELIC && !AP_TrackFillPrepare())
 			return 0;
+		// WF1: a race that would stand filled weapon crates needs their model.
+		if (pkg->fill_weapon_count && race->mode != AP_CONTENT_MODE_RELIC && !AP_TrackFillPrepare())
+			return 0;
 		m = serveRelic ? &ap_content_files[packageIndex].relicMeasured : &ap_content_files[packageIndex].measured;
 		servedLev = serveRelic ? pkg->relic_lev_sha256 : pkg->lev_sha256;
 		servedVrm = serveRelic ? pkg->relic_vrm_sha256 : pkg->vrm_sha256;
