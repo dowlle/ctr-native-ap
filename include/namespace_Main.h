@@ -568,8 +568,8 @@ struct GameTracker
 	// 1d44
 	u32 gameModeEnd;
 
-	// 1d48
-	char unknown_1d48_notFound;
+	// 1d48, unused in retail. Checkpointed award tier for filled relic races.
+	s8 fillRelicTier;
 
 	// sep 0x1ce1 -- found
 	// usa 0x1d49 -- found

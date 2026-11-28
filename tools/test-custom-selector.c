@@ -35,6 +35,17 @@ static int busy, allowed = 1, prepared, launched, reloads, ticksSeen, checks, fa
 static void MM_CustomLibrary_Tick(int reload) { reloads += reload; ticksSeen++; }
 static int MM_CustomLibrary_Busy(void) { return busy; }
 int AP_CustomOfflineLaunchAllowed(void) { return allowed; }
+#ifdef CTR_AP
+static int fillAvailable;
+int ap_content_track_fill_available(const char *levSha, unsigned int laps)
+{
+    return fillAvailable && laps == 3 && !strcmp(levSha, "fill fixture");
+}
+int AP_TrackFillStageOffline(const struct CustomOfflineRequest *request)
+{
+    return fillAvailable && request != NULL;
+}
+#endif
 static const char *roomNote = "";
 const char *AP_CustomOfflineRoomNote(void) { return roomNote; }
 static int rawPad, textResult, textActive;
@@ -73,8 +84,9 @@ void RECTMENU_DrawInnerRect(RECT *r, int x, uint32_t *ot) { (void)x; (void)ot; b
 void CTR_Box_DrawClearBox(const RECT *r, const Color *c, int t, uint32_t *ot)
 { (void)c; (void)t; (void)ot; box_check(r); }
 void CTR_Box_DrawSolidBox(RECT *r, Color c, uint32_t *ot) { (void)c; (void)ot; box_check(r); }
+static char preparedPin[65];
 int CustomOffline_StartPrepare(const char *assets, const char *pin)
-{ (void)assets; (void)pin; prepared++; return 1; }
+{ (void)assets; snprintf(preparedPin, sizeof preparedPin, "%s", pin); prepared++; return 1; }
 int CustomOffline_PollPrepare(struct CustomOfflineRequest **out, char *e, size_t n)
 { (void)e; (void)n; *out = (struct CustomOfflineRequest *)1; return 1; }
 void CustomOffline_Free(struct CustomOfflineRequest **out) { *out = NULL; }
@@ -428,6 +440,30 @@ int main(void)
     /* A retail Time Trial exit is left to the retail ghost selection. */
     CHECK(!MM_CustomTrackSelect_TimeTrialStart());
     tracker.gameMode1=ARCADE_MODE;
+#ifdef CTR_AP
+    /* Square can use the exact older revision without changing the Arcade row. */
+    struct CustomTrackLibraryEntry revisions[2] = {entries[0], entries[0]};
+    strcpy(revisions[0].local.levSha256, "fill fixture");
+    strcpy(revisions[1].manifestSha256, entries[1].manifestSha256);
+    strcpy(revisions[1].version, "2.0.0");
+    revisions[0].local.laps = 3;
+    revisions[1].local.laps = 5;
+    revisions[1].local.arcade = 1;
+    publish(revisions, 2);
+    MM_CustomTrackSelect_Init(); D230.trackSel_transitionState = IN_MENU; tick(0); tick(BTN_RIGHT);
+    s_arcadeRows[0] = 0;
+    CHECK(s_arcadeLibrary.count == 1 && !strcmp(s_arcadeLibrary.entries[0].version, "2.0.0"));
+    int before = prepared;
+    tick(BTN_SQUARE_one); CHECK(prepared == before);
+    fillAvailable = 1;
+    tick(BTN_SQUARE_one); tick(0);
+    CHECK(prepared == before + 1 && s_arcadeConfirm && checkedMode == CTR_OFFLINE_MODE_RELIC);
+    CHECK(!strcmp(preparedPin, revisions[0].manifestSha256));
+    CHECK(drawnHas("3 laps TT\n") && !drawnHas("5 laps TT\n"));
+    tick(BTN_CROSS_one);
+    CHECK(beganMode == CTR_OFFLINE_MODE_RELIC && tracker.currLEV == 6 && tracker.numLaps == 7);
+    CHECK(D230.trackSel_transitionState == EXITING_MENU && D230.trackSel_StartRaceAfterFadeOut == 1);
+#endif
     CustomTrackLibrary_Free(&s_contentLibrary);
     CustomTrackLibrary_Free(&s_arcadeLibrary);
     printf("custom selector: %d checks, %d failures\n", checks, failures);

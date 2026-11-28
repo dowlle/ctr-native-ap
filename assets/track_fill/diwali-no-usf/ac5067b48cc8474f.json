@@ -1,0 +1,193 @@
+{
+  "counts": {
+    "fruit_crates": 0,
+    "grid": 0,
+    "letters": 0,
+    "loose_fruit": 0,
+    "time_crates": 19,
+    "weapon_crates": 0
+  },
+  "donors": [
+    {
+      "kind": "identical",
+      "lev_sha256": "8e040bd120bd964134730cce2a9fa2869922e75bbe71f703b863a16c38b730c4",
+      "overlap": 100000,
+      "road_sha256": "9b942249bfb48abac03060ae378b2b08dceba2e92898295ef2c26d792059bafe"
+    }
+  ],
+  "families": {
+    "fruit_crates": [],
+    "grid": null,
+    "letters": {},
+    "loose_fruit": [],
+    "time_crates": [
+      {
+        "pos": [
+          -7001,
+          -394,
+          -380
+        ],
+        "type": 1
+      },
+      {
+        "pos": [
+          -11683,
+          -446,
+          6948
+        ],
+        "type": 1
+      },
+      {
+        "pos": [
+          3529,
+          -805,
+          9075
+        ],
+        "type": 1
+      },
+      {
+        "pos": [
+          2611,
+          -98,
+          -6480
+        ],
+        "type": 1
+      },
+      {
+        "pos": [
+          -832,
+          -99,
+          70
+        ],
+        "type": 1
+      },
+      {
+        "pos": [
+          -826,
+          -99,
+          -218
+        ],
+        "type": 1
+      },
+      {
+        "pos": [
+          2437,
+          67,
+          -4216
+        ],
+        "type": 1
+      },
+      {
+        "pos": [
+          -6993,
+          -407,
+          -668
+        ],
+        "type": 2
+      },
+      {
+        "pos": [
+          -11955,
+          -459,
+          7043
+        ],
+        "type": 2
+      },
+      {
+        "pos": [
+          2953,
+          -805,
+          9075
+        ],
+        "type": 2
+      },
+      {
+        "pos": [
+          3241,
+          -805,
+          9075
+        ],
+        "type": 2
+      },
+      {
+        "pos": [
+          2653,
+          -98,
+          -7054
+        ],
+        "type": 2
+      },
+      {
+        "pos": [
+          -820,
+          -98,
+          -506
+        ],
+        "type": 2
+      },
+      {
+        "pos": [
+          -7009,
+          -376,
+          -92
+        ],
+        "type": 3
+      },
+      {
+        "pos": [
+          -12227,
+          -475,
+          7138
+        ],
+        "type": 3
+      },
+      {
+        "pos": [
+          -728,
+          -805,
+          13369
+        ],
+        "type": 3
+      },
+      {
+        "pos": [
+          -440,
+          -805,
+          13369
+        ],
+        "type": 3
+      },
+      {
+        "pos": [
+          -152,
+          -805,
+          13369
+        ],
+        "type": 3
+      },
+      {
+        "pos": [
+          -12270,
+          582,
+          13
+        ],
+        "type": 3
+      }
+    ],
+    "weapon_crates": []
+  },
+  "fill_sha256": "e7007a1311c36668b7054c0a9b40015a2f6d0841de9f9d20a63d628e0d7289d9",
+  "generator": {
+    "name": "ctr-track-fill",
+    "version": 1
+  },
+  "lev_sha256": "ac5067b48cc8474fe48921ab631ea07cd7444c8a4ccb5f8fd1d9ac9bb143a05a",
+  "relic_targets": {
+    "gold": 62400,
+    "laps": 3,
+    "platinum": 51840,
+    "sapphire": 75840,
+    "source": "author"
+  },
+  "schema": 1
+}

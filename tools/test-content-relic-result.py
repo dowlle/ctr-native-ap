@@ -44,7 +44,7 @@ int AP_LocationChecksAllowed(void) { return 1; }
 #define TOKEN_RACE 1
 #define STATIC_RELIC 0x61
 #define NEW_RELIC 0x100
-struct GameTracker { int levelID,gameMode1,gameMode2,podiumRewardID,gameModeEnd; } game;
+struct GameTracker { int levelID,gameMode1,gameMode2,podiumRewardID,gameModeEnd,fillRelicTier; } game;
 static struct { struct GameTracker *gGT; int relicTime_1min,relicTime_10sec,relicTime_1sec,relicTime_10ms,relicTime_1ms; } sdataStore, *sdata=&sdataStore;
 static struct { int RelicTime[18*3]; } data;
 static struct CustomTrackRaceContext context;
@@ -56,6 +56,7 @@ static unsigned ap_state_gen;
 static long sentCodes[8]; static int sentCount, ledgerBits[8], ledgerCount, feed;
 static long checkedCodes[8]; static int checkedCount;
 static long existsMissing;
+int AP_TrackFillRaceActive(const struct GameTracker *g) { return g == &game && package.fill_crate_count > 0; }
 int ctr_cfg_active(void) { return active; }
 int ap_content_plan_active(void) { return planActive; }
 uint64_t ap_content_plan_epoch(void) { return planActive ? epoch : 0; }
@@ -127,6 +128,11 @@ int main(void) {
   assert(((game.gameModeEnd&NEW_RELIC)!=0)==(count>0));
   cases++;
  }
+ /* A fill keeps the awarded tier in checkpointed race state. */
+ reset(0); package.fill_crate_count=3;
+ assert(AP_NotifyStandaloneRelic(86400)==2 && game.fillRelicTier==1); cases++;
+ reset(0); package.fill_crate_count=3;
+ assert(AP_NotifyStandaloneRelic(96000)==1 && game.fillRelicTier==0 && sdata->relicTime_1min==1); cases++;
  /* Retail tracks keep their retail targets. */
  reset(1);
  assert(AP_StandaloneRelicTarget(1)==110000);

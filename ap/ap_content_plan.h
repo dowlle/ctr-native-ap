@@ -16,6 +16,7 @@ extern "C" {
 #define AP_CONTENT_MODE_CTR 1
 #define AP_CONTENT_MODE_RELIC 2
 #define AP_CONTENT_MODE_COUNT 3
+#define AP_CONTENT_TRACK_FILL_NEEDS_OPT_IN "track fill rooms require CTR_TRACK_FILL=1"
 /* Ordinary pickup checks, resolved from the room's exact LEV revision. */
 typedef struct ctr_content_sanity {
     char track_id[65], lev_sha256[65];
@@ -210,6 +211,13 @@ typedef struct ctr_content_pad {
 #define AP_CONTENT_CUSTOM_HOST 6
 #define AP_CONTENT_CORTEX_HOST 13
 #define AP_CONTENT_CORTEX_LAPS 3
+/* The retail perfect bonus reads the driver's crate count as signed. */
+#define AP_CONTENT_MAX_FILL_CRATES 127
+typedef struct ctr_content_fill_crate {
+    int16_t pos[3];
+    uint8_t type;
+} ctr_content_fill_crate;
+
 typedef struct ctr_content_package {
     char id[65], content_id[65], uuid[37], revision[65];
     char display_name[129], author[129], lev_sha256[65], vrm_sha256[65];
@@ -224,6 +232,8 @@ typedef struct ctr_content_package {
     uint32_t relic_lev_bytes, relic_vrm_bytes;
     int has_relic_targets; /* relic targets in ticks (960 per second) */
     int relic_targets[3];  /* sapphire, gold, platinum */
+    int fill_crate_count;
+    const ctr_content_fill_crate *fill_crates; /* owned by the parsed room */
     int super_turbo_pads;  /* AP_CONTENT_SUPER_PADS_UNSTATED, 0 none, 1 at least one */
     /* Optional measured `weapon_crates` (#133 PR 4e): how many weapon crates
      * (PU_RANDOM_CRATE instances) the LEV holds, or
@@ -244,6 +254,9 @@ typedef struct ctr_content_package {
     char locator_sha256[65];  /* lowercase hex, "" when absent */
     char locator_name[65];    /* printable ASCII file name, "" when absent */
 } ctr_content_package;
+int ap_content_track_fill_available(const char *lev_sha, unsigned int laps);
+int ap_content_track_fill_bundled(const char *assets, const char *lev_sha, unsigned int laps,
+                                 ctr_content_fill_crate *crates, int *targets);
 #define AP_CONTENT_UNSTATED (-1)
 #define AP_CONTENT_WEAPON_CRATES_UNSTATED (-1)
 #define AP_CONTENT_WEAPON_CRATES_MAX 65536 /* the verifier's instance-table ceiling */

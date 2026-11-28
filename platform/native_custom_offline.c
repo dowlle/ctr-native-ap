@@ -153,6 +153,11 @@ int CustomOffline_PackageLaps(const struct CustomPackageOwned *package, unsigned
     return 1;
 }
 
+int CustomOffline_RequestLaps(const struct CustomOfflineRequest *request, unsigned int *laps)
+{
+    return request && CustomOffline_PackageLaps(request->package, laps, NULL, 0);
+}
+
 /* A lap count the engine cannot store refuses both modes. */
 static int package_mode_reason(const struct CustomPackageOwned *package, int mode, char *reason, size_t reasonSize)
 {
@@ -195,6 +200,8 @@ int CustomOffline_CheckStructure(const struct CustomOfflineRequest *request, int
     int ok;
     if (!request || !CustomPackage_GetPairReport(request->package, &report) || !report.loadable)
         return offline_error(error, errorSize, "No structurally verified offline package");
+    if (mode == CTR_OFFLINE_MODE_RELIC && report.measured.relicCrates)
+        return offline_error(error, errorSize, "Track fill requires a LEV without time crates");
     ok = mode == CTR_OFFLINE_MODE_ARCADE ? CustomContentVerify_ArcadeRaceReason(&report, reason, sizeof reason)
                                          : CustomContentVerify_TimeTrialReason(&report, reason, sizeof reason);
     if (!ok) return offline_error(error, errorSize, reason);
@@ -214,7 +221,7 @@ int CustomOffline_BeginRuntime(struct CustomOfflineRequest **request, int hostLe
 {
     unsigned int laps;
     if (!request || !*request || activeRequest || runtimeGeneration == UINT64_MAX || apSeedPresent != 0 ||
-        (mode != CTR_OFFLINE_MODE_ARCADE && mode != CTR_OFFLINE_MODE_TIME_TRIAL) ||
+        (mode != CTR_OFFLINE_MODE_ARCADE && mode != CTR_OFFLINE_MODE_TIME_TRIAL && mode != CTR_OFFLINE_MODE_RELIC) ||
         hostLevelID < 0 || hostLevelID >= 18 || !CustomOffline_CheckStructure(*request, mode, NULL, 0) ||
         !CustomOffline_PackageLaps((*request)->package, &laps, NULL, 0)) return 0;
     activeRequest = *request;
@@ -303,6 +310,7 @@ int CustomOffline_RuntimeServing(int levelID, int singleRace)
 
 static const char *offline_mode_name(int mode)
 {
+    if (mode == CTR_OFFLINE_MODE_RELIC) return "Relic Race";
     return mode == CTR_OFFLINE_MODE_ARCADE ? "Arcade" : mode == CTR_OFFLINE_MODE_TIME_TRIAL ? "Time Trial" : "another mode";
 }
 

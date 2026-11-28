@@ -66,6 +66,7 @@ const char *NativeAssets_GetAssetDir(void) { return assets_root; }
 static ctr_content_package plan_package;
 static ctr_content_pad plan_pad;
 static int plan_has_package = 1;
+int AP_TrackFillPrepare(void) { return 1; }
 static int retail_letters_ready = 1;
 int AP_TrialLetters_Prepare(void) { return retail_letters_ready; }
 void AP_FeedNoticeLine(const char *text) { AP_LogLine(text); }

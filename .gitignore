@@ -1,5 +1,9 @@
 build/
 assets/*
+!assets/track_fill/
+assets/track_fill/**/*
+!assets/track_fill/*/
+!assets/track_fill/*/*.json
 !assets/tracks/
 assets/tracks/*
 !assets/tracks/cortex-vortex/

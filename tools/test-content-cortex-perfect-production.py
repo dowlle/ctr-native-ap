@@ -65,7 +65,7 @@ int AP_LocationChecksAllowed(void) { return 1; }
 #define CTR_CFG_LETTER_TRACK_COUNT 18
 #define CTR_CFG_LETTER_COUNT 3
 struct Driver { int numTimeCrates; } driver;
-struct GameTracker { int levelID,gameMode1,gameMode2,podiumRewardID,gameModeEnd,timeCratesInLEV; struct Driver *drivers[1]; struct { int cupID; } cup; } game;
+struct GameTracker { int levelID,gameMode1,gameMode2,podiumRewardID,gameModeEnd,timeCratesInLEV,fillRelicTier; struct Driver *drivers[1]; struct { int cupID; } cup; } game;
 static struct { struct GameTracker *gGT; int relicTime_1min,relicTime_10sec,relicTime_1sec,relicTime_10ms,relicTime_1ms; } sdataStore, *sdata=&sdataStore;
 static struct { int RelicTime[18*3]; } data;
 static struct { int relic_perfect_enabled, custom_tracks_ok; long relic_perfect[18]; struct { int slot; } custom_track; } ctr_cfg;
@@ -81,6 +81,7 @@ static long checkedCodes[8]; static int checkedCount;
 static unsigned char ap_letter_received[18][3], ap_custom_letter_received[AP_CUSTOM_LETTER_SLOT_COUNT][3];
 static unsigned char ap_cortex_letter_received[3];
 static unsigned char ap_named_letter_received[(AP_NAMED_BLOCK_LIMIT * AP_ORIGIN_GLYPH_COUNT + 7) / 8];
+int AP_TrackFillRaceActive(const struct GameTracker *g) { (void)g; return 0; }
 int ctr_cfg_active(void) { return active; }
 int ap_content_plan_active(void) { return planActive; }
 uint64_t ap_content_plan_epoch(void) { return planActive ? epoch : 0; }

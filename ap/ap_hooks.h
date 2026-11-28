@@ -87,6 +87,23 @@ int AP_ContentCrystalIntent(void);
 const ctr_content_pad *AP_ContentCrystalPad(void);
 void AP_ArcadeCrystals_Spawn(struct GameTracker *g);
 void AP_ArcadeCrystals_OnFrame(struct GameTracker *g);
+#ifdef CTR_CUSTOM_TRACKS
+int AP_TrackFillPrepare(void);
+int AP_TrackFillRaceActive(const struct GameTracker *g);
+void AP_TrackFillRegister(struct GameTracker *g);
+void AP_TrackFillSpawn(struct GameTracker *g);
+void AP_TrackFillCollide(struct GameTracker *g);
+int AP_TrackFillFailed(const struct GameTracker *g);
+void AP_TrackFillAfterCheckpointRestore(struct GameTracker *g);
+#ifdef CTR_CUSTOM_PACKAGES
+struct CustomOfflineRequest;
+int AP_TrackFillStageOffline(const struct CustomOfflineRequest *request);
+struct SpawnPosRot;
+int AP_TrackFillOfflineSpawn(u8 preferred, struct SpawnPosRot *out);
+int AP_TrackFillOfflineTarget(int tier);
+int AP_TrackFillOfflineTier(int race_time);
+#endif
+#endif
 void AP_NotifyContentCrystalPickup(struct Instance *inst,int driverID);
 int AP_NotifyContentCrystalComplete(void);
 
@@ -200,6 +217,9 @@ int  AP_RelicResultsSkipWanted(void);
 // AP_RelicTargetTier is the current shown tier for the HUD label/colour pin
 // (UI_Clock.c); -1 = ladder inactive (vanilla label path).
 int AP_RelicTargetInit(int levelID);
+#ifdef CTR_CUSTOM_TRACKS
+void AP_RelicTargetRestore(const struct GameTracker *g);
+#endif
 int AP_RelicTargetTier(void);
 
 // ── Post-goal credits roll: AP section (issue #117, display-only) ──

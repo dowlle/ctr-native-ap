@@ -415,6 +415,16 @@ void UI_RaceEnd_ExitToMap(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 
+#if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
+	if (AP_TrackFillOfflineTarget(0) > 0)
+	{
+		sdata->mainMenuState = MAIN_MENU_TRACK_SELECT;
+		sdata->Loading.OnBegin.AddBitsConfig0 |= MAIN_MENU;
+		MainRaceTrack_RequestLoad(MAIN_MENU_LEVEL);
+		return;
+	}
+#endif
+
 #ifdef CTR_AP
 	// #285: relic reward bookkeeping and the AP relic notification already
 	// ran at race end (RR_EndEvent_UnlockAward). Decide the relic podium

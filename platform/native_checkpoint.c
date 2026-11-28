@@ -33,6 +33,9 @@
 #define NATIVE_CHECKPOINT_POINTER_SLOT_CAP   65536u
 #define NATIVE_CHECKPOINT_CREDITS_STRING_CAP 4096u
 #define NATIVE_CHECKPOINT_LNG_STRING_CAP     4096u
+// Mempack indices use 0..3. This bit marks checkpoints that need a live,
+// same-session fill race, without changing the ordinary checkpoint layout.
+#define NATIVE_CHECKPOINT_FILL_INDEX_FLAG    4
 
 enum NativeCheckpointRegionKind
 {
@@ -2304,6 +2307,10 @@ int NativeCheckpoint_Capture(void *dst, int dstSize)
 	header.mempackArena = *Platform_GetMempackArena();
 	header.psxRandSeed = PSX_BIOS_GetRandSeed();
 	header.activeMempackIndex = NativeCheckpoint_GetActiveMempackIndex();
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	if (AP_TrackFillRaceActive(sdata->gGT))
+		header.activeMempackIndex |= NATIVE_CHECKPOINT_FILL_INDEX_FLAG;
+#endif
 
 	memset(dst, 0, header.size);
 	memcpy(dst, &header, sizeof(header));
@@ -2382,7 +2389,7 @@ void NativeCheckpoint_DrawCustomRefusal(u32 *ot, int visible)
 }
 #endif
 
-int NativeCheckpoint_Restore(const void *src, int srcSize)
+int NativeCheckpoint_Restore(const void *src, int srcSize, int allowFillCheckpoint)
 {
 	const struct NativeCheckpointHeader *header = (const struct NativeCheckpointHeader *)src;
 	const u8 *bytes = (const u8 *)src;
@@ -2399,6 +2406,16 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	{
 		return 0;
 	}
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	if ((header->activeMempackIndex & NATIVE_CHECKPOINT_FILL_INDEX_FLAG) &&
+	    (!allowFillCheckpoint || header->codeAnchor != liveHeader.codeAnchor || !AP_TrackFillRaceActive(sdata->gGT)))
+	{
+		Platform_Log("[CTR State] restore refused: a fill race requires its original client session\n");
+		return 0;
+	}
+#else
+	(void)allowFillCheckpoint;
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
 	s_nativeCheckpointCustomRefusalFrames = 0;
 	if (!NativeCheckpoint_CustomIdentityAllows(header, bytes))
@@ -2463,7 +2480,7 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	{
 		return 0;
 	}
-	Platform_RepairResidentPointers(header->activeMempackIndex);
+	Platform_RepairResidentPointers(header->activeMempackIndex & ~NATIVE_CHECKPOINT_FILL_INDEX_FLAG);
 
 	if (nativeStateRegion == NULL)
 	{
@@ -2484,6 +2501,9 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 #ifdef CTR_CUSTOM_TRACKS
 	// The restored VRAM may hold another minimap: decide its mode again.
 	UI_Map_CustomAfterRestore(sdata->gGT);
+#ifdef CTR_AP
+	AP_TrackFillAfterCheckpointRestore(sdata->gGT);
+#endif
 #endif
 
 	return 1;

@@ -22,6 +22,11 @@ void PlayLevel_UpdateLapStats(void)
 	int iVar13;
 	int currRank;
 	struct GameTracker *gGT = sdata->gGT;
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	// Driving physics has updated the kart. Count hits before the finish
+	// line can award the Perfect bonus and end the race.
+	AP_TrackFillCollide(gGT);
+#endif
 	int finishTerrain = -1;
 #ifdef CTR_CUSTOM_TRACKS
 	struct CustomTrackLoadContext finishContext;

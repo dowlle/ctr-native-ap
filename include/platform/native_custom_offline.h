@@ -21,6 +21,7 @@ int CustomOffline_PackageTimeTrialReason(const struct CustomPackageOwned *packag
    for the host slot to serve the package. */
 #define CTR_OFFLINE_MODE_ARCADE 1
 #define CTR_OFFLINE_MODE_TIME_TRIAL 2
+#define CTR_OFFLINE_MODE_RELIC 3
 /* GameTracker.lapTime has seven entries; PlayLevel indexes it per lap. */
 #define CTR_OFFLINE_MAX_LAPS 7
 /* The lap count an offline race uses: the pinned race_settings value, or
@@ -117,6 +118,7 @@ void CustomOffline_Free(struct CustomOfflineRequest **request);
 int CustomOffline_GetManifest(const struct CustomOfflineRequest *request,
                               struct CustomPackageManifest *out);
 int CustomOffline_RetainPackage(const struct CustomOfflineRequest *request, struct CustomPackageOwned **out);
+int CustomOffline_RequestLaps(const struct CustomOfflineRequest *request, unsigned int *laps);
 /* Structural prerequisite only: an eight-kart Single Race requires detected
    Arcade structures and eight measured spawns; a Time Trial a lap checkpoint
    graph. Success is NOT certification. */

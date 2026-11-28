@@ -111,6 +111,11 @@ static void AP_CeremonyLedgerAdd(long code, int bit, int rung)
 // during the pre-race clock draw and the vanilla path stands.
 int AP_CeremonyRelicTier(void)
 {
+#ifdef CTR_CUSTOM_TRACKS
+	const struct GameTracker *g = sdata->gGT;
+	if (AP_TrackFillRaceActive(g))
+		return (g->gameModeEnd & NEW_RELIC) ? g->fillRelicTier : -1;
+#endif
 	int best = -1;
 	for (int i = 0; i < ap_ceremony_count; i++)
 	{
@@ -165,6 +170,10 @@ int AP_RelicTargetTier(void)
 // on this track are real checks and which are local-grant.
 static int AP_RelicTierEarnable(int levelID, int tier)
 {
+#ifdef CTR_CUSTOM_PACKAGES
+	if (AP_TrackFillOfflineTarget(tier) > 0)
+		return 1;
+#endif
 	int bit = ADV_REWARD_FIRST_SAPPHIRE_RELIC + ADV_REWARD_RELIC_TIER_STRIDE * tier + levelID;
 #ifdef CTR_CUSTOM_TRACKS
 	// A content-plan Relic Race asks its pad's own tier codes (#133 PR 3).
@@ -202,7 +211,11 @@ int AP_RelicTargetInit(int levelID)
 {
 	ap_relic_target_tier = -1;
 	ap_relic_target_done = 0;
-	if (!ctr_cfg_active())
+	int offline = 0;
+#ifdef CTR_CUSTOM_PACKAGES
+	offline = AP_TrackFillOfflineTarget(0) > 0;
+#endif
+	if (!ctr_cfg_active() && !offline)
 		return 0;
 	for (int t = 2; t >= 0; t--)
 	{
@@ -222,6 +235,36 @@ int AP_RelicTargetInit(int levelID)
 	AP_RelicTargetFill(levelID, ap_relic_target_tier);
 	return 1;
 }
+
+static void AP_RelicTargetAdvance(int levelID, int elapsed)
+{
+	if (ap_relic_target_tier < 0 || ap_relic_target_done ||
+	    elapsed <= AP_RelicTimeFor(levelID, ap_relic_target_tier))
+		return;
+	for (int tier = ap_relic_target_tier - 1; tier >= 0; --tier)
+	{
+		if (AP_RelicTierEarnable(levelID, tier))
+		{
+			ap_relic_target_tier = tier;
+			AP_RelicTargetFill(levelID, tier);
+			return;
+		}
+	}
+	ap_relic_target_done = 1;
+}
+
+#ifdef CTR_CUSTOM_TRACKS
+void AP_RelicTargetRestore(const struct GameTracker *g)
+{
+	const struct Driver *driver = g->drivers[0];
+	if (!driver || !AP_RelicTargetInit(g->levelID))
+		return;
+	// Level and driver state were restored, but the target ladder is local
+	// presentation state. Re-evaluate its two possible step-downs.
+	for (int i = 0; i < 2; ++i)
+		AP_RelicTargetAdvance(g->levelID, driver->timeElapsedInRace);
+}
+#endif
 
 // Per-frame downgrade (AP_OnFrame). Mid-race only: after the finish the
 // end-of-race digit rewrite (RR_EndEvent_UnlockAward) and the ceremony label
@@ -243,20 +286,7 @@ static void AP_RelicTargetTick(struct GameTracker *gGT)
 	if (d == 0)
 		return;
 	levelID = (int)gGT->levelID;
-	if (d->timeElapsedInRace <= AP_RelicTimeFor(levelID, ap_relic_target_tier))
-		return; // shown target still beatable
-
-	// Shown time passed: step down to the next earnable tier, else hold here.
-	for (int t = ap_relic_target_tier - 1; t >= 0; t--)
-	{
-		if (AP_RelicTierEarnable(levelID, t))
-		{
-			ap_relic_target_tier = t;
-			AP_RelicTargetFill(levelID, t);
-			return;
-		}
-	}
-	ap_relic_target_done = 1;
+	AP_RelicTargetAdvance(levelID, d->timeElapsedInRace);
 }
 
 // Short context line describing WHICH check an entry is (the item line below says

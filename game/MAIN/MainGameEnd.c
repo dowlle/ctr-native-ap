@@ -27,7 +27,11 @@ void MainGameEnd_SoloRaceGetReward(int subtractTimeCrateBonus)
 	// entry, whatever the time. The all-crates bonus can push raceTime below
 	// zero, so its zeroed scratch table alone would still offer a record. The
 	// Time Trial part below would touch the engine host's save flags.
-	if (CustomTrack_KeepsNoScores(gGT->levelID))
+	if (CustomTrack_KeepsNoScores(gGT->levelID)
+#ifdef CTR_CUSTOM_PACKAGES
+	    || AP_TrackFillOfflineTarget(0) > 0
+#endif
+	   )
 	{
 		gGT->bestLapTime = sdata->ptrActiveHighScoreEntry[0].time;
 		return;

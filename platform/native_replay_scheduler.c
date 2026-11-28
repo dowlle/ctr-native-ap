@@ -1146,7 +1146,7 @@ internal s32 NativeReplayScheduler_RestoreBootstrapCheckpoint(void)
 		Platform_Log("[CTR State] bootstrap checkpoint maps to replay frame %u\n", info.replayFrame);
 		goto cleanup;
 	}
-	if (!NativeCheckpoint_Restore(payload, payloadSize))
+	if (!NativeCheckpoint_Restore(payload, payloadSize, 0))
 	{
 		Platform_Log("[CTR State] failed to restore bootstrap checkpoint\n");
 		goto cleanup;
@@ -1479,6 +1479,13 @@ int NativeReplayScheduler_BeginFrame(const struct NativeReplaySchedulerFrameInfo
 
 		s_startRequested = 0;
 		s_recordStartDeferredLogged = 0;
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+		if (AP_TrackFillRaceActive(sdata->gGT))
+		{
+			Platform_Log("[CTR Replay] a replay cannot start in an experimental fill race\n");
+			return 0;
+		}
+#endif
 		if (!NativeReplayScheduler_StartReportRecording())
 		{
 			return 1;

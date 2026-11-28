@@ -243,6 +243,20 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 	}
 	// With `relic_files`, relic and time_trial are measured on the relic pair
 	// and every other flag on the main pair.
+	if (pkg->fill_crate_count)
+	{
+		if (report.measured.relicCrates || !report.measured.checkpoints)
+		{
+			status->state = CTR_CT_MANAGER_UNSUPPORTED;
+			snprintf(status->detail, sizeof status->detail,
+			         "Track fill requires a checkpoint graph and a LEV without time crates.");
+			snprintf(line, sizeof line, "[TrackFill] refused %s: %s\n", pkg->id, status->detail);
+			AP_AppendLog(line);
+			return 0;
+		}
+		report.measured.relicCrates = pkg->fill_crate_count;
+		report.fileAnalysis[CTR_CCV_RELIC_RACE].result = CTR_CCV_DETECTED;
+	}
 	if (!AP_ContentCapabilitiesHoldMasked(pkg->capabilities,
 	                                      pkg->has_relic_files ? AP_CONTENT_CAP_ALL & ~AP_CONTENT_RELIC_PAIR_CAPS : AP_CONTENT_CAP_ALL,
 	                                      &report, why, sizeof why) ||
@@ -584,6 +598,8 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		// mode serves the main pair. The scan above verified both.
 		serveRelic = pkg->has_relic_files && race->mode == AP_CONTENT_MODE_RELIC &&
 		             ap_content_files[packageIndex].relicLevPath[0];
+		if (pkg->fill_crate_count && race->mode == AP_CONTENT_MODE_RELIC && !AP_TrackFillPrepare())
+			return 0;
 		m = serveRelic ? &ap_content_files[packageIndex].relicMeasured : &ap_content_files[packageIndex].measured;
 		servedLev = serveRelic ? pkg->relic_lev_sha256 : pkg->lev_sha256;
 		servedVrm = serveRelic ? pkg->relic_vrm_sha256 : pkg->vrm_sha256;

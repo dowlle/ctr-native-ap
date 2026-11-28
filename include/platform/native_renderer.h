@@ -51,6 +51,7 @@ int NativeRenderer_GetVRAMStateSize(void);
 int NativeRenderer_CaptureVRAMState(void *dst, int dstSize);
 int NativeRenderer_RestoreVRAMState(const void *src, int srcSize);
 TextureID NativeRenderer_CreateRGBATexture(int width, int height, u8 *data);
+TextureID NativeRenderer_CreateRGBATextureChecked(int width, int height, u8 *data);
 TextureID NativeRenderer_GetVRAMTexture(void);
 TextureID NativeRenderer_GetWhiteTexture(void);
 void NativeRenderer_SetBlendMode(BlendMode blendMode);

@@ -1291,7 +1291,7 @@ internal void NativeRenderer_GenerateCommonTextures(void)
 
 TextureID NativeRenderer_CreateRGBATexture(int width, int height, u8 *data)
 {
-	TextureID newTexture;
+	TextureID newTexture = 0;
 	glGenTextures(1, &newTexture);
 
 	glBindTexture(GL_TEXTURE_2D, newTexture);
@@ -1309,6 +1309,21 @@ TextureID NativeRenderer_CreateRGBATexture(int width, int height, u8 *data)
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	return newTexture;
+}
+
+TextureID NativeRenderer_CreateRGBATextureChecked(int width, int height, u8 *data)
+{
+	// Drain earlier OpenGL errors, with a bound for a failing context.
+	int staleErrors = 0;
+	while (glGetError() != GL_NO_ERROR)
+		if (++staleErrors == 8)
+			return 0;
+	TextureID texture = NativeRenderer_CreateRGBATexture(width, height, data);
+	if (glGetError() == GL_NO_ERROR)
+		return texture;
+	if (texture)
+		glDeleteTextures(1, &texture);
+	return 0;
 }
 
 internal void NativeRenderer_CompilePSXShader(GTEShader *sh, const char *source)
